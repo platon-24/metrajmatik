@@ -386,82 +386,79 @@ impl MetrajApp {
             return;
         }
 
-        ui.horizontal(|ui| {
-            ui.set_height(22.0);
-            ui.label(RichText::new("#").strong().size(12.0));
-            ui.add_space(5.0);
-            ui.label(RichText::new("Poz No").strong().size(12.0));
-            ui.add_space(105.0);
-            ui.label(RichText::new("Açiklama").strong().size(12.0));
-            ui.add_space(250.0);
-            ui.label(RichText::new("Birim").strong().size(12.0));
-            ui.add_space(55.0);
-            ui.label(RichText::new("B.Fiyat").strong().size(12.0));
-            ui.add_space(75.0);
-            ui.label(RichText::new("Miktar").strong().size(12.0));
-            ui.add_space(70.0);
-            ui.label(RichText::new("Tutar").strong().size(12.0));
-        });
-        ui.separator();
+        // 8 sütun: #, Poz No, Açıklama, Birim, B.Fiyat, Miktar, Tutar, Sil
+        egui::Grid::new("metraj_grid")
+            .num_columns(8)
+            .min_col_width(60.0)
+            .striped(true)
+            .show(ui, |ui: &mut egui::Ui| {
+                // Başlık satırı
+                ui.label(RichText::new("#").strong().size(12.0));
+                ui.label(RichText::new("Poz No").strong().size(12.0));
+                ui.label(RichText::new("Açiklama").strong().size(12.0));
+                ui.label(RichText::new("Birim").strong().size(12.0));
+                ui.label(RichText::new("B.Fiyat").strong().size(12.0));
+                ui.label(RichText::new("Miktar").strong().size(12.0));
+                ui.label(RichText::new("Tutar").strong().size(12.0));
+                ui.label(RichText::new("").strong().size(12.0));
+                ui.end_row();
 
-        let mut silinecek: Option<usize> = None;
-        let mut degisecek_miktar: Option<(usize, f64)> = None;
+                let mut silinecek: Option<usize> = None;
+                let mut degisecek_miktar: Option<(usize, f64)> = None;
 
-        for (idx, kalem) in self.metraj_kalemleri.iter_mut().enumerate() {
-            ui.horizontal(|ui| {
-                ui.set_height(20.0);
-                ui.label(format!("{}", idx + 1));
-                ui.add_space(5.0);
-                ui.label(RichText::new(&kalem.poz_no).size(11.0).monospace());
-                ui.add_space(5.0);
+                for (idx, kalem) in self.metraj_kalemleri.iter_mut().enumerate() {
+                    ui.label(format!("{}", idx + 1));
 
-                let kisa_tanim = if kalem.tanim.len() > 38 {
-                    format!("{}...", &kalem.tanim[..35])
-                } else {
-                    kalem.tanim.clone()
-                };
-                ui.label(RichText::new(kisa_tanim).size(11.0));
-                ui.add_space(5.0);
-                ui.label(&kalem.birim);
-                ui.add_space(5.0);
-                ui.label(format!("{:.2}", kalem.birim_fiyat));
-                ui.add_space(5.0);
+                    ui.label(RichText::new(&kalem.poz_no).size(11.0).monospace());
 
-                // Düzenlenebilir miktar
-                let mut miktar_str = format!("{:.2}", kalem.miktar);
-                let resp = ui.add(
-                    TextEdit::singleline(&mut miktar_str).desired_width(60.0),
-                );
-                if resp.changed() {
-                    if let Ok(yeni) = miktar_str.parse::<f64>() {
-                        degisecek_miktar = Some((idx, yeni));
+                    let kisa_tanim = if kalem.tanim.len() > 40 {
+                        format!("{}...", &kalem.tanim[..37])
+                    } else {
+                        kalem.tanim.clone()
+                    };
+                    ui.label(RichText::new(kisa_tanim).size(11.0));
+
+                    ui.label(&kalem.birim);
+                    ui.label(format!("{:.2}", kalem.birim_fiyat));
+
+                    // Düzenlenebilir miktar
+                    let mut miktar_str = format!("{:.2}", kalem.miktar);
+                    let resp = ui.add(
+                        TextEdit::singleline(&mut miktar_str).desired_width(70.0),
+                    );
+                    if resp.changed() {
+                        if let Ok(yeni) = miktar_str.parse::<f64>() {
+                            degisecek_miktar = Some((idx, yeni));
+                        }
+                    }
+
+                    ui.label(
+                        RichText::new(format!("{:.2}", kalem.tutar))
+                            .size(11.0)
+                            .strong()
+                            .color(Color32::GREEN),
+                    );
+
+                    if ui
+                        .button(RichText::new("✕").color(Color32::RED).size(11.0))
+                        .clicked()
+                    {
+                        silinecek = Some(idx);
+                    }
+
+                    ui.end_row();
+                }
+
+                if let Some(idx) = silinecek {
+                    self.metraj_kalemleri.remove(idx);
+                }
+                if let Some((idx, yeni_miktar)) = degisecek_miktar {
+                    if idx < self.metraj_kalemleri.len() {
+                        self.metraj_kalemleri[idx].miktar = yeni_miktar;
+                        self.metraj_kalemleri[idx].tutar_guncelle();
                     }
                 }
-
-                ui.label(
-                    RichText::new(format!("{:.2}", kalem.tutar))
-                        .size(11.0)
-                        .strong(),
-                );
-
-                if ui
-                    .button(RichText::new("✕").color(Color32::RED).size(11.0))
-                    .clicked()
-                {
-                    silinecek = Some(idx);
-                }
             });
-        }
-
-        if let Some(idx) = silinecek {
-            self.metraj_kalemleri.remove(idx);
-        }
-        if let Some((idx, yeni_miktar)) = degisecek_miktar {
-            if idx < self.metraj_kalemleri.len() {
-                self.metraj_kalemleri[idx].miktar = yeni_miktar;
-                self.metraj_kalemleri[idx].tutar_guncelle();
-            }
-        }
     }
 
     fn render_pdf_yukle(&mut self, ui: &mut Ui) {
@@ -577,24 +574,37 @@ impl MetrajApp {
 
     fn kalem_ekle(&mut self) {
         if let Some(ref poz) = self.secili_poz {
-            match self.yeni_miktar.parse::<f64>() {
-                Ok(miktar) if miktar > 0.0 => {
-                    if let Some(kalem) = MetrajKalemi::yeni(poz, miktar) {
-                        self.metraj_kalemleri.push(kalem);
-                        self.basarili_mesaj =
-                            format!("{} poz numarali kalem metraja eklendi.", poz.poz_no);
-                        self.yeni_miktar.clear();
-                    }
-                }
-                Ok(_) => {
-                    self.hata_mesaji = "Lütfen geçerli bir miktar girin (> 0).".to_string();
-                }
-                Err(_) => {
-                    self.hata_mesaji = "Lütfen geçerli bir miktar girin.".to_string();
-                }
+            // Miktar boşsa veya geçersizse 0.0 al, her zaman ekle
+            let miktar = self
+                .yeni_miktar
+                .trim()
+                .parse::<f64>()
+                .unwrap_or(0.0);
+
+            let kalem = MetrajKalemi::yeni(poz, miktar);
+            let kalem_tutar = kalem.tutar;
+            let kalem_bf = kalem.birim_fiyat;
+            self.metraj_kalemleri.push(kalem);
+
+            if miktar == 0.0 {
+                self.basarili_mesaj = format!(
+                    "{} eklendi. Miktari tablodaki hucreye tiklayip giriniz.",
+                    poz.poz_no
+                );
+            } else {
+                self.basarili_mesaj = format!(
+                    "{} eklendi ({} {} x {:.2} TL = {:.2} TL).",
+                    poz.poz_no,
+                    miktar,
+                    poz.birim,
+                    kalem_bf,
+                    kalem_tutar
+                );
             }
+            self.yeni_miktar.clear();
+            self.hata_mesaji.clear();
         } else {
-            self.hata_mesaji = "Lütfen önce bir poz seçin.".to_string();
+            self.hata_mesaji = "Lutfen once bir poz secin.".to_string();
         }
     }
 

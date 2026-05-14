@@ -22,18 +22,17 @@ pub struct MetrajKalemi {
 }
 
 impl MetrajKalemi {
-    pub fn yeni(poz: &Poz, miktar: f64) -> Option<Self> {
-        poz.fiyat.map(|bf| {
-            let tutar = bf * miktar;
-            MetrajKalemi {
-                poz_no: poz.poz_no.clone(),
-                tanim: poz.tanim.clone(),
-                birim: poz.birim.clone(),
-                birim_fiyat: bf,
-                miktar,
-                tutar,
-            }
-        })
+    pub fn yeni(poz: &Poz, miktar: f64) -> Self {
+        let birim_fiyat = poz.fiyat.unwrap_or(0.0);
+        let tutar = birim_fiyat * miktar;
+        MetrajKalemi {
+            poz_no: poz.poz_no.clone(),
+            tanim: poz.tanim.clone(),
+            birim: poz.birim.clone(),
+            birim_fiyat,
+            miktar,
+            tutar,
+        }
     }
 
     pub fn tutar_guncelle(&mut self) {
