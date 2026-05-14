@@ -6,8 +6,19 @@ pub struct Poz {
     pub poz_no: String,
     pub tanim: String,
     pub birim: String,
-    pub fiyat: Option<f64>, // None ise formül pozudur
+    pub fiyat: Option<f64>,
     pub kategori: String,
+    pub kitap_id: i64,
+    pub kitap_adi: String,
+}
+
+/// Bir birim fiyat kitabı
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Kitap {
+    pub id: i64,
+    pub ad: String,
+    pub poz_sayisi: u32,
+    pub tarih: String,
 }
 
 /// Metraj tablosundaki bir kalemi temsil eder
@@ -19,6 +30,7 @@ pub struct MetrajKalemi {
     pub birim_fiyat: f64,
     pub miktar: f64,
     pub tutar: f64,
+    pub kitap_adi: String,
 }
 
 impl MetrajKalemi {
@@ -32,6 +44,7 @@ impl MetrajKalemi {
             birim_fiyat,
             miktar,
             tutar,
+            kitap_adi: poz.kitap_adi.clone(),
         }
     }
 
