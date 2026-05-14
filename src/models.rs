@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// Bir birim fiyat pozunu temsil eder
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Poz {
     pub poz_no: String,
@@ -10,18 +9,20 @@ pub struct Poz {
     pub kategori: String,
     pub kitap_id: i64,
     pub kitap_adi: String,
+    pub yil: u32,
+    pub ay: u32,
 }
 
-/// Bir birim fiyat kitabı
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kitap {
     pub id: i64,
     pub ad: String,
+    pub yil: u32,
+    pub ay: u32,
     pub poz_sayisi: u32,
     pub tarih: String,
 }
 
-/// Metraj tablosundaki bir kalemi temsil eder
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetrajKalemi {
     pub poz_no: String,
@@ -53,7 +54,6 @@ impl MetrajKalemi {
     }
 }
 
-/// Kayıtlı metraj dosyası
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KayitliMetraj {
     pub ad: String,

@@ -43,7 +43,7 @@ const KATEGORI_ANAHATLARI: &[(&str, &str)] = &[
     ("GAZBETON İŞLERİ", "GAZBETON İŞLERİ"),
 ];
 
-pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str) -> Vec<Poz> {
+pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str, yil: u32, ay: u32) -> Vec<Poz> {
     let poz_re = Regex::new(r"^(\d{2}\.\d{3}\.\d{4})\s*(.*)").unwrap();
     let fiyat_re = Regex::new(r"([\d]{1,3}(?:\.[\d]{3})*(?:,\d{2}))\s*$").unwrap();
     let birim_re = Regex::new(r"\b(m³|m²|Ton|Kg|Ad|m\b|100\s*m²|1000\s*Ad|1000\s*m²)\b").unwrap();
@@ -56,44 +56,24 @@ pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str) -> Vec<Poz>
 
     while i < satirlar.len() {
         let satir = satirlar[i].trim();
-
-        if satir.is_empty() {
-            i += 1;
-            continue;
-        }
-        if sayfa_no_re.is_match(satir) && satir.len() <= 3 {
-            i += 1;
-            continue;
-        }
-        if satir.contains("2026 MAYIS")
-            || satir.contains("Poz No")
-            || satir.contains("TÜİK")
-            || satir.contains("Endeksleriyle")
-            || satir.contains("Güncel Fiyatlar")
-            || satir == "TL"
-            || satir == "(TL)"
-        {
-            i += 1;
-            continue;
-        }
+        if satir.is_empty() { i += 1; continue; }
+        if sayfa_no_re.is_match(satir) && satir.len() <= 3 { i += 1; continue; }
+        if satir.contains("2026 MAYIS") || satir.contains("Poz No") || satir.contains("TÜİK")
+            || satir.contains("Endeksleriyle") || satir.contains("Güncel Fiyatlar")
+            || satir == "TL" || satir == "(TL)"
+        { i += 1; continue; }
 
         let mut yeni_kategori = None;
         for (anahtar, kategori_adi) in KATEGORI_ANAHATLARI {
             let kontrol_metni = if i + 1 < satirlar.len() {
                 format!("{} {}", satir, satirlar[i + 1].trim())
-            } else {
-                satir.to_string()
-            };
+            } else { satir.to_string() };
             if kontrol_metni.to_uppercase().contains(anahtar) && poz_re.captures(satir).is_none() {
                 yeni_kategori = Some(kategori_adi.to_string());
                 break;
             }
         }
-        if let Some(kat) = yeni_kategori {
-            mevcut_kategori = kat;
-            i += 1;
-            continue;
-        }
+        if let Some(kat) = yeni_kategori { mevcut_kategori = kat; i += 1; continue; }
 
         if let Some(caps) = poz_re.captures(satir) {
             let poz_no = caps[1].to_string();
@@ -105,27 +85,18 @@ pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str) -> Vec<Poz>
 
             while j < satirlar.len() && j < i + 20 {
                 let sonraki = satirlar[j].trim();
-                if sonraki.is_empty() || sayfa_no_re.is_match(sonraki) {
-                    j += 1; continue;
-                }
+                if sonraki.is_empty() || sayfa_no_re.is_match(sonraki) { j += 1; continue; }
                 if poz_re.is_match(sonraki) { break; }
 
                 if let Some(f_caps) = fiyat_re.captures(sonraki) {
                     let fiyat_str = f_caps[1].to_string();
                     let once = &sonraki[..sonraki.len() - fiyat_str.len()].trim();
-                    if let Some(b_caps) = birim_re.captures(once) {
-                        birim = b_caps[1].to_string();
-                    } else if birim.is_empty() {
-                        birim = once.to_string();
-                    }
+                    if let Some(b_caps) = birim_re.captures(once) { birim = b_caps[1].to_string(); }
+                    else if birim.is_empty() { birim = once.to_string(); }
                     let once_trimmed = once.replace(&birim, "").trim().to_string();
-                    if !once_trimmed.is_empty()
-                        && !once_trimmed.starts_with("m³") && !once_trimmed.starts_with("m²")
-                        && !once_trimmed.starts_with("Ton") && !once_trimmed.starts_with("Kg")
-                        && !once_trimmed.starts_with("Ad")
-                    {
-                        tanim_parcalari.push(once_trimmed);
-                    }
+                    if !once_trimmed.is_empty() && !once_trimmed.starts_with("m³") && !once_trimmed.starts_with("m²")
+                        && !once_trimmed.starts_with("Ton") && !once_trimmed.starts_with("Kg") && !once_trimmed.starts_with("Ad")
+                    { tanim_parcalari.push(once_trimmed); }
                     fiyat = parse_fiyat(&fiyat_str);
                     i = j;
                     break;
@@ -133,9 +104,7 @@ pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str) -> Vec<Poz>
 
                 let mut baslik_mi = false;
                 for (anahtar, _) in KATEGORI_ANAHATLARI {
-                    if sonraki.to_uppercase().contains(anahtar) && !poz_re.is_match(sonraki) {
-                        baslik_mi = true; break;
-                    }
+                    if sonraki.to_uppercase().contains(anahtar) && !poz_re.is_match(sonraki) { baslik_mi = true; break; }
                 }
                 if baslik_mi { break; }
                 tanim_parcalari.push(sonraki.to_string());
@@ -143,48 +112,38 @@ pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str) -> Vec<Poz>
             }
 
             if fiyat.is_none() {
-                let birlestirilmis = tanim_parcalari.join(" ");
-                if let Some(f_caps) = fiyat_re.captures(&birlestirilmis) {
+                let bl = tanim_parcalari.join(" ");
+                if let Some(f_caps) = fiyat_re.captures(&bl) {
                     let fiyat_str = f_caps[1].to_string();
                     fiyat = parse_fiyat(&fiyat_str);
-                    let fiyat_pos = birlestirilmis.rfind(&fiyat_str).unwrap_or(0);
-                    let tanim_oncu = birlestirilmis[..fiyat_pos].trim();
-                    if let Some(b_caps) = birim_re.captures(tanim_oncu) {
-                        birim = b_caps[1].to_string();
-                    }
+                    let fiyat_pos = bl.rfind(&fiyat_str).unwrap_or(0);
+                    let tanim_oncu = bl[..fiyat_pos].trim();
+                    if let Some(b_caps) = birim_re.captures(tanim_oncu) { birim = b_caps[1].to_string(); }
                     tanim_parcalari = vec![tanim_oncu.replace(&birim, "").trim().to_string()];
                 }
             }
             if birim.is_empty() {
-                let birlestirilmis = tanim_parcalari.join(" ");
-                if let Some(b_caps) = birim_re.captures(&birlestirilmis) {
-                    birim = b_caps[1].to_string();
-                }
+                let bl = tanim_parcalari.join(" ");
+                if let Some(b_caps) = birim_re.captures(&bl) { birim = b_caps[1].to_string(); }
             }
-
             let tanim = tanim_parcalari.join(" ").replace("  ", " ").trim().to_string();
             if !tanim.is_empty() || !poz_no.is_empty() {
                 let final_birim = if birim.is_empty() { "---".to_string() } else { birim.trim().to_string() };
                 pozlar.push(Poz {
-                    poz_no,
-                    tanim: temiz_tanim(&tanim),
-                    birim: final_birim,
-                    fiyat,
-                    kategori: mevcut_kategori.clone(),
-                    kitap_id,
-                    kitap_adi: kitap_adi.to_string(),
+                    poz_no, tanim: temiz_tanim(&tanim), birim: final_birim, fiyat,
+                    kategori: mevcut_kategori.clone(), kitap_id,
+                    kitap_adi: kitap_adi.to_string(), yil, ay,
                 });
             }
         }
         i += 1;
     }
-    log::info!("{} kitabından {} poz ayrıştırıldı", kitap_adi, pozlar.len());
+    log::info!("{} kitabindan {} poz ayrıştırıldı", kitap_adi, pozlar.len());
     pozlar
 }
 
 fn parse_fiyat(s: &str) -> Option<f64> {
-    let temiz: String = s.chars().filter(|c| c.is_ascii_digit() || *c == ',').collect();
-    temiz.replace(',', ".").parse::<f64>().ok()
+    s.chars().filter(|c| c.is_ascii_digit() || *c == ',').collect::<String>().replace(',', ".").parse::<f64>().ok()
 }
 
 fn temiz_tanim(s: &str) -> String {
