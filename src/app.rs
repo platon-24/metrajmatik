@@ -7,47 +7,38 @@ use crate::export::{metraj_excel_aktar, metraj_json_kaydet, metraj_json_yukle};
 use crate::models::{KayitliMetraj, MetrajKalemi, Poz};
 use crate::pdf_parser::{pdf_metin_cikar, pozlari_ayristir};
 
-/// Uygulama sekmeleri
 #[derive(Debug, Clone, PartialEq)]
 enum Sekme {
     MetrajTablosu,
     PdfYukle,
 }
 
-/// Uygulama durumu
 pub struct MetrajApp {
-    // Veritabanı
     db: Option<Veritabani>,
     poz_sayisi: u32,
 
-    // Metraj tablosu
     metraj_kalemleri: Vec<MetrajKalemi>,
     metraj_adi: String,
+    mevcut_dosya_yolu: Option<PathBuf>,
+    degisiklik_var: bool,
 
-    // Poz arama
     poz_arama_metni: String,
     arama_sonuclari: Vec<Poz>,
     secili_poz: Option<Poz>,
 
-    // Açıklama arama
     aciklama_arama_metni: String,
 
-    // Metraj girişi
     yeni_poz_no: String,
     yeni_miktar: String,
 
-    // PDF içe aktarma
     pdf_durumu: String,
     pdf_yukleniyor: bool,
 
-    // Sekme
     aktif_sekme: Sekme,
 
-    // Mesajlar
     hata_mesaji: String,
     basarili_mesaj: String,
 
-    // Kategoriler
     kategoriler: Vec<String>,
     secili_kategori: String,
     kategori_pozlar: Vec<Poz>,
@@ -72,6 +63,8 @@ impl Default for MetrajApp {
             poz_sayisi,
             metraj_kalemleri: Vec::new(),
             metraj_adi: String::from("Isimsiz Metraj"),
+            mevcut_dosya_yolu: None,
+            degisiklik_var: false,
             poz_arama_metni: String::new(),
             arama_sonuclari: Vec::new(),
             secili_poz: None,
@@ -92,15 +85,27 @@ impl Default for MetrajApp {
 
 impl eframe::App for MetrajApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Üst menü çubuğu
+        // Kısayollar
+        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::S)) {
+            self.metraj_kaydet();
+        }
+        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::O)) {
+            self.metraj_yukle_diyalog();
+        }
+
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.style_mut().visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(44, 62, 80);
                 ui.style_mut().visuals.widgets.active.weak_bg_fill = Color32::from_rgb(52, 73, 94);
                 ui.style_mut().visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(52, 73, 94);
 
+                let baslik = if let Some(ref yol) = self.mevcut_dosya_yolu {
+                    format!("🏗 METRAJMATIK - {}", yol.file_name().unwrap().to_string_lossy())
+                } else {
+                    "🏗 METRAJMATIK".to_string()
+                };
                 ui.label(
-                    RichText::new("🏗 METRAJMATIK")
+                    RichText::new(baslik)
                         .color(Color32::WHITE)
                         .size(18.0)
                         .strong(),
@@ -147,8 +152,16 @@ impl eframe::App for MetrajApp {
         });
 
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+            let dosya_adi = self
+                .mevcut_dosya_yolu
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Kaydedilmemis".to_string());
+
             ui.label(format!(
-                "📊 {} poz yüklü | 📋 {} kalemli metraj | 💰 Toplam: {:.2} TL",
+                "📁 {} {}| 📊 {} poz | 📋 {} kalem | 💰 {:.2} TL",
+                dosya_adi,
+                if self.degisiklik_var { "● " } else { "" },
                 self.poz_sayisi,
                 self.metraj_kalemleri.len(),
                 self.toplam_tutar()
@@ -290,11 +303,14 @@ impl MetrajApp {
 
         ui.horizontal(|ui| {
             ui.label("Metraj Adi:");
-            ui.add(
+            let resp = ui.add(
                 TextEdit::singleline(&mut self.metraj_adi)
                     .hint_text("Metraj adi girin")
                     .desired_width(250.0),
             );
+            if resp.changed() {
+                self.degisiklik_var = true;
+            }
         });
 
         ui.separator();
@@ -342,17 +358,26 @@ impl MetrajApp {
         ui.separator();
 
         ui.horizontal(|ui| {
-            if ui.button("📂 Metraj Yükle").clicked() {
+            if ui.button("📂 Aç (.mrj)").clicked() {
                 self.metraj_yukle_diyalog();
             }
-            if ui.button("💾 Kaydet").clicked() {
-                self.metraj_kaydet_diyalog();
+            let kaydet_label = if self.mevcut_dosya_yolu.is_some() {
+                "💾 Kaydet (Ctrl+S)"
+            } else {
+                "💾 Farklı Kaydet (.mrj)"
+            };
+            if ui.button(kaydet_label).clicked() {
+                self.metraj_kaydet();
             }
-            if ui.button("📊 Excel'e Aktar").clicked() {
+            if self.degisiklik_var {
+                ui.colored_label(Color32::YELLOW, "● Degisiklik var");
+            }
+            if ui.button("📊 Excel").clicked() {
                 self.metraj_excel_diyalog();
             }
             if ui.button("🗑 Temizle").clicked() {
                 self.metraj_kalemleri.clear();
+                self.degisiklik_var = true;
                 self.basarili_mesaj = "Metraj temizlendi.".to_string();
             }
         });
@@ -386,13 +411,11 @@ impl MetrajApp {
             return;
         }
 
-        // 8 sütun: #, Poz No, Açıklama, Birim, B.Fiyat, Miktar, Tutar, Sil
         egui::Grid::new("metraj_grid")
             .num_columns(8)
             .min_col_width(60.0)
             .striped(true)
             .show(ui, |ui: &mut egui::Ui| {
-                // Başlık satırı
                 ui.label(RichText::new("#").strong().size(12.0));
                 ui.label(RichText::new("Poz No").strong().size(12.0));
                 ui.label(RichText::new("Açiklama").strong().size(12.0));
@@ -408,7 +431,6 @@ impl MetrajApp {
 
                 for (idx, kalem) in self.metraj_kalemleri.iter_mut().enumerate() {
                     ui.label(format!("{}", idx + 1));
-
                     ui.label(RichText::new(&kalem.poz_no).size(11.0).monospace());
 
                     let kisa_tanim = if kalem.tanim.len() > 40 {
@@ -417,15 +439,11 @@ impl MetrajApp {
                         kalem.tanim.clone()
                     };
                     ui.label(RichText::new(kisa_tanim).size(11.0));
-
                     ui.label(&kalem.birim);
                     ui.label(format!("{:.2}", kalem.birim_fiyat));
 
-                    // Düzenlenebilir miktar
                     let mut miktar_str = format!("{:.2}", kalem.miktar);
-                    let resp = ui.add(
-                        TextEdit::singleline(&mut miktar_str).desired_width(70.0),
-                    );
+                    let resp = ui.add(TextEdit::singleline(&mut miktar_str).desired_width(70.0));
                     if resp.changed() {
                         if let Ok(yeni) = miktar_str.parse::<f64>() {
                             degisecek_miktar = Some((idx, yeni));
@@ -451,11 +469,13 @@ impl MetrajApp {
 
                 if let Some(idx) = silinecek {
                     self.metraj_kalemleri.remove(idx);
+                    self.degisiklik_var = true;
                 }
                 if let Some((idx, yeni_miktar)) = degisecek_miktar {
                     if idx < self.metraj_kalemleri.len() {
                         self.metraj_kalemleri[idx].miktar = yeni_miktar;
                         self.metraj_kalemleri[idx].tutar_guncelle();
+                        self.degisiklik_var = true;
                     }
                 }
             });
@@ -574,7 +594,6 @@ impl MetrajApp {
 
     fn kalem_ekle(&mut self) {
         if let Some(ref poz) = self.secili_poz {
-            // Miktar boşsa veya geçersizse 0.0 al, her zaman ekle
             let miktar = self
                 .yeni_miktar
                 .trim()
@@ -585,6 +604,7 @@ impl MetrajApp {
             let kalem_tutar = kalem.tutar;
             let kalem_bf = kalem.birim_fiyat;
             self.metraj_kalemleri.push(kalem);
+            self.degisiklik_var = true;
 
             if miktar == 0.0 {
                 self.basarili_mesaj = format!(
@@ -594,11 +614,7 @@ impl MetrajApp {
             } else {
                 self.basarili_mesaj = format!(
                     "{} eklendi ({} {} x {:.2} TL = {:.2} TL).",
-                    poz.poz_no,
-                    miktar,
-                    poz.birim,
-                    kalem_bf,
-                    kalem_tutar
+                    poz.poz_no, miktar, poz.birim, kalem_bf, kalem_tutar
                 );
             }
             self.yeni_miktar.clear();
@@ -682,39 +698,53 @@ impl MetrajApp {
         self.pdf_yukleniyor = false;
     }
 
-    fn metraj_kaydet_diyalog(&mut self) {
+    fn metraj_kaydet(&mut self) {
         let metraj = KayitliMetraj {
             ad: self.metraj_adi.clone(),
             kalemler: self.metraj_kalemleri.clone(),
             tarih: krono_tarih(),
         };
 
-        if let Some(dosya) = rfd::FileDialog::new()
-            .add_filter("Metraj JSON", &["json"])
-            .set_file_name(&format!("{}.json", self.metraj_adi))
-            .save_file()
-        {
-            match metraj_json_kaydet(&metraj, &dosya) {
+        if let Some(ref yol) = self.mevcut_dosya_yolu {
+            match metraj_json_kaydet(&metraj, yol) {
                 Ok(()) => {
-                    self.basarili_mesaj = format!("Metraj kaydedildi: {}", dosya.display());
+                    self.degisiklik_var = false;
+                    self.basarili_mesaj = format!("Kaydedildi: {}", yol.display());
                 }
                 Err(e) => self.hata_mesaji = format!("Kaydetme hatasi: {}", e),
+            }
+        } else {
+            if let Some(dosya) = rfd::FileDialog::new()
+                .add_filter("Metrajmatik Projesi", &["mrj"])
+                .set_file_name(&format!("{}.mrj", self.metraj_adi))
+                .save_file()
+            {
+                match metraj_json_kaydet(&metraj, &dosya) {
+                    Ok(()) => {
+                        self.mevcut_dosya_yolu = Some(dosya.clone());
+                        self.degisiklik_var = false;
+                        self.basarili_mesaj = format!("Kaydedildi: {}", dosya.display());
+                    }
+                    Err(e) => self.hata_mesaji = format!("Kaydetme hatasi: {}", e),
+                }
             }
         }
     }
 
     fn metraj_yukle_diyalog(&mut self) {
         if let Some(dosya) = rfd::FileDialog::new()
-            .add_filter("Metraj JSON", &["json"])
+            .add_filter("Metrajmatik Projesi", &["mrj", "json"])
             .pick_file()
         {
             match metraj_json_yukle(&dosya) {
                 Ok(metraj) => {
                     self.metraj_kalemleri = metraj.kalemler;
                     self.metraj_adi = metraj.ad;
-                    self.basarili_mesaj = format!("Metraj yüklendi: {}", dosya.display());
+                    self.mevcut_dosya_yolu = Some(dosya.clone());
+                    self.degisiklik_var = false;
+                    self.basarili_mesaj = format!("Acildi: {}", dosya.display());
                 }
-                Err(e) => self.hata_mesaji = format!("Yükleme hatasi: {}", e),
+                Err(e) => self.hata_mesaji = format!("Yukleme hatasi: {}", e),
             }
         }
     }
