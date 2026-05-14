@@ -1,8 +1,8 @@
 # 🏗 Metrajmatik - Yaklaşık Maliyet / Metraj Programı
 
-**Versiyon:** 0.1.0  
+**Versiyon:** 0.2.0  
 **Tarih:** Mayıs 2026  
-**Geliştirme:** Rust (egui/eframe GUI)
+**Teknoloji:** Rust (egui/eframe GUI)
 
 ---
 
@@ -11,30 +11,35 @@
 1. [Genel Bakış](#genel-bakış)
 2. [Sistem Gereksinimleri](#sistem-gereksinimleri)
 3. [Kurulum ve Çalıştırma](#kurulum-ve-çalıştırma)
-4. [Kullanım Kılavuzu](#kullanım-kılavuzu)
-   - [PDF Yükleme](#1-pdf-birim-fiyat-listesini-yükleme)
-   - [Poz Arama](#2-poz-arama)
+4. [Hızlı Başlangıç](#hızlı-başlangıç)
+5. [Kullanım Kılavuzu](#kullanım-kılavuzu)
+   - [Kitap Yöneticisi](#1-kitap-yöneticisi)
+   - [PDF Yükleme](#2-pdf-yükleme)
    - [Metraj Oluşturma](#3-metraj-oluşturma)
-   - [Metraj Yönetimi](#4-metraj-yönetimi)
-   - [Dışa Aktarma](#5-dışa-aktarma)
-5. [Proje Yapısı](#proje-yapısı)
-6. [Teknik Detaylar](#teknik-detaylar)
-7. [Derleme Talimatları](#derleme-talimatları)
+   - [Poz Arama](#4-poz-arama)
+   - [Metraj Yönetimi](#5-metraj-yönetimi)
+   - [Dışa Aktarma](#6-dışa-aktarma)
+6. [Kısayollar](#kısayollar)
+7. [Proje Yapısı](#proje-yapısı)
+8. [Teknik Detaylar](#teknik-detaylar)
+9. [Sık Sorulan Sorular](#sık-sorulan-sorular)
 
 ---
 
 ## Genel Bakış
 
-Metrajmatik, Çevre ve Şehircilik Bakanlığı güncel birim fiyat listelerini PDF'ten otomatik olarak okuyup veritabanına kaydeden, poz numarası ve açıklama ile hızlı arama yapabilen, kullanıcının metraj kalemlerini girip toplam yaklaşık maliyeti hesaplayabildiği bir masaüstü uygulamasıdır.
+Metrajmatik, birden fazla kurumun (Çevre Bakanlığı, Kültür Bakanlığı, İller Bankası, PTT vb.) aylık güncel birim fiyat listelerini PDF'ten otomatik okuyup veritabanına kaydeden, poz numarası ve açıklama ile hızlı arama yapabilen, kullanıcının metraj kalemlerini girip toplam yaklaşık maliyeti hesaplayabildiği profesyonel bir masaüstü uygulamasıdır.
 
 **Ana Özellikler:**
-- 📄 PDF birim fiyat listesini otomatik ayrıştırma
-- 🔍 Poz numarası ve açıklama ile anlık arama
-- 📋 Çoklu kalemli metraj tablosu
-- 💰 Otomatik tutar hesaplama
-- 💾 JSON ile metraj kaydetme/yükleme
-- 📊 Excel (.xlsx) dışa aktarma
-- 🗂 Kategori bazlı filtreleme
+- 📚 **Çoklu kitap desteği**: Birden fazla kurumun birim fiyat listelerini ayrı ayrı yönetin
+- 📅 **Yıl/Ay takibi**: Aylık güncellenen fiyatları dönemlere göre saklayın
+- 📄 **PDF otomatik ayrıştırma**: PDF'ten poz, tanım, birim ve fiyat bilgilerini otomatik çıkarın
+- 🔍 **Çift yönlü arama**: Poz numarası ve açıklama (tam metin) ile anlık arama
+- 📋 **Çoklu kalemli metraj**: Farklı kitaplardan pozları tek metrajda birleştirin
+- 💰 **Otomatik tutar**: Miktar girince anında hesaplama
+- 💾 **Proje kaydetme**: `.mrj` uzantılı dosyalarla çalışmalarınızı saklayın
+- 📊 **Excel çıktısı**: Formatlı Excel (.xlsx) raporu
+- ⌨️ **Klavye kısayolları**: Ctrl+S kaydet, Ctrl+O aç
 
 ---
 
@@ -43,7 +48,7 @@ Metrajmatik, Çevre ve Şehircilik Bakanlığı güncel birim fiyat listelerini 
 - **İşletim Sistemi:** Windows 10/11 (64-bit)
 - **RAM:** En az 512 MB
 - **Disk:** ~50 MB boş alan
-- **Bağımlılık:** Yok (tek .exe dosyası, portable)
+- **Bağımlılık:** Yok - tek `.exe` dosyası, taşınabilir
 
 ---
 
@@ -52,8 +57,10 @@ Metrajmatik, Çevre ve Şehircilik Bakanlığı güncel birim fiyat listelerini 
 ### Hazır Exe ile (Önerilen)
 
 1. `target/release/metrajmatik.exe` dosyasını istediğiniz klasöre kopyalayın
-2. `20206-05-BF.pdf` (veya kendi PDF'inizi) aynı klasöre veya üst klasöre koyun
+2. PDF dosyalarınızı aynı klasöre koyun (veya sonradan dosya seçici ile seçin)
 3. `metrajmatik.exe` dosyasına çift tıklayarak çalıştırın
+
+İlk çalıştırmada `metrajmatik_veriler.db` otomatik oluşturulur.
 
 ### Cargo ile (Geliştiriciler)
 
@@ -64,113 +71,189 @@ cargo run --release
 
 ---
 
+## Hızlı Başlangıç
+
+Uygulamayı ilk kez açtığınızda yapmanız gerekenler:
+
+1. **📚 Kitaplar** sekmesine tıklayın
+2. Kitap adı girin (örn: `Çevre ve Şehircilik Bakanlığı`)
+3. Yıl ve Ay seçin (örn: 2026 / 5)
+4. **➕ Kitap Ekle** butonuna tıklayın
+5. **📄 PDF Yükle** sekmesine geçin
+6. Hedef kitabı seçin
+7. PDF dosyasını seçip yükleyin
+8. **📋 Metraj** sekmesine geçin
+9. Kitap seçin, poz arayın, miktar girin, kalem ekleyin
+10. **Ctrl+S** ile kaydedin
+
+---
+
 ## Kullanım Kılavuzu
 
-Uygulama açıldığında iki sekme göreceksiniz: **📋 Metraj Tablosu** ve **📄 PDF Yükle**. Alt kısımda sürekli görünen bir durum çubuğu bulunur.
+Uygulama üç sekmeden oluşur. Üst menü çubuğundan sekmeler arasında geçiş yapabilirsiniz. Alt durum çubuğunda dosya adı, kaydedilmemiş değişiklik göstergesi (●), aktif kitap bilgisi ve toplam tutar görünür.
 
-### 1. PDF Birim Fiyat Listesini Yükleme
+### 1. Kitap Yöneticisi
 
-Bu adım, birim fiyat verilerini programa tanıtmak için gereklidir.
+**📚 Kitaplar** sekmesi, birim fiyat listelerini (kitapları) yönettiğiniz yerdir.
+
+#### Yeni Kitap Ekleme
+
+1. **Kitap Adı** alanına kurum adını yazın (örn: `Kültür Bakanlığı`)
+2. **Yıl** dropdown'ından dönemi seçin (2024-2028)
+3. **Ay** dropdown'ından ayı seçin (1-12)
+4. **➕ Kitap Ekle** butonuna tıklayın
+
+> 💡 **Neden Yıl/Ay?** Birim fiyatlar her ay güncellenir. Aynı kitabın farklı aylara ait fiyatlarını ayrı ayrı saklamak için yıl/ay seçimi zorunludur. Örneğin `Çevre Bakanlığı (5/2026)` ve `Çevre Bakanlığı (6/2026)` iki ayrı kitap girişidir.
+
+#### Kitap Listesi
+
+Eklediğiniz kitaplar tablo halinde listelenir:
+
+| ID | Kitap Adı | Yıl | Ay | Poz | Tarih | İşlem |
+|----|-----------|-----|----|-----|-------|-------|
+| 1 | Çevre ve Şehircilik | 2026 | 5 | 0 | 2026-05-14 | 🗑 |
+
+- **Kitap seçme**: Kitap adına tıklayarak aktif kitap yapabilirsiniz. Aktif kitap yeşil renkle vurgulanır.
+- **Kitap silme**: 🗑 butonu ile kitabı tüm pozlarıyla birlikte silebilirsiniz.
+- **Poz sayısı**: O kitaba yüklenen poz sayısını gösterir.
+
+#### Kitap Seçme ve Kullanma
+
+Bir kitabı seçtiğinizde:
+- **📋 Metraj** sekmesinde sadece o kitabın pozları aranır
+- **📄 PDF Yükle** sekmesinde PDF o kitaba yüklenir
+
+"TÜM KİTAPLAR" seçeneği ile tüm kitaplarda arama yapabilirsiniz.
+
+---
+
+### 2. PDF Yükleme
+
+**📄 PDF Yükle** sekmesi, birim fiyat PDF'lerini kitaplara yüklemek içindir.
 
 **Adımlar:**
-1. **📄 PDF Yükle** sekmesine tıklayın
-2. İki seçeneğiniz var:
-   - **Hızlı Yükle:** Eğer `20206-05-BF.pdf` dosyası programla aynı veya üst klasördeyse, yeşil butona tıklayarak doğrudan yükleyebilirsiniz
-   - **Dosya Seç:** Farklı bir PDF için "📂 PDF Dosyası Seç ve Yükle" butonuna tıklayın ve PDF'inizi seçin
-3. Yükleme sırasında bir spinner animasyonu ve durum mesajları göreceksiniz
-4. Başarılı yükleme sonrası "✅ Başarıyla X poz yüklendi!" mesajını alacaksınız
+1. **Hedef Kitap** dropdown'ından yükleme yapacağınız kitabı seçin
+   - Kitaplar `Ad (Ay/Yıl)` formatında listelenir
+   - Kitap yoksa önce Kitap Yöneticisi'nden ekleme yapmalısınız
+2. **📂 PDF Dosyası Seç ve Yükle** butonuna tıklayın
+3. PDF dosyanızı seçin
+4. Yükleme durumu ekranda gösterilir
+5. Başarılı yükleme sonrası kitabın poz sayısı güncellenir
+
+**Hızlı Yükleme:**
+- Eğer `20206-05-BF.pdf` dosyası program klasöründeyse, doğrudan "Hızlı Yükle" butonu ile yükleyebilirsiniz
 
 **Desteklenen PDF Formatı:**
 - Çevre ve Şehircilik Bakanlığı güncel birim fiyat listeleri
 - Poz No: `XX.XXX.XXXX` formatında
 - Fiyat: `X.XXX,XX` veya `XXX,XX` formatında TL
 
-> ⚠️ **Not:** Farklı formatlardaki PDF'lerde ayrıştırma hataları olabilir. Bu durumda PDF parser regex desenleri güncellenmelidir.
-
----
-
-### 2. Poz Arama
-
-PDF yüklendikten sonra **📋 Metraj Tablosu** sekmesine geçin. Sol panelde arama bölümü bulunur.
-
-#### Poz No ile Arama
-
-1. **"Poz No"** alanına poz numarasını yazmaya başlayın (örn: `15.100`)
-2. Yazdıkça anlık olarak eşleşen pozlar listelenecektir
-3. Listeden bir poza tıklayarak seçin
-4. Seçili pozun detayları (açıklama, birim, fiyat, kategori) altta görünecektir
-
-#### Açıklama ile Arama
-
-1. **"Açıklama"** alanına anahtar kelime yazın (örn: `beton`, `tuğla`, `kazı`)
-2. FTS5 tam metin arama motoru ilgili tüm pozları bulur
-3. Sonuçlara tıklayarak poz seçebilirsiniz
-
-#### Kategori Filtresi
-
-1. **"Kategori"** dropdown menüsünden bir kategori seçin
-2. O kategorideki tüm pozlar listelenecektir
-3. "TÜMÜ" seçeneği ile filtreyi kaldırabilirsiniz
-
-> 💡 **İpucu:** Her pozun üzerine fare ile gelerek (hover) tam açıklamasını tooltip olarak görebilirsiniz.
-
-> ⚠️ **Önemli:** Fiyatı `---` (formül) olarak görünen pozlar metraja eklenemez. Bunlar genellikle derinlik zammı gibi formül içeren özel pozlardır.
+> ⚠️ Aynı kitap+ay+yıl kombinasyonuna tekrar PDF yüklerseniz, eski pozlar silinip yenileri eklenir.
 
 ---
 
 ### 3. Metraj Oluşturma
 
-Poz seçtikten sonra sağ panelde metraj tablosuna kalem ekleyebilirsiniz.
+**📋 Metraj** sekmesi, asıl çalışma alanınızdır. İki panele ayrılır:
 
-**Adımlar:**
-1. Sol panelden bir poz seçin (veya doğrudan **"Poz No"** alanına yazın)
-2. Seçili pozun bilgileri otomatik olarak "Poz No" alanına ve alt kısma gelecektir
-3. **"Miktar"** alanına miktarı girin (örn: `150.5`)
-4. **"➕ Kalem Ekle"** butonuna tıklayın
-5. Kalem metraj tablosuna eklenecek ve toplam tutar güncellenecektir
+#### Sol Panel - Poz Arama
 
-**Metraj Tablosu Özellikleri:**
-- Her kalem için: Sıra No, Poz No, Açıklama, Birim, Birim Fiyat, **Miktar** (düzenlenebilir), Tutar
-- Miktar hücresine tıklayıp değiştirebilirsiniz, tutar otomatik güncellenir
-- **✕** butonu ile kalem silebilirsiniz
-- En altta **GENEL TOPLAM** canlı olarak görünür
+Üst kısımda **Kitap seçici** bulunur. Buradan hangi kitapta arama yapacağınızı seçersiniz.
+
+**Poz No ile Arama:**
+1. **Poz No** alanına poz numarasının başlangıcını yazın (örn: `15.100`)
+2. Anlık olarak eşleşen pozlar listelenir
+3. Listeden bir poza tıklayarak seçin
+4. Seçili pozun detayları altta görünür
+
+**Açıklama ile Arama:**
+1. **Açıklama** alanına anahtar kelime yazın (örn: `beton`, `tuğla`, `kazı`)
+2. FTS5 tam metin arama motoru ilgili tüm pozları bulur
+
+**Kategori Filtresi:**
+- Kategori dropdown'ından belirli bir kategorideki pozları listeleyin
+
+> 💡 Arama sonuçlarında her pozun hangi **Ay/Yıl** dönemine ait olduğu gösterilir: `15.100.1001 | m³ | 280.21 | 5/2026`
+
+#### Sağ Panel - Metraj Tablosu
+
+**Kalem Ekleme:**
+1. Sol panelden bir poz seçin
+2. **Miktar** alanına miktar girin (veya boş bırakın)
+3. **➕ Kalem Ekle** butonuna tıklayın
+4. Kalem metraj tablosuna eklenir
+
+> 💡 Miktarı boş bırakırsanız kalem 0.00 miktar ile eklenir. Tablodaki miktar hücresine tıklayarak sonradan girebilirsiniz.
+
+**Metraj Tablosu Sütunları:**
+
+| # | Kitap | Poz No | Açıklama | Birim | B.Fiyat | Miktar | Tutar | ✕ |
+|---|-------|--------|----------|-------|---------|--------|-------|---|
+
+- **Kitap**: Kalemin hangi kitaptan alındığını gösterir
+- **Miktar**: Düzenlenebilir hücre - tıklayıp değiştirebilirsiniz, tutar otomatik güncellenir
+- **Tutar**: Otomatik hesaplanır (Birim Fiyat × Miktar)
+- **✕**: Kalemi siler
 
 ---
 
-### 4. Metraj Yönetimi
+### 4. Poz Arama (Detaylı)
 
-Sağ paneldeki butonlarla metrajınızı yönetebilirsiniz:
+**Seçili Poz Bilgileri:**
+Poz seçtiğinizde altta detaylı bilgi kartı görünür:
+- **Poz No**: Poz numarası
+- **Kitap**: Hangi kitaptan geldiği (Ay/Yıl ile)
+- **Açıklama**: Tam tanım metni
+- **Birim**: m³, m², Ton, Kg, Ad, m
+- **Birim Fiyat**: TL cinsinden (formül içeren pozlar için uyarı)
+- **Kategori**: Pozun ait olduğu iş kategorisi
+
+> ⚠️ Fiyatı `---` (formül) olarak görünen pozlar metraja eklenemez. Bunlar derinlik zammı gibi formül içeren özel pozlardır.
+
+**Hover (üzerine gelme) Bilgisi:**
+Arama sonuçlarında pozun üzerine fare ile geldiğinizde tam açıklama metni tooltip olarak görünür.
+
+---
+
+### 5. Metraj Yönetimi
+
+Sağ paneldeki butonlar:
 
 | Buton | İşlev |
 |-------|-------|
-| 📂 **Metraj Yükle** | Daha önce kaydettiğiniz bir JSON metraj dosyasını açar |
-| 💾 **Kaydet** | Mevcut metrajı JSON dosyası olarak kaydeder |
-| 📊 **Excel'e Aktar** | Metrajı formatlı Excel (.xlsx) dosyasına aktarır |
-| 🗑 **Temizle** | Tüm metraj kalemlerini siler (onay ister) |
+| 📂 **Aç (.mrj)** | Kayıtlı metraj dosyasını açar |
+| 💾 **Kaydet (Ctrl+S)** | Mevcut dosyaya kaydeder veya ilk kayıtta "Farklı Kaydet" olarak çalışır |
+| ● | Sarı nokta - kaydedilmemiş değişiklik göstergesi |
+| 📊 **Excel** | Metrajı Excel (.xlsx) dosyasına aktarır |
+| 🗑 **Temizle** | Tüm metraj kalemlerini siler |
 
 **Metraj Adı:** Tablonun üst kısmındaki metraj adını değiştirebilirsiniz. Bu isim kaydetme ve Excel aktarma sırasında dosya adı olarak kullanılır.
 
+**Kaydedilmemiş Değişiklik Takibi:**
+- Kalem ekleme, silme, miktar değiştirme veya metraj adı değişikliğinde sarı ● işareti çıkar
+- Kaydettikten sonra ● kaybolur
+- Durum çubuğunda ve butonların yanında görünür
+
 ---
 
-### 5. Dışa Aktarma
+### 6. Dışa Aktarma
 
-#### Excel Aktarımı (.xlsx)
+#### Excel (.xlsx)
 
 Excel dosyası şu formatta oluşturulur:
 
 | Sıra No | Poz No | Açıklama | Birim | Birim Fiyat (TL) | Miktar | Tutar (TL) |
 |---------|--------|----------|-------|------------------|--------|------------|
 | 1 | 15.100.1001 | ... | Ton | 280,21 | 10,00 | 2.802,10 |
-| ... | ... | ... | ... | ... | ... | ... |
 | | | | | | **GENEL TOPLAM** | **X.XXX,XX** |
 
 - Başlık ve sütunlar renklendirilmiş ve formatlanmıştır
 - Sayısal değerler binlik ayraçlı ve 2 ondalıklıdır
 - Genel toplam yeşil zeminli, beyaz yazılıdır
 
-#### JSON Kaydetme
+#### Proje Kaydetme (.mrj)
 
-Metrajınızı `.json` formatında kaydedip daha sonra yükleyebilirsiniz:
+Metrajınızı `.mrj` uzantılı JSON formatında kaydedebilirsiniz. Dosya içeriği:
 ```json
 {
   "ad": "Ornek Metraj",
@@ -178,15 +261,27 @@ Metrajınızı `.json` formatında kaydedip daha sonra yükleyebilirsiniz:
   "kalemler": [
     {
       "poz_no": "15.100.1001",
-      "tanim": "1 ton her cins çimento...",
+      "tanim": "1 ton her cins cimento...",
       "birim": "Ton",
       "birim_fiyat": 280.21,
       "miktar": 10.0,
-      "tutar": 2802.10
+      "tutar": 2802.10,
+      "kitap_adi": "Cevre ve Sehircilik"
     }
   ]
 }
 ```
+
+> 💡 `.mrj` dosyaları aslında JSON formatındadır. Eski `.json` dosyalarınızı da açabilirsiniz.
+
+---
+
+## Kısayollar
+
+| Kısayol | İşlev |
+|---------|-------|
+| **Ctrl+S** | Metrajı kaydet (mevcut dosyaya veya farklı kaydet) |
+| **Ctrl+O** | Metraj dosyası aç |
 
 ---
 
@@ -195,16 +290,17 @@ Metrajınızı `.json` formatında kaydedip daha sonra yükleyebilirsiniz:
 ```
 metrajmatik/
 ├── Cargo.toml              # Rust bağımlılıkları
-├── doc.md                  # Bu doküman
+├── doc.md                  # Kullanım kılavuzu (bu dosya)
+├── metrajmatik_veriler.db  # SQLite veritabanı (otomatik oluşur)
 ├── src/
-│   ├── main.rs             # Uygulama giriş noktası
-│   ├── app.rs              # egui/eframe UI ve uygulama durumu
-│   ├── models.rs           # Veri modelleri (Poz, MetrajKalemi, KayitliMetraj)
-│   ├── pdf_parser.rs       # PDF metin çıkarma ve poz ayrıştırma motoru
-│   ├── database.rs         # SQLite + FTS5 veritabanı işlemleri
+│   ├── main.rs             # Uygulama giriş noktası (1400x800 pencere)
+│   ├── app.rs              # Tüm UI ve uygulama durumu
+│   ├── models.rs           # Veri modelleri (Poz, Kitap, MetrajKalemi)
+│   ├── pdf_parser.rs       # PDF metin çıkarma ve poz ayrıştırma
+│   ├── database.rs         # SQLite + FTS5 veritabanı (kitaplar, pozlar)
 │   └── export.rs           # Excel (.xlsx) ve JSON dışa/içe aktarma
 └── target/release/
-    └── metrajmatik.exe     # Derlenmiş çalıştırılabilir dosya
+    └── metrajmatik.exe     # Tek .exe, kurulum gerektirmez
 ```
 
 ---
@@ -216,32 +312,46 @@ metrajmatik/
 | Teknoloji | Sürüm | Amaç |
 |-----------|-------|------|
 | **Rust** | 1.85+ | Programlama dili |
-| **egui/eframe** | 0.31 | Modern GUI framework |
-| **rusqlite** | 0.33 | SQLite veritabanı (gömülü) |
+| **egui/eframe** | 0.31 | Modern anlık GUI framework |
+| **rusqlite** | 0.33 | Gömülü SQLite veritabanı |
 | **pdf-extract** | 0.7 | PDF metin çıkarma |
 | **regex** | 1 | Poz/fiyat ayrıştırma (regex) |
 | **rust_xlsxwriter** | 0.83 | Excel dosyası oluşturma |
-| **serde/serde_json** | 1 | JSON serileştirme |
+| **serde_json** | 1 | JSON serileştirme (.mrj dosyaları) |
 | **rfd** | 0.15 | Dosya seçim diyalogları |
 
 ### Veritabanı Şeması
 
 ```sql
--- Ana poz tablosu
+-- Kitap tablosu
+CREATE TABLE kitaplar (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ad TEXT NOT NULL,
+    yil INTEGER NOT NULL DEFAULT 2026,
+    ay INTEGER NOT NULL DEFAULT 1,
+    tarih TEXT NOT NULL DEFAULT ''
+);
+
+-- Poz tablosu
 CREATE TABLE pozlar (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    poz_no TEXT UNIQUE NOT NULL,
+    poz_no TEXT NOT NULL,
     tanim TEXT NOT NULL,
     birim TEXT NOT NULL,
     fiyat REAL,
-    kategori TEXT NOT NULL
+    kategori TEXT NOT NULL,
+    kitap_id INTEGER NOT NULL,
+    kitap_adi TEXT NOT NULL DEFAULT '',
+    yil INTEGER NOT NULL DEFAULT 2026,
+    ay INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(poz_no, kitap_id, yil, ay),
+    FOREIGN KEY(kitap_id) REFERENCES kitaplar(id) ON DELETE CASCADE
 );
 
--- Tam metin arama (FTS5)
+-- Tam metin arama için FTS5 sanal tablosu
 CREATE VIRTUAL TABLE pozlar_fts USING fts5(
-    poz_no, tanim, birim, kategori,
-    content='pozlar',
-    content_rowid='id'
+    poz_no, tanim, birim, kategori, kitap_adi,
+    content='pozlar', content_rowid='id'
 );
 ```
 
@@ -254,42 +364,7 @@ CREATE VIRTUAL TABLE pozlar_fts USING fts5(
 5. Birim (m³, m², Ton, Kg, Ad, m) tanım ve fiyat arasından ayrıştırılır
 6. Kategori başlıkları anahtar kelime eşleştirme ile tespit edilir
 7. Sayfa numaraları ve başlık satırları filtrelenir
-
----
-
-## Derleme Talimatları
-
-### Gereksinimler
-
-- Rust toolchain (https://rustup.rs)
-- Windows 10/11
-
-### Geliştirme Derlemesi
-
-```powershell
-cd d:\metrajmatik\metrajmatik
-cargo build
-```
-
-### Release Derlemesi
-
-```powershell
-cargo build --release
-```
-
-Çıktı: `target/release/metrajmatik.exe`
-
-### Test
-
-```powershell
-cargo test
-```
-
-### Bağımlılıkları Güncelleme
-
-```powershell
-cargo update
-```
+8. Tüm pozlara `kitap_id`, `kitap_adi`, `yil`, `ay` bilgileri eklenir
 
 ---
 
@@ -298,14 +373,20 @@ cargo update
 ### PDF yüklenirken hata alıyorum
 PDF'in Çevre ve Şehircilik Bakanlığı formatında olduğundan emin olun. Farklı formatlardaki PDF'ler için `pdf_parser.rs` dosyasındaki regex desenleri güncellenmelidir.
 
-### Poz bulunamıyor
-- PDF'i yüklediğinizden emin olun (durum çubuğunda poz sayısı görünmelidir)
-- Poz numarasını doğru formatta yazın: `XX.XXX.XXXX`
-- Tam numarayı bilmiyorsanız ilk birkaç haneyi yazıp LIKE araması yapabilirsiniz (örn: `15.100`)
-- Alternatif olarak açıklama aramasını kullanın
+### Kitap ekle butonu çalışmıyor
+Kitap adı alanının boş olmadığından emin olun. Ayrıca programın yazma izni olduğundan ve `metrajmatik_veriler.db` dosyasının bulunduğu klasörde disk alanı olduğundan emin olun.
+
+### Aynı pozu farklı kitaplarda kullanabilir miyim?
+Evet. `UNIQUE(poz_no, kitap_id, yil, ay)` kısıtı sayesinde aynı poz numarası farklı kitaplarda veya farklı ay/yıl dönemlerinde bulunabilir.
+
+### Metrajda hangi kitaptan poz eklediğimi nasıl anlarım?
+Metraj tablosunda her kalemin **Kitap** sütunu vardır. Ayrıca arama sonuçlarında ve seçili poz detayında kitap bilgisi gösterilir.
 
 ### Excel aktarımında Türkçe karakter sorunu
 Uygulama çıktıları UTF-8 kodlamalıdır. Excel'de açarken UTF-8 olarak içe aktarın.
+
+### Eski .json dosyalarımı açabilir miyim?
+Evet. **📂 Aç (.mrj)** butonu hem `.mrj` hem de `.json` uzantılı dosyaları açar.
 
 ---
 
@@ -315,4 +396,4 @@ Bu proje özel kullanım için geliştirilmiştir.
 
 ---
 
-*Metrajmatik - Mayıs 2026*
+*Metrajmatik v0.2.0 - Mayıs 2026*
