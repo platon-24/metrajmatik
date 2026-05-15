@@ -34,6 +34,7 @@ pub struct MetrajApp {
     duzenleme_yil: u32,
     duzenleme_ay: u32,
     fiyat_guncelle_hedef: Option<Kitap>,
+    cift_tiklama_ekle: bool,
     pdf_durumu: String,
     pdf_yukleniyor: bool,
     aktif_sekme: Sekme,
@@ -64,6 +65,7 @@ impl Default for MetrajApp {
             yeni_kitap_adi: String::new(), yeni_kitap_yil: 2026, yeni_kitap_ay: 5,
             duzenlenen_kitap: None, duzenleme_adi: String::new(), duzenleme_yil: 2026, duzenleme_ay: 1,
             fiyat_guncelle_hedef: None,
+            cift_tiklama_ekle: false,
             pdf_durumu: String::new(), pdf_yukleniyor: false,
             aktif_sekme: Sekme::MetrajTablosu,
             hata_mesaji: String::new(), basarili_mesaj: String::new(),
@@ -292,21 +294,50 @@ impl MetrajApp {
         else if !self.poz_arama_metni.is_empty() || !self.aciklama_arama_metni.is_empty() { ui.label("Sonuc yok."); }
         else { ui.label(RichText::new("👆 Arama yapin").color(Color32::GRAY)); }
 
+        self.cift_tiklama_ekle = false;
         ScrollArea::vertical().max_height(ui.available_height() - 50.0).show(ui, |ui| {
             for poz in pl.iter() {
                 let secili = self.secili_poz.as_ref().map(|s| s.poz_no == poz.poz_no && s.kitap_id == poz.kitap_id).unwrap_or(false);
                 let fm = match poz.fiyat { Some(f) => format!("{:.2}", f), None => "---".into() };
                 let etiket = format!("{} | {} | {} | {}", poz.poz_no, poz.birim, fm, poz.kitap_adi);
-                let cevap = ui.selectable_label(secili, RichText::new(&etiket).size(11.0));
-                if cevap.clicked() { self.secili_poz = Some(poz.clone()); self.yeni_poz_no = poz.poz_no.clone(); }
-                cevap.on_hover_text(&format!("{}/{} | {}", poz.ay, poz.yil, poz.tanim));
+
+                // Manuel seçili satır çizimi - egui selectable_label renk sorununu aşmak için
+                let (rect, response) = ui.allocate_exact_size(
+                    Vec2::new(ui.available_width(), 18.0),
+                    egui::Sense::click(),
+                );
+                if secili {
+                    ui.painter().rect_filled(rect, 0.0, Color32::from_rgb(30, 100, 200));
+                }
+                let text_color = if secili { Color32::WHITE } else { ui.style().visuals.text_color() };
+                ui.painter().text(
+                    rect.left_center(),
+                    egui::Align2::LEFT_CENTER,
+                    &etiket,
+                    egui::FontId::proportional(11.0),
+                    text_color,
+                );
+                if response.clicked() {
+                    self.secili_poz = Some(poz.clone());
+                    self.yeni_poz_no = poz.poz_no.clone();
+                }
+                if response.double_clicked() {
+                    self.secili_poz = Some(poz.clone());
+                    self.yeni_poz_no = poz.poz_no.clone();
+                    self.yeni_miktar.clear();
+                    self.cift_tiklama_ekle = true;
+                }
+                response.on_hover_text(&format!("{}/{} | {}\nCift tikla: miktarsiz ekle", poz.ay, poz.yil, poz.tanim));
             }
         });
+        if self.cift_tiklama_ekle {
+            self.kalem_ekle();
+        }
         ui.separator();
 
         if let Some(ref poz) = self.secili_poz {
             ui.heading("📌 Secili Poz");
-            ui.colored_label(Color32::DARK_BLUE, format!("Poz No: {}", poz.poz_no));
+            ui.label(RichText::new(format!("Poz No: {}", poz.poz_no)).strong().size(13.0));
             ui.label(format!("Kitap: {} ({}/{})", poz.kitap_adi, poz.ay, poz.yil));
             ui.label(format!("Aciklama: {}", poz.tanim));
             ui.label(format!("Birim: {}", poz.birim));
@@ -434,7 +465,10 @@ impl MetrajApp {
         }
     }
     fn kalem_ekle(&mut self) {
-        if let Some(ref poz) = self.secili_poz { let m = self.yeni_miktar.trim().parse::<f64>().unwrap_or(0.0); let kalem = MetrajKalemi::yeni(poz, m); let t = kalem.tutar; let bf = kalem.birim_fiyat; self.metraj_kalemleri.push(kalem); self.degisiklik_var = true; self.basarili_mesaj = if m == 0.0 { format!("{} eklendi.", poz.poz_no) } else { format!("{} eklendi ({} {} x {:.2} = {:.2} TL).", poz.poz_no, m, poz.birim, bf, t) }; self.yeni_miktar.clear(); self.hata_mesaji.clear(); }
+        if let Some(ref poz) = self.secili_poz { let m = self.yeni_miktar.trim().parse::<f64>().unwrap_or(0.0); let kalem = MetrajKalemi::yeni(poz, m); let t = kalem.tutar; let bf = kalem.birim_fiyat; self.metraj_kalemleri.push(kalem);
+            // Metrajı poz numarasına göre sırala (yeniden eklemede de sıralı kalır)
+            self.metraj_kalemleri.sort_by(|a, b| a.poz_no.cmp(&b.poz_no));
+            self.degisiklik_var = true; self.basarili_mesaj = if m == 0.0 { format!("{} eklendi.", poz.poz_no) } else { format!("{} eklendi ({} {} x {:.2} = {:.2} TL).", poz.poz_no, m, poz.birim, bf, t) }; self.yeni_miktar.clear(); self.hata_mesaji.clear(); }
         else { self.hata_mesaji = "Once bir poz secin.".into(); }
     }
     fn kategorileri_yukle(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(k) = db.kategoriler(kid) { self.kategoriler = k; } } }
