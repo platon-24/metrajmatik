@@ -45,7 +45,7 @@ impl MetrajKalemi {
             birim_fiyat,
             miktar,
             tutar,
-            kitap_adi: poz.kitap_adi.clone(),
+            kitap_adi: format!("{} ({}/{})", poz.kitap_adi, poz.ay, poz.yil),
         }
     }
 

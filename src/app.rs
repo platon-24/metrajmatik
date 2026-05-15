@@ -28,6 +28,12 @@ pub struct MetrajApp {
     yeni_kitap_adi: String,
     yeni_kitap_yil: u32,
     yeni_kitap_ay: u32,
+    // Kitap düzenleme
+    duzenlenen_kitap: Option<Kitap>,
+    duzenleme_adi: String,
+    duzenleme_yil: u32,
+    duzenleme_ay: u32,
+    fiyat_guncelle_hedef: Option<Kitap>,
     pdf_durumu: String,
     pdf_yukleniyor: bool,
     aktif_sekme: Sekme,
@@ -56,6 +62,8 @@ impl Default for MetrajApp {
             poz_arama_metni: String::new(), arama_sonuclari: vec![], secili_poz: None,
             aciklama_arama_metni: String::new(), yeni_poz_no: String::new(), yeni_miktar: String::new(),
             yeni_kitap_adi: String::new(), yeni_kitap_yil: 2026, yeni_kitap_ay: 5,
+            duzenlenen_kitap: None, duzenleme_adi: String::new(), duzenleme_yil: 2026, duzenleme_ay: 1,
+            fiyat_guncelle_hedef: None,
             pdf_durumu: String::new(), pdf_yukleniyor: false,
             aktif_sekme: Sekme::MetrajTablosu,
             hata_mesaji: String::new(), basarili_mesaj: String::new(),
@@ -69,16 +77,63 @@ impl eframe::App for MetrajApp {
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::S)) { self.metraj_kaydet(); }
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::O)) { self.metraj_yukle_diyalog(); }
 
+        // Kitap düzenleme modal'ı
+        if self.duzenlenen_kitap.is_some() {
+            egui::Window::new("✏️ Kitap Düzenle")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.label("Kitap Adı:");
+                    ui.add(TextEdit::singleline(&mut self.duzenleme_adi).desired_width(300.0));
+                    ui.horizontal(|ui| {
+                        ui.label("Yıl:");
+                        egui::ComboBox::from_id_salt("duz_yil").selected_text(format!("{}", self.duzenleme_yil)).width(70.0).show_ui(ui, |ui| {
+                            for y in [2024u32, 2025, 2026, 2027, 2028] {
+                                if ui.selectable_label(self.duzenleme_yil == y, format!("{}", y)).clicked() { self.duzenleme_yil = y; }
+                            }
+                        });
+                        ui.label("Ay:");
+                        egui::ComboBox::from_id_salt("duz_ay").selected_text(format!("{}", self.duzenleme_ay)).width(50.0).show_ui(ui, |ui| {
+                            for a in 1u32..=12 {
+                                if ui.selectable_label(self.duzenleme_ay == a, format!("{}", a)).clicked() { self.duzenleme_ay = a; }
+                            }
+                        });
+                    });
+                    ui.add_space(5.0);
+                    ui.label("⚠ Yıl/Ay değişirse tüm pozlardaki yıl/ay da güncellenir.");
+                    ui.add_space(5.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("✅ Kaydet").clicked() {
+                            if let Some(ref db) = self.db {
+                                let kitap_id = self.duzenlenen_kitap.as_ref().unwrap().id;
+                                let _ = db.kitap_guncelle(kitap_id, &self.duzenleme_adi, self.duzenleme_yil, self.duzenleme_ay);
+                                self.basarili_mesaj = format!("'{}' güncellendi.", self.duzenleme_adi);
+                                self.duzenlenen_kitap = None;
+                                self.kitaplari_yenile();
+                                // Seçili kitabı da güncelle
+                                if let Some(ref mut sk) = self.secili_kitap {
+                                    if sk.id == kitap_id { sk.ad = self.duzenleme_adi.clone(); sk.yil = self.duzenleme_yil; sk.ay = self.duzenleme_ay; }
+                                }
+                            }
+                        }
+                        if ui.button("❌ İptal").clicked() {
+                            self.duzenlenen_kitap = None;
+                        }
+                    });
+                });
+        }
+
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.style_mut().visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(44, 62, 80);
                 ui.style_mut().visuals.widgets.active.weak_bg_fill = Color32::from_rgb(52, 73, 94);
                 ui.style_mut().visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(52, 73, 94);
 
-                let baslik = if let Some(ref yol) = self.mevcut_dosya_yolu {
+                let bl = if let Some(ref yol) = self.mevcut_dosya_yolu {
                     format!("🏗 METRAJMATIK - {}", yol.file_name().unwrap().to_string_lossy())
                 } else { "🏗 METRAJMATIK".to_string() };
-                ui.label(RichText::new(baslik).color(Color32::WHITE).size(18.0).strong());
+                ui.label(RichText::new(bl).color(Color32::WHITE).size(18.0).strong());
                 ui.separator();
 
                 let sekmeler = [Sekme::MetrajTablosu, Sekme::KitapYoneticisi, Sekme::PdfYukle];
@@ -116,33 +171,27 @@ impl eframe::App for MetrajApp {
 impl MetrajApp {
     // ==================== KITAP YONETICISI ====================
     fn render_kitap_yoneticisi(&mut self, ui: &mut Ui) {
-        ui.heading("📚 Kitap Yöneticisi (Birim Fiyat Listeleri)");
+        ui.heading("📚 Kitap Yöneticisi");
         ui.separator();
 
+        // Yeni kitap ekleme
         ui.horizontal(|ui| {
             ui.label("Kitap Adı:");
-            ui.add(TextEdit::singleline(&mut self.yeni_kitap_adi).hint_text("örn: Cevre ve Sehircilik").desired_width(250.0));
+            ui.add(TextEdit::singleline(&mut self.yeni_kitap_adi).hint_text("örn: Cevre ve Sehircilik").desired_width(220.0));
             ui.label("Yıl:");
             egui::ComboBox::from_id_salt("yil_combo").selected_text(format!("{}", self.yeni_kitap_yil)).width(70.0).show_ui(ui, |ui| {
-                for y in [2024u32, 2025, 2026, 2027, 2028] {
-                    if ui.selectable_label(self.yeni_kitap_yil == y, format!("{}", y)).clicked() { self.yeni_kitap_yil = y; }
-                }
+                for y in [2024u32, 2025, 2026, 2027, 2028] { if ui.selectable_label(self.yeni_kitap_yil == y, format!("{}", y)).clicked() { self.yeni_kitap_yil = y; } }
             });
             ui.label("Ay:");
             egui::ComboBox::from_id_salt("ay_combo").selected_text(format!("{}", self.yeni_kitap_ay)).width(50.0).show_ui(ui, |ui| {
-                for a in 1u32..=12 {
-                    if ui.selectable_label(self.yeni_kitap_ay == a, format!("{}", a)).clicked() { self.yeni_kitap_ay = a; }
-                }
+                for a in 1u32..=12 { if ui.selectable_label(self.yeni_kitap_ay == a, format!("{}", a)).clicked() { self.yeni_kitap_ay = a; } }
             });
-            if ui.button("➕ Kitap Ekle").clicked() {
+            if ui.button("➕ Ekle").clicked() {
                 let ad = self.yeni_kitap_adi.trim().to_string();
-                if ad.is_empty() { self.hata_mesaji = "Lutfen bir kitap adi girin.".into(); }
+                if ad.is_empty() { self.hata_mesaji = "Kitap adi girin.".into(); }
                 else if let Some(ref db) = self.db {
                     match db.kitap_ekle(&ad, self.yeni_kitap_yil, self.yeni_kitap_ay) {
-                        Ok(_id) => {
-                            self.basarili_mesaj = format!("'{}' ({}/{}) eklendi.", ad, self.yeni_kitap_ay, self.yeni_kitap_yil);
-                            self.yeni_kitap_adi.clear(); self.kitaplari_yenile();
-                        }
+                        Ok(_) => { self.basarili_mesaj = format!("'{}' ({}/{}) eklendi.", ad, self.yeni_kitap_ay, self.yeni_kitap_yil); self.yeni_kitap_adi.clear(); self.kitaplari_yenile(); }
                         Err(e) => self.hata_mesaji = format!("{}", e),
                     }
                 } else { self.hata_mesaji = "Veritabani acik degil!".into(); }
@@ -151,15 +200,14 @@ impl MetrajApp {
 
         ui.add_space(10.0); ui.separator();
         ui.label(RichText::new("Yüklü Kitaplar:").strong().size(14.0)); ui.add_space(5.0);
-
         if self.kitaplar.is_empty() { ui.label("Henuz kitap yok."); return; }
 
         let kitaplar_snapshot = self.kitaplar.clone();
-        egui::Grid::new("kitap_grid").num_columns(7).min_col_width(60.0).striped(true).show(ui, |ui: &mut egui::Ui| {
+        egui::Grid::new("kitap_grid").num_columns(8).min_col_width(50.0).striped(true).show(ui, |ui: &mut egui::Ui| {
             ui.label(RichText::new("ID").strong()); ui.label(RichText::new("Kitap Adı").strong());
             ui.label(RichText::new("Yıl").strong()); ui.label(RichText::new("Ay").strong());
             ui.label(RichText::new("Poz").strong()); ui.label(RichText::new("Tarih").strong());
-            ui.label(RichText::new("").strong());
+            ui.label(RichText::new("Düzenle").strong()); ui.label(RichText::new("Sil").strong());
             ui.end_row();
 
             for kitap in &kitaplar_snapshot {
@@ -174,6 +222,13 @@ impl MetrajApp {
                 ui.label(format!("{}", kitap.ay));
                 ui.label(format!("{}", kitap.poz_sayisi));
                 ui.label(&kitap.tarih);
+                // Düzenle butonu
+                if ui.button("✏️").clicked() {
+                    self.duzenlenen_kitap = Some(kitap.clone());
+                    self.duzenleme_adi = kitap.ad.clone();
+                    self.duzenleme_yil = kitap.yil;
+                    self.duzenleme_ay = kitap.ay;
+                }
                 if ui.button(RichText::new("🗑").color(Color32::RED)).clicked() {
                     if let Some(ref db) = self.db {
                         if db.kitap_sil(kitap.id).is_ok() {
@@ -241,10 +296,10 @@ impl MetrajApp {
             for poz in pl.iter() {
                 let secili = self.secili_poz.as_ref().map(|s| s.poz_no == poz.poz_no && s.kitap_id == poz.kitap_id).unwrap_or(false);
                 let fm = match poz.fiyat { Some(f) => format!("{:.2}", f), None => "---".into() };
-                let etiket = format!("{} | {} | {} | {}/{}", poz.poz_no, poz.birim, fm, poz.ay, poz.yil);
+                let etiket = format!("{} | {} | {} | {}", poz.poz_no, poz.birim, fm, poz.kitap_adi);
                 let cevap = ui.selectable_label(secili, RichText::new(&etiket).size(11.0));
                 if cevap.clicked() { self.secili_poz = Some(poz.clone()); self.yeni_poz_no = poz.poz_no.clone(); }
-                cevap.on_hover_text(&poz.tanim);
+                cevap.on_hover_text(&format!("{}/{} | {}", poz.ay, poz.yil, poz.tanim));
             }
         });
         ui.separator();
@@ -273,6 +328,29 @@ impl MetrajApp {
             ui.add(TextEdit::singleline(&mut self.yeni_miktar).hint_text("0.00").desired_width(80.0));
             if ui.button(RichText::new("➕ Kalem Ekle").color(Color32::WHITE)).highlight().clicked() { self.kalem_ekle(); }
         });
+        // Fiyat güncelleme - hedef kitap seçerek tüm kalemleri yeni fiyatlarla güncelle
+        if !self.metraj_kalemleri.is_empty() && self.kitaplar.len() > 1 {
+            ui.horizontal(|ui| {
+                ui.label("🔄 Toplu Fiyat Güncelle:");
+                let hedef_metni = self.fiyat_guncelle_hedef.as_ref()
+                    .map(|k| format!("{} ({}/{})", k.ad, k.ay, k.yil))
+                    .unwrap_or_else(|| "Hedef kitap seçin".to_string());
+                egui::ComboBox::from_id_salt("fiyat_guncelle_combo")
+                    .selected_text(&hedef_metni)
+                    .width(300.0)
+                    .show_ui(ui, |ui| {
+                        for k in &self.kitaplar.clone() {
+                            if ui.selectable_label(false, format!("{} ({}/{})", k.ad, k.ay, k.yil)).clicked() {
+                                self.fiyat_guncelle_hedef = Some(k.clone());
+                            }
+                        }
+                    });
+                if ui.button("✅ Güncelle").clicked() {
+                    self.fiyatlari_guncelle();
+                }
+            });
+            ui.add_space(2.0);
+        }
         if let Some(ref poz) = self.secili_poz {
             if let Some(f) = poz.fiyat { let tt = self.yeni_miktar.parse::<f64>().unwrap_or(0.0) * f; ui.label(format!("{} | {} TL x {} = {:.2} TL", poz.tanim, f, self.yeni_miktar, tt)); }
         }
@@ -293,7 +371,7 @@ impl MetrajApp {
     fn render_metraj_kalem_tablosu(&mut self, ui: &mut Ui) {
         if self.metraj_kalemleri.is_empty() { ui.label(RichText::new("Henuz kalem yok.").color(Color32::GRAY).size(13.0)); return; }
         egui::Grid::new("metraj_grid").num_columns(9).min_col_width(50.0).striped(true).show(ui, |ui: &mut egui::Ui| {
-            ui.label(RichText::new("#").strong().size(12.0)); ui.label(RichText::new("Kitap").strong().size(12.0));
+            ui.label(RichText::new("#").strong().size(12.0)); ui.label(RichText::new("Kitap (Ay/Yil)").strong().size(12.0));
             ui.label(RichText::new("Poz No").strong().size(12.0)); ui.label(RichText::new("Aciklama").strong().size(12.0));
             ui.label(RichText::new("Birim").strong().size(12.0)); ui.label(RichText::new("B.Fiyat").strong().size(12.0));
             ui.label(RichText::new("Miktar").strong().size(12.0)); ui.label(RichText::new("Tutar").strong().size(12.0));
@@ -302,7 +380,8 @@ impl MetrajApp {
 
             let mut sil: Option<usize> = None; let mut deg: Option<(usize, f64)> = None;
             for (idx, kalem) in self.metraj_kalemleri.iter_mut().enumerate() {
-                ui.label(format!("{}", idx + 1)); ui.label(RichText::new(&kalem.kitap_adi).size(10.0));
+                ui.label(format!("{}", idx + 1));
+                ui.label(RichText::new(format!("{}", &kalem.kitap_adi)).size(10.0));
                 ui.label(RichText::new(&kalem.poz_no).size(11.0).monospace());
                 let kisa = if kalem.tanim.len() > 35 { format!("{}...", &kalem.tanim[..32]) } else { kalem.tanim.clone() };
                 ui.label(RichText::new(kisa).size(11.0)); ui.label(&kalem.birim); ui.label(format!("{:.2}", kalem.birim_fiyat));
@@ -321,9 +400,7 @@ impl MetrajApp {
     fn render_pdf_yukle(&mut self, ui: &mut Ui) {
         ui.heading("📄 PDF Birim Fiyat Listesi Yükle"); ui.separator();
         ui.label("PDF'i hangi kitaba yukleyeceginizi secin.");
-
         if self.kitaplar.is_empty() { ui.colored_label(Color32::RED, "⚠ Once Kitap Yoneticisi'nden kitap ekleyin!"); return; }
-
         ui.add_space(5.0);
         ui.horizontal(|ui| {
             ui.label("Hedef Kitap:");
@@ -335,32 +412,20 @@ impl MetrajApp {
         ui.add_space(10.0);
         if self.pdf_yukleniyor { ui.spinner(); ui.label("PDF isleniyor..."); }
         else if ui.button(RichText::new("📂 PDF Dosyasi Sec ve Yukle").size(14.0)).clicked() { self.pdf_sec_ve_yukle(); }
-
         if !self.pdf_durumu.is_empty() { ui.add_space(5.0); ui.label(RichText::new(&self.pdf_durumu).color(Color32::GREEN)); }
-
         ui.separator(); ui.label("Hizli yukleme:");
         let alt = PathBuf::from("20206-05-BF.pdf");
         if alt.exists() && ui.button("📄 20206-05-BF.pdf").clicked() { self.pdf_yukle(alt); }
     }
 
-    // ==================== YARDIMCI METODLAR ====================
+    // ==================== YARDIMCI ====================
     fn toplam_tutar(&self) -> f64 { self.metraj_kalemleri.iter().map(|k| k.tutar).sum() }
-
     fn kitaplari_yenile(&mut self) { if let Some(ref db) = self.db { if let Ok(k) = db.kitaplari_listele() { self.kitaplar = k; } } }
-
-    fn poz_no_ara(&mut self) {
-        if self.poz_arama_metni.is_empty() { self.arama_sonuclari.clear(); return; }
-        if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(s) = db.poz_no_ara(&self.poz_arama_metni, kid) { self.arama_sonuclari = s; } }
-    }
-
-    fn aciklama_ara(&mut self) {
-        if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(s) = db.tam_metin_ara(&self.aciklama_arama_metni, kid) { self.arama_sonuclari = s; } }
-    }
-
+    fn poz_no_ara(&mut self) { if self.poz_arama_metni.is_empty() { self.arama_sonuclari.clear(); return; } if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(s) = db.poz_no_ara(&self.poz_arama_metni, kid) { self.arama_sonuclari = s; } } }
+    fn aciklama_ara(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(s) = db.tam_metin_ara(&self.aciklama_arama_metni, kid) { self.arama_sonuclari = s; } } }
     fn poz_sorgula(&mut self) {
         if self.yeni_poz_no.is_empty() { self.secili_poz = None; return; }
-        if let Some(ref db) = self.db {
-            let kid = self.secili_kitap.as_ref().map(|k| k.id);
+        if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id);
             match db.poz_getir(&self.yeni_poz_no, kid) {
                 Ok(Some(p)) => self.secili_poz = Some(p),
                 Ok(None) => { if let Ok(s) = db.poz_no_ara(&self.yeni_poz_no, kid) { if s.len() == 1 { self.secili_poz = Some(s[0].clone()); self.yeni_poz_no = s[0].poz_no.clone(); } else { self.arama_sonuclari = s; } } }
@@ -368,25 +433,15 @@ impl MetrajApp {
             }
         }
     }
-
     fn kalem_ekle(&mut self) {
-        if let Some(ref poz) = self.secili_poz {
-            let m = self.yeni_miktar.trim().parse::<f64>().unwrap_or(0.0);
-            let kalem = MetrajKalemi::yeni(poz, m);
-            let t = kalem.tutar; let bf = kalem.birim_fiyat;
-            self.metraj_kalemleri.push(kalem); self.degisiklik_var = true;
-            self.basarili_mesaj = if m == 0.0 { format!("{} eklendi. Miktari tablodan giriniz.", poz.poz_no) }
-            else { format!("{} eklendi ({} {} x {:.2} = {:.2} TL).", poz.poz_no, m, poz.birim, bf, t) };
-            self.yeni_miktar.clear(); self.hata_mesaji.clear();
-        } else { self.hata_mesaji = "Once bir poz secin.".into(); }
+        if let Some(ref poz) = self.secili_poz { let m = self.yeni_miktar.trim().parse::<f64>().unwrap_or(0.0); let kalem = MetrajKalemi::yeni(poz, m); let t = kalem.tutar; let bf = kalem.birim_fiyat; self.metraj_kalemleri.push(kalem); self.degisiklik_var = true; self.basarili_mesaj = if m == 0.0 { format!("{} eklendi.", poz.poz_no) } else { format!("{} eklendi ({} {} x {:.2} = {:.2} TL).", poz.poz_no, m, poz.birim, bf, t) }; self.yeni_miktar.clear(); self.hata_mesaji.clear(); }
+        else { self.hata_mesaji = "Once bir poz secin.".into(); }
     }
-
     fn kategorileri_yukle(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(k) = db.kategoriler(kid) { self.kategoriler = k; } } }
     fn kategori_filtrele(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(t) = db.tum_pozlar(kid) { self.kategori_pozlar = t.into_iter().filter(|p| p.kategori == self.secili_kategori).collect(); } } }
 
     // ==================== DOSYA ====================
     fn pdf_sec_ve_yukle(&mut self) { if let Some(y) = rfd::FileDialog::new().add_filter("PDF", &["pdf"]).pick_file() { self.pdf_yukle(y); } }
-
     fn pdf_yukle(&mut self, pdf_yolu: PathBuf) {
         let kitap = match self.secili_kitap.clone() { Some(k) => k, None => { self.hata_mesaji = "Once hedef kitap secin!".into(); return; } };
         self.pdf_yukleniyor = true; self.pdf_durumu = format!("PDF okunuyor...");
@@ -394,43 +449,50 @@ impl MetrajApp {
             Ok(metin) => {
                 let pozlar = pozlari_ayristir(&metin, kitap.id, &kitap.ad, kitap.yil, kitap.ay);
                 self.pdf_durumu = format!("{} poz ayrıştırıldı.", pozlar.len());
-                if let Some(ref db) = self.db {
-                    match db.pozlari_yukle(kitap.id, &kitap, &pozlar) {
-                        Ok(sayi) => {
-                            self.poz_sayisi = db.poz_sayisi().unwrap_or(0);
-                            self.basarili_mesaj = format!("✅ {} ({}/{}) kitabina {} poz yuklendi!", kitap.ad, kitap.ay, kitap.yil, sayi);
-                            self.pdf_durumu = format!("✅ {} poz yuklendi.", sayi);
-                            if let Ok(Some(yk)) = db.kitap_getir(kitap.id) { self.secili_kitap = Some(yk); }
-                            self.kitaplari_yenile();
-                        }
-                        Err(e) => self.hata_mesaji = format!("{}", e),
-                    }
-                }
+                if let Some(ref db) = self.db { match db.pozlari_yukle(kitap.id, &kitap, &pozlar) {
+                    Ok(sayi) => { self.poz_sayisi = db.poz_sayisi().unwrap_or(0); self.basarili_mesaj = format!("✅ {} ({}/{}) kitabina {} poz yuklendi!", kitap.ad, kitap.ay, kitap.yil, sayi); self.pdf_durumu = format!("✅ {} poz yuklendi.", sayi); if let Ok(Some(yk)) = db.kitap_getir(kitap.id) { self.secili_kitap = Some(yk); } self.kitaplari_yenile(); }
+                    Err(e) => self.hata_mesaji = format!("{}", e),
+                }}
             }
             Err(e) => self.hata_mesaji = format!("{}", e),
         }
         self.pdf_yukleniyor = false;
     }
-
     fn metraj_kaydet(&mut self) {
         let m = KayitliMetraj { ad: self.metraj_adi.clone(), kalemler: self.metraj_kalemleri.clone(), tarih: krono_tarih() };
-        if let Some(ref y) = self.mevcut_dosya_yolu {
-            match metraj_json_kaydet(&m, y) { Ok(()) => { self.degisiklik_var = false; self.basarili_mesaj = format!("Kaydedildi: {}", y.display()); } Err(e) => self.hata_mesaji = format!("{}", e) }
-        } else if let Some(d) = rfd::FileDialog::new().add_filter("Metrajmatik Projesi", &["mrj"]).set_file_name(&format!("{}.mrj", self.metraj_adi)).save_file() {
-            match metraj_json_kaydet(&m, &d) { Ok(()) => { self.mevcut_dosya_yolu = Some(d.clone()); self.degisiklik_var = false; self.basarili_mesaj = format!("Kaydedildi: {}", d.display()); } Err(e) => self.hata_mesaji = format!("{}", e) }
-        }
+        if let Some(ref y) = self.mevcut_dosya_yolu { match metraj_json_kaydet(&m, y) { Ok(()) => { self.degisiklik_var = false; self.basarili_mesaj = format!("Kaydedildi: {}", y.display()); } Err(e) => self.hata_mesaji = format!("{}", e) } }
+        else if let Some(d) = rfd::FileDialog::new().add_filter("Metrajmatik Projesi", &["mrj"]).set_file_name(&format!("{}.mrj", self.metraj_adi)).save_file() { match metraj_json_kaydet(&m, &d) { Ok(()) => { self.mevcut_dosya_yolu = Some(d.clone()); self.degisiklik_var = false; self.basarili_mesaj = format!("Kaydedildi: {}", d.display()); } Err(e) => self.hata_mesaji = format!("{}", e) } }
     }
+    fn metraj_yukle_diyalog(&mut self) { if let Some(d) = rfd::FileDialog::new().add_filter("Metrajmatik Projesi", &["mrj","json"]).pick_file() { match metraj_json_yukle(&d) { Ok(m) => { self.metraj_kalemleri = m.kalemler; self.metraj_adi = m.ad; self.mevcut_dosya_yolu = Some(d.clone()); self.degisiklik_var = false; self.basarili_mesaj = format!("Acildi: {}", d.display()); } Err(e) => self.hata_mesaji = format!("{}", e) } } }
+    fn metraj_excel_diyalog(&mut self) { let m = KayitliMetraj { ad: self.metraj_adi.clone(), kalemler: self.metraj_kalemleri.clone(), tarih: krono_tarih() }; if let Some(d) = rfd::FileDialog::new().add_filter("Excel", &["xlsx"]).set_file_name(&format!("{}.xlsx", self.metraj_adi)).save_file() { match metraj_excel_aktar(&m, &d) { Ok(()) => { self.basarili_mesaj = format!("Excel: {}", d.display()); } Err(e) => self.hata_mesaji = format!("{}", e) } } }
 
-    fn metraj_yukle_diyalog(&mut self) {
-        if let Some(d) = rfd::FileDialog::new().add_filter("Metrajmatik Projesi", &["mrj","json"]).pick_file() {
-            match metraj_json_yukle(&d) { Ok(m) => { self.metraj_kalemleri = m.kalemler; self.metraj_adi = m.ad; self.mevcut_dosya_yolu = Some(d.clone()); self.degisiklik_var = false; self.basarili_mesaj = format!("Acildi: {}", d.display()); } Err(e) => self.hata_mesaji = format!("{}", e) }
-        }
-    }
-
-    fn metraj_excel_diyalog(&mut self) {
-        let m = KayitliMetraj { ad: self.metraj_adi.clone(), kalemler: self.metraj_kalemleri.clone(), tarih: krono_tarih() };
-        if let Some(d) = rfd::FileDialog::new().add_filter("Excel", &["xlsx"]).set_file_name(&format!("{}.xlsx", self.metraj_adi)).save_file() {
-            match metraj_excel_aktar(&m, &d) { Ok(()) => { self.basarili_mesaj = format!("Excel: {}", d.display()); } Err(e) => self.hata_mesaji = format!("{}", e) }
+    fn fiyatlari_guncelle(&mut self) {
+        let hedef_kitap = match self.fiyat_guncelle_hedef.clone() {
+            Some(k) => k,
+            None => { self.hata_mesaji = "Lutfen hedef kitap secin!".into(); return; }
+        };
+        if let Some(ref db) = self.db {
+            let mut guncellenen = 0;
+            let mut bulunamayan = 0;
+            for kalem in self.metraj_kalemleri.iter_mut() {
+                // Hedef kitapta aynı poz_no'yu ara
+                if let Ok(Some(poz)) = db.poz_getir(&kalem.poz_no, Some(hedef_kitap.id)) {
+                    if let Some(yeni_fiyat) = poz.fiyat {
+                        kalem.birim_fiyat = yeni_fiyat;
+                        kalem.kitap_adi = format!("{} ({}/{})", hedef_kitap.ad, hedef_kitap.ay, hedef_kitap.yil);
+                        kalem.tutar_guncelle();
+                        guncellenen += 1;
+                    }
+                } else {
+                    bulunamayan += 1;
+                }
+            }
+            self.degisiklik_var = true;
+            self.fiyat_guncelle_hedef = None;
+            self.basarili_mesaj = format!(
+                "✅ {} kalem güncellendi ({} kitabı fiyatlarıyla). {} kalem yeni kitapta bulunamadı.",
+                guncellenen, hedef_kitap.ad, bulunamayan
+            );
         }
     }
 }

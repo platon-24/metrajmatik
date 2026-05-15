@@ -110,6 +110,19 @@ impl Veritabani {
         Ok(())
     }
 
+    pub fn kitap_guncelle(&self, kitap_id: i64, ad: &str, yil: u32, ay: u32) -> Result<()> {
+        self.conn.execute(
+            "UPDATE kitaplar SET ad = ?1, yil = ?2, ay = ?3 WHERE id = ?4",
+            params![ad, yil, ay, kitap_id],
+        )?;
+        // Pozlardaki yıl/ay ve kitap adını da güncelle
+        self.conn.execute(
+            "UPDATE pozlar SET kitap_adi = ?1, yil = ?2, ay = ?3 WHERE kitap_id = ?4",
+            params![ad, yil, ay, kitap_id],
+        )?;
+        Ok(())
+    }
+
     pub fn kitap_getir(&self, kitap_id: i64) -> Result<Option<Kitap>> {
         let mut stmt = self.conn.prepare(
             "SELECT k.id, k.ad, k.yil, k.ay, COUNT(p.id), k.tarih FROM kitaplar k
