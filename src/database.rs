@@ -199,6 +199,27 @@ impl Veritabani {
         Ok(rows.filter_map(|p| p.ok()).collect())
     }
 
+    pub fn pozlari_listele(&self, kitap_id: i64, arama: &str) -> Result<Vec<Poz>> {
+        let arama = arama.trim();
+        if arama.is_empty() {
+            let mut stmt = self.conn.prepare(
+                "SELECT poz_no, tanim, birim, fiyat, kategori, kitap_id, kitap_adi, yil, ay
+                 FROM pozlar WHERE kitap_id = ?1 ORDER BY poz_no",
+            )?;
+            let rows = stmt.query_map(params![kitap_id], Self::poz_map)?;
+            return Ok(rows.filter_map(|p| p.ok()).collect());
+        }
+
+        let mut stmt = self.conn.prepare(
+            "SELECT poz_no, tanim, birim, fiyat, kategori, kitap_id, kitap_adi, yil, ay
+             FROM pozlar
+             WHERE kitap_id = ?1 AND (poz_no LIKE ?2 OR tanim LIKE ?2 OR birim LIKE ?2 OR kategori LIKE ?2)
+             ORDER BY poz_no",
+        )?;
+        let rows = stmt.query_map(params![kitap_id, format!("%{}%", arama)], Self::poz_map)?;
+        Ok(rows.filter_map(|p| p.ok()).collect())
+    }
+
     pub fn kategoriler(&self, kitap_id: Option<i64>) -> Result<Vec<String>> {
         let sql = if let Some(kid) = kitap_id {
             format!("SELECT DISTINCT kategori FROM pozlar WHERE kitap_id = {} ORDER BY kategori", kid)
