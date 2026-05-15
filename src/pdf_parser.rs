@@ -45,8 +45,11 @@ const KATEGORI_ANAHATLARI: &[(&str, &str)] = &[
 
 pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str, yil: u32, ay: u32) -> Vec<Poz> {
     let poz_re = Regex::new(r"^(\d{2}\.\d{3}\.\d{4})\s*(.*)").unwrap();
-    let fiyat_re = Regex::new(r"([\d]{1,3}(?:\.[\d]{3})*(?:,\d{2}))\s*$").unwrap();
-    let birim_re = Regex::new(r"\b(m³|m²|Ton|Kg|Ad|m\b|100\s*m²|1000\s*Ad|1000\s*m²)\b").unwrap();
+    let fiyat_sonda_re = Regex::new(r"([\d]{1,3}(?:\.[\d]{3})*(?:,\d{2}))\s*$").unwrap();
+    let fiyat_re = Regex::new(r"([\d]{1,3}(?:\.[\d]{3})*(?:,\d{2}))").unwrap();
+    // Birim tablolarda fiyatın hemen solundadır. Bu yüzden birimi satır sonundan
+    // ayırmak, açıklamadaki "m" harflerini yanlış birim sanmaktan daha güvenlidir.
+    let birim_sonda_re = Regex::new(r"(?i)(?:^|\s)(1000\s*ad|1000\s*m\s*[²2]|100\s*m\s*[²2]|m\s*[³3]|m\s*[²2]|ton|kg|ad|mt|m|[³²])\s*(?:₺|tl)?\s*$").unwrap();
     let sayfa_no_re = Regex::new(r"^\s*\d+\s*$").unwrap();
 
     let mut pozlar: Vec<Poz> = Vec::new();
@@ -88,15 +91,9 @@ pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str, yil: u32, a
                 if sonraki.is_empty() || sayfa_no_re.is_match(sonraki) { j += 1; continue; }
                 if poz_re.is_match(sonraki) { break; }
 
-                if let Some(f_caps) = fiyat_re.captures(sonraki) {
-                    let fiyat_str = f_caps[1].to_string();
-                    let once = &sonraki[..sonraki.len() - fiyat_str.len()].trim();
-                    if let Some(b_caps) = birim_re.captures(once) { birim = b_caps[1].to_string(); }
-                    else if birim.is_empty() { birim = once.to_string(); }
-                    let once_trimmed = once.replace(&birim, "").trim().to_string();
-                    if !once_trimmed.is_empty() && !once_trimmed.starts_with("m³") && !once_trimmed.starts_with("m²")
-                        && !once_trimmed.starts_with("Ton") && !once_trimmed.starts_with("Kg") && !once_trimmed.starts_with("Ad")
-                    { tanim_parcalari.push(once_trimmed); }
+                if let Some((satir_tanimi, satir_birimi, fiyat_str)) = fiyatli_satir_ayir(sonraki, &fiyat_sonda_re, &fiyat_re, &birim_sonda_re) {
+                    if let Some(b) = satir_birimi.as_ref() { birim = b.clone(); }
+                    if !satir_tanimi.is_empty() && satir_birimi.is_some() { tanim_parcalari.push(satir_tanimi); }
                     fiyat = parse_fiyat(&fiyat_str);
                     i = j;
                     break;
@@ -113,22 +110,24 @@ pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str, yil: u32, a
 
             if fiyat.is_none() {
                 let bl = tanim_parcalari.join(" ");
-                if let Some(f_caps) = fiyat_re.captures(&bl) {
-                    let fiyat_str = f_caps[1].to_string();
+                if let Some((satir_tanimi, satir_birimi, fiyat_str)) = fiyatli_satir_ayir(&bl, &fiyat_sonda_re, &fiyat_re, &birim_sonda_re) {
                     fiyat = parse_fiyat(&fiyat_str);
-                    let fiyat_pos = bl.rfind(&fiyat_str).unwrap_or(0);
-                    let tanim_oncu = bl[..fiyat_pos].trim();
-                    if let Some(b_caps) = birim_re.captures(tanim_oncu) { birim = b_caps[1].to_string(); }
-                    tanim_parcalari = vec![tanim_oncu.replace(&birim, "").trim().to_string()];
+                    if let Some(b) = satir_birimi { birim = b; }
+                    tanim_parcalari = vec![satir_tanimi];
                 }
             }
             if birim.is_empty() {
                 let bl = tanim_parcalari.join(" ");
-                if let Some(b_caps) = birim_re.captures(&bl) { birim = b_caps[1].to_string(); }
+                let (satir_tanimi, satir_birimi) = tanim_ve_birim_ayir(&bl, &birim_sonda_re);
+                if let Some(b) = satir_birimi {
+                    birim = b;
+                    tanim_parcalari = vec![satir_tanimi];
+                }
             }
-            let tanim = tanim_parcalari.join(" ").replace("  ", " ").trim().to_string();
+            let mut tanim = tanim_parcalari.join(" ").replace("  ", " ").trim().to_string();
+            tanim = tanim.replace("  ", " ").trim().to_string();
             if !tanim.is_empty() || !poz_no.is_empty() {
-                let final_birim = if birim.is_empty() { "---".to_string() } else { birim.trim().to_string() };
+                let final_birim = if birim.is_empty() { "---".to_string() } else { birim_normalize(birim.trim()) };
                 pozlar.push(Poz {
                     poz_no, tanim: temiz_tanim(&tanim), birim: final_birim, fiyat,
                     kategori: mevcut_kategori.clone(), kitap_id,
@@ -148,4 +147,155 @@ fn parse_fiyat(s: &str) -> Option<f64> {
 
 fn temiz_tanim(s: &str) -> String {
     s.trim().trim_matches(|c: char| c == '-' || c == '.' || c == ',' || c.is_whitespace()).to_string()
+}
+
+fn tanim_ve_birim_ayir(metin: &str, birim_sonda_re: &Regex) -> (String, Option<String>) {
+    let metin = metin.trim();
+    if let Some(eslesme) = birim_sonda_re.captures(metin) {
+        if let Some(birim) = eslesme.get(1) {
+            let tanim = metin[..birim.start()].trim().to_string();
+            return (tanim, Some(birim.as_str().trim().to_string()));
+        }
+    }
+    (metin.to_string(), None)
+}
+
+fn fiyatli_satir_ayir(
+    satir: &str,
+    fiyat_sonda_re: &Regex,
+    fiyat_re: &Regex,
+    birim_sonda_re: &Regex,
+) -> Option<(String, Option<String>, String)> {
+    if let Some(eslesme) = fiyat_sonda_re.captures(satir).and_then(|c| c.get(1)) {
+        let fiyat_str = eslesme.as_str().to_string();
+        let fiyat_oncesi = satir[..eslesme.start()].trim();
+        let (tanim, birim) = tanim_ve_birim_ayir(fiyat_oncesi, birim_sonda_re);
+        return Some((tanim, birim, fiyat_str));
+    }
+
+    for eslesme in fiyat_re.captures_iter(satir).filter_map(|c| c.get(1)) {
+        let fiyat_oncesi = satir[..eslesme.start()].trim();
+        let (tanim, birim) = tanim_ve_birim_ayir(fiyat_oncesi, birim_sonda_re);
+        if birim.is_some() {
+            return Some((tanim, birim, eslesme.as_str().to_string()));
+        }
+    }
+
+    None
+}
+
+/// PDF çıkarımında üst simge ³/² kaybolduğunda düz ASCII karakterleri UTF-8 üst simgelere çevirir
+fn birim_normalize(s: &str) -> String {
+    let kucuk = s.trim().to_lowercase().replace(char::is_whitespace, "");
+    match kucuk.as_str() {
+        "m3" | "m³" | "³" => "m³".to_string(),
+        "m2" | "m²" | "²" => "m²".to_string(),
+        "100m2" | "100m²" => "100 m²".to_string(),
+        "1000m2" | "1000m²" => "1000 m²".to_string(),
+        "1000ad" => "1000 Ad".to_string(),
+        "ton" => "Ton".to_string(),
+        "kg" => "Kg".to_string(),
+        "ad" => "Ad".to_string(),
+        "m" | "mt" => "m".to_string(),
+        _ => s.trim().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod testler {
+    use super::*;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn birim_normalize_ust_simgeleri_cift_m_yapmaz() {
+        assert_eq!(birim_normalize("m²"), "m²");
+        assert_eq!(birim_normalize("m ²"), "m²");
+        assert_eq!(birim_normalize("²"), "m²");
+        assert_eq!(birim_normalize("m³"), "m³");
+        assert_eq!(birim_normalize("m ³"), "m³");
+        assert_eq!(birim_normalize("³"), "m³");
+    }
+
+    #[test]
+    fn fiyat_oncesindeki_birim_sondan_ayrilir() {
+        let pozlar = pozlari_ayristir(
+            "15.180.1003\nPlywood ile düz yüzeyli betonarme kalıbı yapılması m² 1.123,51",
+            1,
+            "Test",
+            2026,
+            5,
+        );
+
+        assert_eq!(pozlar.len(), 1);
+        assert_eq!(pozlar[0].birim, "m²");
+        assert_eq!(pozlar[0].tanim, "Plywood ile düz yüzeyli betonarme kalıbı yapılması");
+        assert_eq!(pozlar[0].fiyat, Some(1123.51));
+    }
+
+    #[test]
+    fn uzun_birimler_kirpilmaz() {
+        let pozlar = pozlari_ayristir(
+            "15.999.0001\nÖrnek imalat 100 m² 12,34\n15.999.0002\nÖrnek sayım 1000 Ad 56,78",
+            1,
+            "Test",
+            2026,
+            5,
+        );
+
+        assert_eq!(pozlar[0].birim, "100 m²");
+        assert_eq!(pozlar[1].birim, "1000 Ad");
+    }
+
+    #[test]
+    fn fiyat_arkasina_baslik_yapissa_da_okunur() {
+        let pozlar = pozlari_ayristir(
+            "15.105.1002\nKazı ve dolgu alanında makine ile temizleme ve sökme işi yapılması 100 m² 811,55 Ağaç Kesilmesi ve Sökme İşi:",
+            1,
+            "Test",
+            2026,
+            5,
+        );
+
+        assert_eq!(pozlar.len(), 1);
+        assert_eq!(pozlar[0].birim, "100 m²");
+        assert_eq!(pozlar[0].fiyat, Some(811.55));
+        assert_eq!(pozlar[0].tanim, "Kazı ve dolgu alanında makine ile temizleme ve sökme işi yapılması");
+    }
+
+    #[test]
+    fn verilen_pdf_orneklerinde_mm2_kacagi_yok() {
+        let ust_dizin = Path::new("..");
+        let pdfler = [
+            pdf_bul(ust_dizin, "PTT_A.s._YAPI_DAiRE_BAsKANLIgI_oZEL_BiRiM_FiYATLARI.pdf"),
+            pdf_bul(ust_dizin, "2026-05-BF.pdf"),
+        ];
+
+        for pdf in pdfler.into_iter().flatten() {
+            let metin = pdf_metin_cikar(&pdf).expect("PDF metni okunmalı");
+            let pozlar = pozlari_ayristir(&metin, 1, "Test", 2026, 5);
+            assert!(!pozlar.is_empty(), "{} içinden poz okunmalı", pdf.display());
+            assert!(
+                !pozlar.iter().any(|p| p.birim.contains("mm²") || p.birim.contains("mm³")),
+                "{} içinde hatalı mm²/mm³ birimi olmamalı",
+                pdf.display()
+            );
+
+            if let Some(poz) = pozlar.iter().find(|p| p.poz_no == "15.180.1003") {
+                assert_eq!(poz.birim, "m²");
+                assert_eq!(poz.fiyat, Some(1123.51));
+            }
+            if let Some(poz) = pozlar.iter().find(|p| p.poz_no == "15.105.1002") {
+                assert_eq!(poz.birim, "100 m²");
+                assert_eq!(poz.fiyat, Some(811.55));
+            }
+        }
+    }
+
+    fn pdf_bul(dizin: &Path, ad_parcasi: &str) -> Option<PathBuf> {
+        std::fs::read_dir(dizin)
+            .ok()?
+            .filter_map(Result::ok)
+            .map(|girdi| girdi.path())
+            .find(|yol| yol.file_name().and_then(|a| a.to_str()).map(|ad| ad.contains(ad_parcasi)).unwrap_or(false))
+    }
 }
