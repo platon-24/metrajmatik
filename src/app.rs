@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::{Color32, RichText, ScrollArea, TextEdit, Ui, Vec2};
+use egui::{Color32, Id, RichText, ScrollArea, TextEdit, Ui, Vec2};
 use std::path::PathBuf;
 
 use crate::database::Veritabani;
@@ -20,6 +20,7 @@ pub struct MetrajApp {
     mevcut_dosya_yolu: Option<PathBuf>,
     degisiklik_var: bool,
     poz_arama_metni: String,
+    akilli_arama_metni: String,
     arama_sonuclari: Vec<Poz>,
     secili_poz: Option<Poz>,
     aciklama_arama_metni: String,
@@ -46,6 +47,7 @@ pub struct MetrajApp {
     pozlar_arama_metni: String,
     pozlar_tablosu: Vec<Poz>,
     pozlar_yuklu_kitap_id: Option<i64>,
+    miktar_odak_iste: bool,
 }
 
 impl Default for MetrajApp {
@@ -63,7 +65,7 @@ impl Default for MetrajApp {
             db, poz_sayisi, kitaplar, secili_kitap: None,
             metraj_kalemleri: vec![], metraj_adi: "Isimsiz Metraj".into(),
             mevcut_dosya_yolu: None, degisiklik_var: false,
-            poz_arama_metni: String::new(), arama_sonuclari: vec![], secili_poz: None,
+            poz_arama_metni: String::new(), akilli_arama_metni: String::new(), arama_sonuclari: vec![], secili_poz: None,
             aciklama_arama_metni: String::new(), yeni_poz_no: String::new(), yeni_miktar: String::new(),
             yeni_kitap_adi: String::new(), yeni_kitap_yil: 2026, yeni_kitap_ay: 5,
             duzenlenen_kitap: None, duzenleme_adi: String::new(), duzenleme_yil: 2026, duzenleme_ay: 1,
@@ -74,6 +76,7 @@ impl Default for MetrajApp {
             hata_mesaji: String::new(), basarili_mesaj: String::new(),
             kategoriler: vec![], secili_kategori: "TÜMÜ".into(), kategori_pozlar: vec![],
             pozlar_arama_metni: String::new(), pozlar_tablosu: vec![], pozlar_yuklu_kitap_id: None,
+            miktar_odak_iste: false,
         }
     }
 }
@@ -277,12 +280,21 @@ impl MetrajApp {
     fn render_arama_paneli(&mut self, ui: &mut Ui) {
         ui.heading("🔍 Poz Arama");
         ui.horizontal(|ui| {
+            ui.label("Hızlı:");
+            if ui.add_sized(Vec2::new(235.0, 24.0), TextEdit::singleline(&mut self.akilli_arama_metni).hint_text("15.180 veya plywood kalıp")).changed() {
+                self.akilli_ara();
+            }
+        });
+        ui.horizontal(|ui| {
             ui.label("Poz No:");
-            if ui.add_sized(Vec2::new(200.0, 24.0), TextEdit::singleline(&mut self.poz_arama_metni).hint_text("örn: 15.100")).changed() { self.poz_no_ara(); }
+            if ui.add_sized(Vec2::new(200.0, 24.0), TextEdit::singleline(&mut self.poz_arama_metni).hint_text("örn: 15.100")).changed() { self.akilli_arama_metni.clear(); self.poz_no_ara(); }
         });
         ui.horizontal(|ui| {
             ui.label("Açıklama:");
-            if ui.add_sized(Vec2::new(200.0, 24.0), TextEdit::singleline(&mut self.aciklama_arama_metni).hint_text("örn: beton")).changed() && !self.aciklama_arama_metni.is_empty() { self.aciklama_ara(); }
+            if ui.add_sized(Vec2::new(200.0, 24.0), TextEdit::singleline(&mut self.aciklama_arama_metni).hint_text("örn: beton")).changed() {
+                self.akilli_arama_metni.clear();
+                if self.aciklama_arama_metni.is_empty() { self.arama_sonuclari.clear(); } else { self.aciklama_ara(); }
+            }
         });
         if !self.kategoriler.is_empty() {
             ui.horizontal(|ui| {
@@ -297,58 +309,67 @@ impl MetrajApp {
 
         let pl = if !self.kategori_pozlar.is_empty() { &self.kategori_pozlar } else { &self.arama_sonuclari };
         if !pl.is_empty() { ui.label(format!("{} sonuc", pl.len())); }
-        else if !self.poz_arama_metni.is_empty() || !self.aciklama_arama_metni.is_empty() { ui.label("Sonuc yok."); }
+        else if !self.akilli_arama_metni.is_empty() || !self.poz_arama_metni.is_empty() || !self.aciklama_arama_metni.is_empty() { ui.label("Sonuc yok."); }
         else { ui.label(RichText::new("👆 Arama yapin").color(Color32::GRAY)); }
 
         self.cift_tiklama_ekle = false;
         ScrollArea::vertical().max_height(ui.available_height() - 50.0).show(ui, |ui| {
-            for poz in pl.iter() {
-                let secili = self.secili_poz.as_ref().map(|s| s.poz_no == poz.poz_no && s.kitap_id == poz.kitap_id).unwrap_or(false);
-                let fm = match poz.fiyat { Some(f) => format!("{:.2}", f), None => "---".into() };
-                let etiket = format!("{} | {} | {} | {}", poz.poz_no, poz.birim, fm, poz.kitap_adi);
+            egui::Grid::new("arama_sonuc_grid").num_columns(4).min_col_width(42.0).striped(true).show(ui, |ui| {
+                ui.label(RichText::new("Poz").strong().size(11.0));
+                ui.label(RichText::new("Birim").strong().size(11.0));
+                ui.label(RichText::new("Fiyat").strong().size(11.0));
+                ui.label(RichText::new("Açıklama").strong().size(11.0));
+                ui.end_row();
 
-                // Manuel seçili satır çizimi - egui selectable_label renk sorununu aşmak için
-                let (rect, response) = ui.allocate_exact_size(
-                    Vec2::new(ui.available_width(), 18.0),
-                    egui::Sense::click(),
-                );
-                if secili {
-                    ui.painter().rect_filled(rect, 0.0, Color32::from_rgb(30, 100, 200));
+                for poz in pl.iter() {
+                    let secili = self.secili_poz.as_ref().map(|s| s.poz_no == poz.poz_no && s.kitap_id == poz.kitap_id).unwrap_or(false);
+                    let fm = match poz.fiyat { Some(f) => format!("{:.2}", f), None => "---".into() };
+                    let yazi_rengi = if secili { Color32::LIGHT_GREEN } else { ui.style().visuals.text_color() };
+                    let aciklama = metni_kisalt(&poz.tanim, 32);
+
+                    let r1 = ui.selectable_label(secili, RichText::new(&poz.poz_no).monospace().size(11.0).color(yazi_rengi));
+                    ui.label(RichText::new(&poz.birim).size(11.0));
+                    ui.label(RichText::new(fm).size(11.0));
+                    let r4 = ui.label(RichText::new(aciklama).size(11.0));
+                    let response = r1.union(r4);
+
+                    if response.clicked() {
+                        self.secili_poz = Some(poz.clone());
+                        self.yeni_poz_no = poz.poz_no.clone();
+                    }
+                    if response.double_clicked() {
+                        self.secili_poz = Some(poz.clone());
+                        self.yeni_poz_no = poz.poz_no.clone();
+                        self.yeni_miktar.clear();
+                        self.cift_tiklama_ekle = true;
+                    }
+                    response.on_hover_text(&format!("{}/{} | {}\nÇift tıkla: metraja ekle", poz.ay, poz.yil, poz.tanim));
+                    ui.end_row();
                 }
-                let text_color = if secili { Color32::WHITE } else { ui.style().visuals.text_color() };
-                ui.painter().text(
-                    rect.left_center(),
-                    egui::Align2::LEFT_CENTER,
-                    &etiket,
-                    egui::FontId::proportional(11.0),
-                    text_color,
-                );
-                if response.clicked() {
-                    self.secili_poz = Some(poz.clone());
-                    self.yeni_poz_no = poz.poz_no.clone();
-                }
-                if response.double_clicked() {
-                    self.secili_poz = Some(poz.clone());
-                    self.yeni_poz_no = poz.poz_no.clone();
-                    self.yeni_miktar.clear();
-                    self.cift_tiklama_ekle = true;
-                }
-                response.on_hover_text(&format!("{}/{} | {}\nCift tikla: miktarsiz ekle", poz.ay, poz.yil, poz.tanim));
-            }
+            });
         });
         if self.cift_tiklama_ekle {
             self.kalem_ekle();
         }
         ui.separator();
 
+        let mut secili_poz_ekle = false;
         if let Some(ref poz) = self.secili_poz {
             ui.heading("📌 Secili Poz");
-            ui.label(RichText::new(format!("Poz No: {}", poz.poz_no)).strong().size(13.0));
+            ui.label(RichText::new(&poz.poz_no).monospace().strong().size(15.0));
+            ui.horizontal(|ui| {
+                ui.label(format!("Birim: {}", poz.birim));
+                match poz.fiyat { Some(f) => { ui.colored_label(Color32::GREEN, format!("B.Fiyat: {:.2} TL", f)); } None => { ui.colored_label(Color32::RED, "Formül"); } }
+            });
             ui.label(format!("Kitap: {} ({}/{})", poz.kitap_adi, poz.ay, poz.yil));
-            ui.label(format!("Aciklama: {}", poz.tanim));
-            ui.label(format!("Birim: {}", poz.birim));
-            match poz.fiyat { Some(f) => { ui.colored_label(Color32::GREEN, format!("Birim Fiyat: {:.2} TL", f)); } None => { ui.colored_label(Color32::RED, "Formul."); } }
+            ui.label(format!("Açıklama: {}", poz.tanim));
             ui.label(format!("Kategori: {}", poz.kategori));
+            if ui.button("➕ Metraja Ekle").clicked() {
+                secili_poz_ekle = true;
+            }
+        }
+        if secili_poz_ekle {
+            self.kalem_ekle();
         }
     }
 
@@ -362,7 +383,15 @@ impl MetrajApp {
             ui.label("Poz No:");
             if ui.add(TextEdit::singleline(&mut self.yeni_poz_no).hint_text("15.100.1001").desired_width(140.0)).changed() { self.poz_sorgula(); }
             ui.label("Miktar:");
-            ui.add(TextEdit::singleline(&mut self.yeni_miktar).hint_text("0.00").desired_width(80.0));
+            let miktar_id = Id::new("yeni_miktar_giris");
+            let miktar_response = ui.add(TextEdit::singleline(&mut self.yeni_miktar).hint_text("0,00").desired_width(80.0).id_source(miktar_id));
+            if self.miktar_odak_iste {
+                miktar_response.request_focus();
+                self.miktar_odak_iste = false;
+            }
+            if miktar_response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                self.kalem_ekle();
+            }
             if ui.button(RichText::new("➕ Kalem Ekle").color(Color32::WHITE)).highlight().clicked() { self.kalem_ekle(); }
         });
         // Fiyat güncelleme - hedef kitap seçerek tüm kalemleri yeni fiyatlarla güncelle
@@ -389,7 +418,7 @@ impl MetrajApp {
             ui.add_space(2.0);
         }
         if let Some(ref poz) = self.secili_poz {
-            if let Some(f) = poz.fiyat { let tt = self.yeni_miktar.parse::<f64>().unwrap_or(0.0) * f; ui.label(format!("{} | {} TL x {} = {:.2} TL", poz.tanim, f, self.yeni_miktar, tt)); }
+            if let Some(f) = poz.fiyat { let miktar = sayi_oku(&self.yeni_miktar).unwrap_or(0.0); let tt = miktar * f; ui.label(format!("{} | {:.2} TL x {:.2} = {:.2} TL", poz.tanim, f, miktar, tt)); }
         }
         ui.separator();
         ui.horizontal(|ui| {
@@ -400,6 +429,8 @@ impl MetrajApp {
             if ui.button("📊 Excel").clicked() { self.metraj_excel_diyalog(); }
             if ui.button("🗑 Temizle").clicked() { self.metraj_kalemleri.clear(); self.degisiklik_var = true; self.basarili_mesaj = "Temizlendi.".into(); }
         }); ui.separator();
+        self.render_metraj_ozetleri(ui);
+        ui.separator();
         ScrollArea::vertical().max_height(ui.available_height() - 80.0).show(ui, |ui| { self.render_metraj_kalem_tablosu(ui); });
         ui.separator();
         ui.horizontal(|ui| { ui.label(RichText::new(format!("GENEL TOPLAM: {:.2} TL", self.toplam_tutar())).size(16.0).strong().color(Color32::GREEN)); });
@@ -407,9 +438,9 @@ impl MetrajApp {
 
     fn render_metraj_kalem_tablosu(&mut self, ui: &mut Ui) {
         if self.metraj_kalemleri.is_empty() { ui.label(RichText::new("Henuz kalem yok.").color(Color32::GRAY).size(13.0)); return; }
-        egui::Grid::new("metraj_grid").num_columns(9).min_col_width(50.0).striped(true).show(ui, |ui: &mut egui::Ui| {
-            ui.label(RichText::new("#").strong().size(12.0)); ui.label(RichText::new("Kitap (Ay/Yil)").strong().size(12.0));
-            ui.label(RichText::new("Poz No").strong().size(12.0)); ui.label(RichText::new("Aciklama").strong().size(12.0));
+        egui::Grid::new("metraj_grid").num_columns(9).min_col_width(42.0).striped(true).show(ui, |ui: &mut egui::Ui| {
+            ui.label(RichText::new("#").strong().size(12.0)); ui.label(RichText::new("Poz No").strong().size(12.0));
+            ui.label(RichText::new("Açıklama").strong().size(12.0)); ui.label(RichText::new("Kitap").strong().size(12.0));
             ui.label(RichText::new("Birim").strong().size(12.0)); ui.label(RichText::new("B.Fiyat").strong().size(12.0));
             ui.label(RichText::new("Miktar").strong().size(12.0)); ui.label(RichText::new("Tutar").strong().size(12.0));
             ui.label(RichText::new("").strong().size(12.0));
@@ -418,19 +449,75 @@ impl MetrajApp {
             let mut sil: Option<usize> = None; let mut deg: Option<(usize, f64)> = None;
             for (idx, kalem) in self.metraj_kalemleri.iter_mut().enumerate() {
                 ui.label(format!("{}", idx + 1));
-                ui.label(RichText::new(format!("{}", &kalem.kitap_adi)).size(10.0));
-                ui.label(RichText::new(&kalem.poz_no).size(11.0).monospace());
-                let kisa = if kalem.tanim.len() > 35 { format!("{}...", &kalem.tanim[..32]) } else { kalem.tanim.clone() };
-                ui.label(RichText::new(kisa).size(11.0)); ui.label(&kalem.birim); ui.label(format!("{:.2}", kalem.birim_fiyat));
+                let miktar_id = Id::new(("metraj_miktar", idx));
+                let poz_response = ui.label(RichText::new(&kalem.poz_no).size(11.0).monospace());
+                let kisa = metni_kisalt(&kalem.tanim, 46);
+                let aciklama_response = ui.label(RichText::new(kisa).size(11.0)).on_hover_text(&kalem.tanim);
+                let kitap_kisa = metni_kisalt(&kalem.kitap_adi, 18);
+                ui.label(RichText::new(kitap_kisa).size(10.0)).on_hover_text(&kalem.kitap_adi);
+                ui.label(&kalem.birim); ui.label(format!("{:.2}", kalem.birim_fiyat));
                 let mut ms = format!("{:.2}", kalem.miktar);
-                if ui.add(TextEdit::singleline(&mut ms).desired_width(70.0)).changed() { if let Ok(y) = ms.parse::<f64>() { deg = Some((idx, y)); } }
+                let miktar_response = ui.add(TextEdit::singleline(&mut ms).desired_width(70.0).id_source(miktar_id));
+                if miktar_response.changed() { if let Some(y) = sayi_oku(&ms) { deg = Some((idx, y)); } }
                 ui.label(RichText::new(format!("{:.2}", kalem.tutar)).size(11.0).strong().color(Color32::GREEN));
                 if ui.button(RichText::new("✕").color(Color32::RED).size(11.0)).clicked() { sil = Some(idx); }
+                let satir_response = poz_response.union(aciklama_response);
+                if satir_response.double_clicked() {
+                    ui.memory_mut(|mem| mem.request_focus(miktar_id));
+                }
                 ui.end_row();
             }
             if let Some(idx) = sil { self.metraj_kalemleri.remove(idx); self.degisiklik_var = true; }
             if let Some((idx, ym)) = deg { if idx < self.metraj_kalemleri.len() { self.metraj_kalemleri[idx].miktar = ym; self.metraj_kalemleri[idx].tutar_guncelle(); self.degisiklik_var = true; } }
         });
+    }
+
+    fn render_metraj_ozetleri(&self, ui: &mut Ui) {
+        let toplam_kalem = self.metraj_kalemleri.len();
+        let fiyatsiz = self.metraj_kalemleri.iter().filter(|k| k.birim_fiyat <= 0.0).count();
+        let secili_kitap_tutari = self.secili_kitap.as_ref().map(|kitap| {
+            self.metraj_kalemleri.iter()
+                .filter(|k| k.kitap_adi.starts_with(&kitap.ad))
+                .map(|k| k.tutar)
+                .sum::<f64>()
+        }).unwrap_or(0.0);
+        let mut kitap_sayisi: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for kalem in &self.metraj_kalemleri {
+            kitap_sayisi.insert(&kalem.kitap_adi);
+        }
+
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!("Kalem: {}", toplam_kalem));
+            ui.separator();
+            ui.label(format!("Kitap: {}", kitap_sayisi.len()));
+            ui.separator();
+            ui.label(format!("Fiyatsız: {}", fiyatsiz));
+            if self.secili_kitap.is_some() {
+                ui.separator();
+                ui.label(format!("Seçili kitap tutarı: {:.2} TL", secili_kitap_tutari));
+            }
+        });
+
+        if !self.metraj_kalemleri.is_empty() {
+            egui::CollapsingHeader::new("Özet döküm").default_open(false).show(ui, |ui| {
+                let mut kitap_toplamlari: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
+                let mut birim_toplamlari: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
+                for kalem in &self.metraj_kalemleri {
+                    *kitap_toplamlari.entry(kalem.kitap_adi.clone()).or_insert(0.0) += kalem.tutar;
+                    *birim_toplamlari.entry(kalem.birim.clone()).or_insert(0.0) += kalem.tutar;
+                }
+                ui.columns(2, |cols| {
+                    cols[0].label(RichText::new("Kitap").strong());
+                    for (kitap, toplam) in kitap_toplamlari.iter().take(6) {
+                        cols[0].label(format!("{}: {:.2} TL", metni_kisalt(kitap, 28), toplam));
+                    }
+                    cols[1].label(RichText::new("Birim").strong());
+                    for (birim, toplam) in birim_toplamlari.iter().take(6) {
+                        cols[1].label(format!("{}: {:.2} TL", birim, toplam));
+                    }
+                });
+            });
+        }
     }
 
     // ==================== POZLAR ====================
@@ -537,6 +624,38 @@ impl MetrajApp {
             }
         }
     }
+    fn akilli_ara(&mut self) {
+        self.poz_arama_metni.clear();
+        self.aciklama_arama_metni.clear();
+        self.kategori_pozlar.clear();
+        let sorgu = self.akilli_arama_metni.trim();
+        if sorgu.is_empty() {
+            self.arama_sonuclari.clear();
+            return;
+        }
+        if let Some(ref db) = self.db {
+            let kid = self.secili_kitap.as_ref().map(|k| k.id);
+            let mut sonuc: Vec<Poz> = Vec::new();
+            let poz_gibi = sorgu.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false);
+            if poz_gibi {
+                if let Ok(mut pozlar) = db.poz_no_ara(sorgu, kid) {
+                    sonuc.append(&mut pozlar);
+                }
+            }
+            if (!poz_gibi || sonuc.len() < 20) && sorgu.split_whitespace().all(|t| !t.is_empty()) {
+                if let Ok(pozlar) = db.tam_metin_ara(sorgu, kid) {
+                    for poz in pozlar {
+                        if !sonuc.iter().any(|p| p.poz_no == poz.poz_no && p.kitap_id == poz.kitap_id) {
+                            sonuc.push(poz);
+                        }
+                    }
+                }
+            }
+            sonuc.sort_by(|a, b| a.poz_no.cmp(&b.poz_no));
+            sonuc.truncate(100);
+            self.arama_sonuclari = sonuc;
+        }
+    }
     fn poz_no_ara(&mut self) { if self.poz_arama_metni.is_empty() { self.arama_sonuclari.clear(); return; } if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(s) = db.poz_no_ara(&self.poz_arama_metni, kid) { self.arama_sonuclari = s; } } }
     fn aciklama_ara(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(s) = db.tam_metin_ara(&self.aciklama_arama_metni, kid) { self.arama_sonuclari = s; } } }
     fn poz_sorgula(&mut self) {
@@ -550,10 +669,19 @@ impl MetrajApp {
         }
     }
     fn kalem_ekle(&mut self) {
-        if let Some(ref poz) = self.secili_poz { let m = self.yeni_miktar.trim().parse::<f64>().unwrap_or(0.0); let kalem = MetrajKalemi::yeni(poz, m); let t = kalem.tutar; let bf = kalem.birim_fiyat; self.metraj_kalemleri.push(kalem);
+        if let Some(ref poz) = self.secili_poz { let m = sayi_oku(&self.yeni_miktar).unwrap_or(0.0); let yeni_kitap_adi = format!("{} ({}/{})", poz.kitap_adi, poz.ay, poz.yil);
+            if let Some(kalem) = self.metraj_kalemleri.iter_mut().find(|k| k.poz_no == poz.poz_no && k.kitap_adi == yeni_kitap_adi) {
+                kalem.miktar += m;
+                kalem.tutar_guncelle();
+                self.degisiklik_var = true;
+                self.basarili_mesaj = format!("{} zaten vardı; miktar {:.2} {} oldu.", poz.poz_no, kalem.miktar, kalem.birim);
+                self.yeni_miktar.clear(); self.hata_mesaji.clear();
+                return;
+            }
+            let kalem = MetrajKalemi::yeni(poz, m); let t = kalem.tutar; let bf = kalem.birim_fiyat; self.metraj_kalemleri.push(kalem);
             // Metrajı poz numarasına göre sırala (yeniden eklemede de sıralı kalır)
             self.metraj_kalemleri.sort_by(|a, b| a.poz_no.cmp(&b.poz_no));
-            self.degisiklik_var = true; self.basarili_mesaj = if m == 0.0 { format!("{} eklendi.", poz.poz_no) } else { format!("{} eklendi ({} {} x {:.2} = {:.2} TL).", poz.poz_no, m, poz.birim, bf, t) }; self.yeni_miktar.clear(); self.hata_mesaji.clear(); }
+            self.degisiklik_var = true; self.basarili_mesaj = if m == 0.0 { format!("{} eklendi.", poz.poz_no) } else { format!("{} eklendi ({:.2} {} x {:.2} = {:.2} TL).", poz.poz_no, m, poz.birim, bf, t) }; self.yeni_miktar.clear(); self.hata_mesaji.clear(); }
         else { self.hata_mesaji = "Once bir poz secin.".into(); }
     }
     fn kategorileri_yukle(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(k) = db.kategoriler(kid) { self.kategoriler = k; } } }
@@ -643,4 +771,12 @@ fn metni_kisalt(metin: &str, en_fazla: usize) -> String {
     }
     let govde: String = metin.chars().take(en_fazla.saturating_sub(3)).collect();
     format!("{}...", govde)
+}
+
+fn sayi_oku(metin: &str) -> Option<f64> {
+    let temiz = metin.trim().replace(' ', "").replace(',', ".");
+    if temiz.is_empty() {
+        return None;
+    }
+    temiz.parse::<f64>().ok()
 }
