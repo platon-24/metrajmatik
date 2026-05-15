@@ -474,7 +474,11 @@ impl MetrajApp {
         if let Some(ref db) = self.db {
             let mut guncellenen = 0;
             let mut bulunamayan = 0;
+            // Kitap bazlı sayaç: (eski_kitap_adi, guncellenen, bulunamayan)
+            let mut kitap_bazli: std::collections::HashMap<String, (u32, u32)> = std::collections::HashMap::new();
+
             for kalem in self.metraj_kalemleri.iter_mut() {
+                let eski_kitap = kalem.kitap_adi.clone();
                 // Hedef kitapta aynı poz_no'yu ara
                 if let Ok(Some(poz)) = db.poz_getir(&kalem.poz_no, Some(hedef_kitap.id)) {
                     if let Some(yeni_fiyat) = poz.fiyat {
@@ -482,16 +486,27 @@ impl MetrajApp {
                         kalem.kitap_adi = format!("{} ({}/{})", hedef_kitap.ad, hedef_kitap.ay, hedef_kitap.yil);
                         kalem.tutar_guncelle();
                         guncellenen += 1;
+                        let entry = kitap_bazli.entry(eski_kitap).or_insert((0, 0));
+                        entry.0 += 1;
                     }
                 } else {
                     bulunamayan += 1;
+                    let entry = kitap_bazli.entry(eski_kitap).or_insert((0, 0));
+                    entry.1 += 1;
                 }
             }
             self.degisiklik_var = true;
             self.fiyat_guncelle_hedef = None;
+
+            let mut detay = String::new();
+            for (kitap, (g, b)) in &kitap_bazli {
+                if *g > 0 || *b > 0 {
+                    detay.push_str(&format!("\n  📦 {}: {} güncellendi, {} bulunamadı", kitap, g, b));
+                }
+            }
             self.basarili_mesaj = format!(
-                "✅ {} kalem güncellendi ({} kitabı fiyatlarıyla). {} kalem yeni kitapta bulunamadı.",
-                guncellenen, hedef_kitap.ad, bulunamayan
+                "✅ {} kalem güncellendi (→ {} fiyatlarıyla). {} kalem hedef kitapta bulunamadı.{}",
+                guncellenen, hedef_kitap.ad, bulunamayan, detay
             );
         }
     }
