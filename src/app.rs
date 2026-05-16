@@ -1,10 +1,10 @@
 use eframe::egui;
-use egui::{Color32, Id, RichText, ScrollArea, TextEdit, Ui, Vec2};
+use egui::{Color32, RichText, ScrollArea, TextEdit, Ui, Vec2};
 use std::path::PathBuf;
 
 use crate::database::Veritabani;
 use crate::export::{metraj_excel_aktar, metraj_json_kaydet, metraj_json_yukle};
-use crate::models::{KayitliMetraj, Kitap, MetrajKalemi, Poz};
+use crate::models::{KayitliMetraj, Kitap, MetrajKalemi, MiktarDetay, Poz};
 use crate::pdf_parser::{pdf_metin_cikar, pozlari_ayristir};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -25,7 +25,6 @@ pub struct MetrajApp {
     secili_poz: Option<Poz>,
     aciklama_arama_metni: String,
     yeni_poz_no: String,
-    yeni_miktar: String,
     yeni_kitap_adi: String,
     yeni_kitap_yil: u32,
     yeni_kitap_ay: u32,
@@ -47,7 +46,12 @@ pub struct MetrajApp {
     pozlar_arama_metni: String,
     pozlar_tablosu: Vec<Poz>,
     pozlar_yuklu_kitap_id: Option<i64>,
-    miktar_odak_iste: bool,
+    // Miktar detay popup
+    miktar_popup_acik: bool,
+    popup_kalem_indeks: Option<usize>,
+    popup_detaylar: Vec<(String, String)>, // (aciklama, miktar_metni)
+    popup_yeni_aciklama: String,
+    popup_yeni_miktar: String,
 }
 
 impl Default for MetrajApp {
@@ -66,7 +70,7 @@ impl Default for MetrajApp {
             metraj_kalemleri: vec![], metraj_adi: "Isimsiz Metraj".into(),
             mevcut_dosya_yolu: None, degisiklik_var: false,
             poz_arama_metni: String::new(), akilli_arama_metni: String::new(), arama_sonuclari: vec![], secili_poz: None,
-            aciklama_arama_metni: String::new(), yeni_poz_no: String::new(), yeni_miktar: String::new(),
+            aciklama_arama_metni: String::new(), yeni_poz_no: String::new(),
             yeni_kitap_adi: String::new(), yeni_kitap_yil: 2026, yeni_kitap_ay: 5,
             duzenlenen_kitap: None, duzenleme_adi: String::new(), duzenleme_yil: 2026, duzenleme_ay: 1,
             fiyat_guncelle_hedef: None,
@@ -76,7 +80,11 @@ impl Default for MetrajApp {
             hata_mesaji: String::new(), basarili_mesaj: String::new(),
             kategoriler: vec![], secili_kategori: "TÜMÜ".into(), kategori_pozlar: vec![],
             pozlar_arama_metni: String::new(), pozlar_tablosu: vec![], pozlar_yuklu_kitap_id: None,
-            miktar_odak_iste: false,
+            miktar_popup_acik: false,
+            popup_kalem_indeks: None,
+            popup_detaylar: vec![],
+            popup_yeni_aciklama: String::new(),
+            popup_yeni_miktar: String::new(),
         }
     }
 }
@@ -132,6 +140,9 @@ impl eframe::App for MetrajApp {
                     });
                 });
         }
+
+        // Miktar detay popup'ı
+        self.render_miktar_popup(ctx);
 
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
@@ -340,7 +351,6 @@ impl MetrajApp {
                     if response.double_clicked() {
                         self.secili_poz = Some(poz.clone());
                         self.yeni_poz_no = poz.poz_no.clone();
-                        self.yeni_miktar.clear();
                         self.cift_tiklama_ekle = true;
                     }
                     response.on_hover_text(&format!("{}/{} | {}\nÇift tıkla: metraja ekle", poz.ay, poz.yil, poz.tanim));
@@ -382,16 +392,6 @@ impl MetrajApp {
         ui.horizontal(|ui| {
             ui.label("Poz No:");
             if ui.add(TextEdit::singleline(&mut self.yeni_poz_no).hint_text("15.100.1001").desired_width(140.0)).changed() { self.poz_sorgula(); }
-            ui.label("Miktar:");
-            let miktar_id = Id::new("yeni_miktar_giris");
-            let miktar_response = ui.add(TextEdit::singleline(&mut self.yeni_miktar).hint_text("0,00").desired_width(80.0).id_source(miktar_id));
-            if self.miktar_odak_iste {
-                miktar_response.request_focus();
-                self.miktar_odak_iste = false;
-            }
-            if miktar_response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                self.kalem_ekle();
-            }
             if ui.button(RichText::new("➕ Kalem Ekle").color(Color32::WHITE)).highlight().clicked() { self.kalem_ekle(); }
         });
         // Fiyat güncelleme - hedef kitap seçerek tüm kalemleri yeni fiyatlarla güncelle
@@ -418,7 +418,7 @@ impl MetrajApp {
             ui.add_space(2.0);
         }
         if let Some(ref poz) = self.secili_poz {
-            if let Some(f) = poz.fiyat { let miktar = sayi_oku(&self.yeni_miktar).unwrap_or(0.0); let tt = miktar * f; ui.label(format!("{} | {:.2} TL x {:.2} = {:.2} TL", poz.tanim, f, miktar, tt)); }
+            if let Some(f) = poz.fiyat { ui.label(format!("{} | {:.2} TL", poz.tanim, f)); }
         }
         ui.separator();
         ui.horizontal(|ui| {
@@ -438,38 +438,141 @@ impl MetrajApp {
 
     fn render_metraj_kalem_tablosu(&mut self, ui: &mut Ui) {
         if self.metraj_kalemleri.is_empty() { ui.label(RichText::new("Henuz kalem yok.").color(Color32::GRAY).size(13.0)); return; }
-        egui::Grid::new("metraj_grid").num_columns(9).min_col_width(42.0).striped(true).show(ui, |ui: &mut egui::Ui| {
+        let mut popup_acilacak: Option<usize> = None;
+        egui::Grid::new("metraj_grid").num_columns(8).min_col_width(42.0).striped(true).show(ui, |ui: &mut egui::Ui| {
             ui.label(RichText::new("#").strong().size(12.0)); ui.label(RichText::new("Poz No").strong().size(12.0));
             ui.label(RichText::new("Açıklama").strong().size(12.0)); ui.label(RichText::new("Kitap").strong().size(12.0));
             ui.label(RichText::new("Birim").strong().size(12.0)); ui.label(RichText::new("B.Fiyat").strong().size(12.0));
             ui.label(RichText::new("Miktar").strong().size(12.0)); ui.label(RichText::new("Tutar").strong().size(12.0));
-            ui.label(RichText::new("").strong().size(12.0));
             ui.end_row();
 
-            let mut sil: Option<usize> = None; let mut deg: Option<(usize, f64)> = None;
-            for (idx, kalem) in self.metraj_kalemleri.iter_mut().enumerate() {
+            let mut sil: Option<usize> = None;
+            for (idx, kalem) in self.metraj_kalemleri.iter().enumerate() {
                 ui.label(format!("{}", idx + 1));
-                let miktar_id = Id::new(("metraj_miktar", idx));
                 let poz_response = ui.label(RichText::new(&kalem.poz_no).size(11.0).monospace());
                 let kisa = metni_kisalt(&kalem.tanim, 46);
                 let aciklama_response = ui.label(RichText::new(kisa).size(11.0)).on_hover_text(&kalem.tanim);
                 let kitap_kisa = metni_kisalt(&kalem.kitap_adi, 18);
                 ui.label(RichText::new(kitap_kisa).size(10.0)).on_hover_text(&kalem.kitap_adi);
-                ui.label(&kalem.birim); ui.label(format!("{:.2}", kalem.birim_fiyat));
-                let mut ms = format!("{:.2}", kalem.miktar);
-                let miktar_response = ui.add(TextEdit::singleline(&mut ms).desired_width(70.0).id_source(miktar_id));
-                if miktar_response.changed() { if let Some(y) = sayi_oku(&ms) { deg = Some((idx, y)); } }
+                ui.label(&kalem.birim);
+                ui.label(format!("{:.2}", kalem.birim_fiyat));
+                let miktar_response = ui.label(RichText::new(format!("{:.2}", kalem.miktar)).size(11.0));
                 ui.label(RichText::new(format!("{:.2}", kalem.tutar)).size(11.0).strong().color(Color32::GREEN));
                 if ui.button(RichText::new("✕").color(Color32::RED).size(11.0)).clicked() { sil = Some(idx); }
-                let satir_response = poz_response.union(aciklama_response);
-                if satir_response.double_clicked() {
-                    ui.memory_mut(|mem| mem.request_focus(miktar_id));
+                let satir_response = poz_response.union(aciklama_response).union(miktar_response);
+                if satir_response.clicked() {
+                    popup_acilacak = Some(idx);
                 }
                 ui.end_row();
             }
             if let Some(idx) = sil { self.metraj_kalemleri.remove(idx); self.degisiklik_var = true; }
-            if let Some((idx, ym)) = deg { if idx < self.metraj_kalemleri.len() { self.metraj_kalemleri[idx].miktar = ym; self.metraj_kalemleri[idx].tutar_guncelle(); self.degisiklik_var = true; } }
         });
+        if let Some(idx) = popup_acilacak {
+            self.popup_kalem_indeks = Some(idx);
+            self.popup_detaylar = self.metraj_kalemleri[idx].detaylar.iter()
+                .map(|d| (d.aciklama.clone(), format!("{:.2}", d.miktar)))
+                .collect();
+            self.popup_yeni_aciklama.clear();
+            self.popup_yeni_miktar.clear();
+            self.miktar_popup_acik = true;
+        }
+    }
+
+    fn render_miktar_popup(&mut self, ctx: &egui::Context) {
+        if !self.miktar_popup_acik { return; }
+        let idx = match self.popup_kalem_indeks {
+            Some(i) if i < self.metraj_kalemleri.len() => i,
+            _ => { self.miktar_popup_acik = false; return; }
+        };
+        let kalem = &self.metraj_kalemleri[idx];
+        let poz_no = kalem.poz_no.clone();
+        let tanim = kalem.tanim.clone();
+        let birim = kalem.birim.clone();
+        let birim_fiyat = kalem.birim_fiyat;
+
+        egui::Window::new("📐 Miktar Detayları")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .default_width(500.0)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(&poz_no).monospace().strong().size(16.0));
+                    ui.label(RichText::new(&tanim).size(14.0));
+                });
+                ui.horizontal(|ui| {
+                    ui.label(format!("Birim: {}", birim));
+                    ui.colored_label(Color32::GREEN, format!("Birim Fiyat: {:.2} TL", birim_fiyat));
+                });
+                ui.separator();
+
+                ui.label(RichText::new("Detaylar:").strong().size(13.0));
+                egui::Grid::new("popup_detay_grid").num_columns(3).min_col_width(60.0).striped(true).show(ui, |ui| {
+                    ui.label(RichText::new("#").strong());
+                    ui.label(RichText::new("Açıklama").strong());
+                    ui.label(RichText::new("Miktar").strong());
+                    ui.end_row();
+
+                    let mut silinecek_satir: Option<usize> = None;
+                    let mut degisen_satir: Option<(usize, String, String)> = None;
+                    for (d_idx, (aciklama, miktar_metni)) in self.popup_detaylar.iter_mut().enumerate() {
+                        ui.label(format!("{}", d_idx + 1));
+                        let mut aciklama_clone = aciklama.clone();
+                        let aciklama_response = ui.add(TextEdit::singleline(&mut aciklama_clone).desired_width(250.0));
+                        if aciklama_response.changed() { degisen_satir = Some((d_idx, aciklama_clone, miktar_metni.clone())); }
+                        let mut miktar_clone = miktar_metni.clone();
+                        let miktar_response = ui.add(TextEdit::singleline(&mut miktar_clone).desired_width(80.0));
+                        if miktar_response.changed() { degisen_satir = Some((d_idx, aciklama.clone(), miktar_clone)); }
+                        if ui.button(RichText::new("🗑").color(Color32::RED).size(11.0)).clicked() {
+                            silinecek_satir = Some(d_idx);
+                        }
+                        ui.end_row();
+                    }
+                    if let Some(s) = silinecek_satir { self.popup_detaylar.remove(s); }
+                    if let Some((d_idx, yeni_aciklama, yeni_miktar)) = degisen_satir {
+                        if d_idx < self.popup_detaylar.len() {
+                            self.popup_detaylar[d_idx] = (yeni_aciklama, yeni_miktar);
+                        }
+                    }
+                });
+
+                ui.add_space(5.0);
+                ui.horizontal(|ui| {
+                    ui.label("Yeni:");
+                    ui.add(TextEdit::singleline(&mut self.popup_yeni_aciklama).hint_text("Açıklama").desired_width(200.0));
+                    ui.add(TextEdit::singleline(&mut self.popup_yeni_miktar).hint_text("0,00").desired_width(70.0));
+                    if ui.button("➕ Ekle").clicked() {
+                        if let Some(m) = sayi_oku(&self.popup_yeni_miktar) {
+                            self.popup_detaylar.push((self.popup_yeni_aciklama.clone(), format!("{:.2}", m)));
+                            self.popup_yeni_aciklama.clear();
+                            self.popup_yeni_miktar.clear();
+                        }
+                    }
+                });
+                ui.separator();
+
+                let toplam_miktar: f64 = self.popup_detaylar.iter()
+                    .filter_map(|(_, m)| sayi_oku(m))
+                    .sum();
+                ui.label(RichText::new(format!("Toplam Miktar: {:.2} {}", toplam_miktar, birim)).size(13.0).strong().color(Color32::GREEN));
+                ui.add_space(5.0);
+                ui.horizontal(|ui| {
+                    if ui.button(RichText::new("✅ Tamam").strong()).clicked() {
+                        let detaylar: Vec<MiktarDetay> = self.popup_detaylar.iter()
+                            .filter_map(|(a, m)| sayi_oku(m).map(|mv| MiktarDetay { aciklama: a.clone(), miktar: mv }))
+                            .collect();
+                        if let Some(kalem) = self.metraj_kalemleri.get_mut(idx) {
+                            kalem.detaylar = detaylar;
+                            kalem.detaylardan_miktar_hesapla();
+                            self.degisiklik_var = true;
+                        }
+                        self.miktar_popup_acik = false;
+                    }
+                    if ui.button("❌ İptal").clicked() {
+                        self.miktar_popup_acik = false;
+                    }
+                });
+            });
     }
 
     fn render_metraj_ozetleri(&self, ui: &mut Ui) {
@@ -620,6 +723,7 @@ impl MetrajApp {
         for kalem in self.metraj_kalemleri.drain(..) {
             if let Some(mevcut) = tekil.iter_mut().find(|m| m.poz_no == kalem.poz_no) {
                 mevcut.miktar += kalem.miktar;
+                mevcut.detaylar.extend(kalem.detaylar);
                 mevcut.tutar_guncelle();
                 birlesen += 1;
             } else {
@@ -686,20 +790,21 @@ impl MetrajApp {
     }
     fn kalem_ekle(&mut self) {
         if let Some(ref poz) = self.secili_poz {
-            let m = sayi_oku(&self.yeni_miktar).unwrap_or(0.0);
-            if let Some(kalem) = self.metraj_kalemleri.iter_mut().find(|k| k.poz_no == poz.poz_no) {
-                kalem.miktar += m;
-                kalem.tutar_guncelle();
-                self.degisiklik_var = true;
-                self.basarili_mesaj = format!("{} zaten vardı; miktar {:.2} {} oldu.", poz.poz_no, kalem.miktar, kalem.birim);
-                self.yeni_miktar.clear(); self.hata_mesaji.clear();
+            if self.metraj_kalemleri.iter().any(|k| k.poz_no == poz.poz_no) {
+                self.basarili_mesaj = format!("{} zaten listede var. Miktarını düzenlemek için satıra tıklayın.", poz.poz_no);
+                self.hata_mesaji.clear();
                 return;
             }
-            let kalem = MetrajKalemi::yeni(poz, m); let t = kalem.tutar; let bf = kalem.birim_fiyat; self.metraj_kalemleri.push(kalem);
-            // Metrajı poz numarasına göre sırala (yeniden eklemede de sıralı kalır)
+            let kalem = MetrajKalemi::yeni(poz, 0.0);
+            self.metraj_kalemleri.push(kalem);
+            // Metrajı poz numarasına göre sırala
             self.metraj_kalemleri.sort_by(|a, b| a.poz_no.cmp(&b.poz_no));
-            self.degisiklik_var = true; self.basarili_mesaj = if m == 0.0 { format!("{} eklendi.", poz.poz_no) } else { format!("{} eklendi ({:.2} {} x {:.2} = {:.2} TL).", poz.poz_no, m, poz.birim, bf, t) }; self.yeni_miktar.clear(); self.hata_mesaji.clear(); }
-        else { self.hata_mesaji = "Once bir poz secin.".into(); }
+            self.degisiklik_var = true;
+            self.basarili_mesaj = format!("{} eklendi.", poz.poz_no);
+            self.hata_mesaji.clear();
+        } else {
+            self.hata_mesaji = "Once bir poz secin.".into();
+        }
     }
     fn kategorileri_yukle(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(k) = db.kategoriler(kid) { self.kategoriler = k; } } }
     fn kategori_filtrele(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(t) = db.tum_pozlar(kid) { self.kategori_pozlar = t.into_iter().filter(|p| p.kategori == self.secili_kategori).collect(); } } }

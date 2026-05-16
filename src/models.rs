@@ -24,6 +24,12 @@ pub struct Kitap {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MiktarDetay {
+    pub aciklama: String,
+    pub miktar: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetrajKalemi {
     pub poz_no: String,
     pub tanim: String,
@@ -32,6 +38,7 @@ pub struct MetrajKalemi {
     pub miktar: f64,
     pub tutar: f64,
     pub kitap_adi: String,
+    pub detaylar: Vec<MiktarDetay>,
 }
 
 impl MetrajKalemi {
@@ -46,7 +53,13 @@ impl MetrajKalemi {
             miktar,
             tutar,
             kitap_adi: format!("{} ({}/{})", poz.kitap_adi, poz.ay, poz.yil),
+            detaylar: Vec::new(),
         }
+    }
+
+    pub fn detaylardan_miktar_hesapla(&mut self) {
+        self.miktar = self.detaylar.iter().map(|d| d.miktar).sum();
+        self.tutar_guncelle();
     }
 
     pub fn tutar_guncelle(&mut self) {
