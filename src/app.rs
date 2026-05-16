@@ -614,6 +614,22 @@ impl MetrajApp {
     // ==================== YARDIMCI ====================
     fn toplam_tutar(&self) -> f64 { self.metraj_kalemleri.iter().map(|k| k.tutar).sum() }
     fn kitaplari_yenile(&mut self) { if let Some(ref db) = self.db { if let Ok(k) = db.kitaplari_listele() { self.kitaplar = k; } } }
+    fn metraj_kalemlerini_tekillestir(&mut self) -> usize {
+        let mut birlesen = 0;
+        let mut tekil: Vec<MetrajKalemi> = Vec::with_capacity(self.metraj_kalemleri.len());
+        for kalem in self.metraj_kalemleri.drain(..) {
+            if let Some(mevcut) = tekil.iter_mut().find(|m| m.poz_no == kalem.poz_no) {
+                mevcut.miktar += kalem.miktar;
+                mevcut.tutar_guncelle();
+                birlesen += 1;
+            } else {
+                tekil.push(kalem);
+            }
+        }
+        tekil.sort_by(|a, b| a.poz_no.cmp(&b.poz_no));
+        self.metraj_kalemleri = tekil;
+        birlesen
+    }
     fn pozlar_tablosu_yenile(&mut self) {
         self.pozlar_tablosu.clear();
         self.pozlar_yuklu_kitap_id = self.secili_kitap.as_ref().map(|k| k.id);
@@ -669,8 +685,9 @@ impl MetrajApp {
         }
     }
     fn kalem_ekle(&mut self) {
-        if let Some(ref poz) = self.secili_poz { let m = sayi_oku(&self.yeni_miktar).unwrap_or(0.0); let yeni_kitap_adi = format!("{} ({}/{})", poz.kitap_adi, poz.ay, poz.yil);
-            if let Some(kalem) = self.metraj_kalemleri.iter_mut().find(|k| k.poz_no == poz.poz_no && k.kitap_adi == yeni_kitap_adi) {
+        if let Some(ref poz) = self.secili_poz {
+            let m = sayi_oku(&self.yeni_miktar).unwrap_or(0.0);
+            if let Some(kalem) = self.metraj_kalemleri.iter_mut().find(|k| k.poz_no == poz.poz_no) {
                 kalem.miktar += m;
                 kalem.tutar_guncelle();
                 self.degisiklik_var = true;
@@ -710,7 +727,29 @@ impl MetrajApp {
         if let Some(ref y) = self.mevcut_dosya_yolu { match metraj_json_kaydet(&m, y) { Ok(()) => { self.degisiklik_var = false; self.basarili_mesaj = format!("Kaydedildi: {}", y.display()); } Err(e) => self.hata_mesaji = format!("{}", e) } }
         else if let Some(d) = rfd::FileDialog::new().add_filter("Metrajmatik Projesi", &["mrj"]).set_file_name(&format!("{}.mrj", self.metraj_adi)).save_file() { match metraj_json_kaydet(&m, &d) { Ok(()) => { self.mevcut_dosya_yolu = Some(d.clone()); self.degisiklik_var = false; self.basarili_mesaj = format!("Kaydedildi: {}", d.display()); } Err(e) => self.hata_mesaji = format!("{}", e) } }
     }
-    fn metraj_yukle_diyalog(&mut self) { if let Some(d) = rfd::FileDialog::new().add_filter("Metrajmatik Projesi", &["mrj","json"]).pick_file() { match metraj_json_yukle(&d) { Ok(m) => { self.metraj_kalemleri = m.kalemler; self.metraj_adi = m.ad; self.mevcut_dosya_yolu = Some(d.clone()); self.degisiklik_var = false; self.basarili_mesaj = format!("Acildi: {}", d.display()); } Err(e) => self.hata_mesaji = format!("{}", e) } } }
+    fn metraj_yukle_diyalog(&mut self) {
+        if let Some(d) = rfd::FileDialog::new()
+            .add_filter("Metrajmatik Projesi", &["mrj", "json"])
+            .pick_file()
+        {
+            match metraj_json_yukle(&d) {
+                Ok(m) => {
+                    let KayitliMetraj { ad, kalemler, .. } = m;
+                    self.metraj_kalemleri = kalemler;
+                    let birlesen = self.metraj_kalemlerini_tekillestir();
+                    self.metraj_adi = ad;
+                    self.mevcut_dosya_yolu = Some(d.clone());
+                    self.degisiklik_var = birlesen > 0;
+                    self.basarili_mesaj = if birlesen > 0 {
+                        format!("Acildi: {} ({} yinelenen poz birlestirildi)", d.display(), birlesen)
+                    } else {
+                        format!("Acildi: {}", d.display())
+                    };
+                }
+                Err(e) => self.hata_mesaji = format!("{}", e),
+            }
+        }
+    }
     fn metraj_excel_diyalog(&mut self) { let m = KayitliMetraj { ad: self.metraj_adi.clone(), kalemler: self.metraj_kalemleri.clone(), tarih: krono_tarih() }; if let Some(d) = rfd::FileDialog::new().add_filter("Excel", &["xlsx"]).set_file_name(&format!("{}.xlsx", self.metraj_adi)).save_file() { match metraj_excel_aktar(&m, &d) { Ok(()) => { self.basarili_mesaj = format!("Excel: {}", d.display()); } Err(e) => self.hata_mesaji = format!("{}", e) } } }
 
     fn fiyatlari_guncelle(&mut self) {
