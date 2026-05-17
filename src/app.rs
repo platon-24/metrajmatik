@@ -205,8 +205,8 @@ impl eframe::App for MetrajApp {
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             let ki = self.secili_kitap.as_ref().map(|k| format!("📚 {} | ", k.ad)).unwrap_or_default();
             let da = self.mevcut_dosya_yolu.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| "Kaydedilmemis".into());
-            ui.label(format!("📁 {} {}| {}{} poz | 📋 {} kalem | 💰 {:.2} TL",
-                da, if self.degisiklik_var { "● " } else { "" }, ki, self.poz_sayisi, self.metraj_kalemleri.len(), self.toplam_tutar()));
+            ui.label(format!("📁 {} {}| {}{} poz | 📋 {} kalem | 💰 {} TL",
+                da, if self.degisiklik_var { "● " } else { "" }, ki, self.poz_sayisi, self.metraj_kalemleri.len(), para_formatla(self.toplam_tutar())));
         });
     }
 }
@@ -357,7 +357,7 @@ impl MetrajApp {
 
             for poz in pl.iter() {
                 let secili = self.secili_poz.as_ref().map(|s| s.poz_no == poz.poz_no && s.kitap_id == poz.kitap_id).unwrap_or(false);
-                let fm = match poz.fiyat { Some(f) => format!("{:.2}", f), None => "---".into() };
+                let fm = match poz.fiyat { Some(f) => para_formatla(f), None => "---".into() };
                 let yazi_rengi = if secili { Color32::LIGHT_GREEN } else { ui.style().visuals.text_color() };
                 let mut satir_response: Option<egui::Response> = None;
 
@@ -403,7 +403,7 @@ impl MetrajApp {
             ui.label(RichText::new(&poz.poz_no).monospace().strong().size(15.0));
             ui.horizontal(|ui| {
                 ui.label(format!("Birim: {}", poz.birim));
-                match poz.fiyat { Some(f) => { ui.colored_label(Color32::GREEN, format!("B.Fiyat: {:.2} TL", f)); } None => { ui.colored_label(Color32::RED, "Formül"); } }
+                match poz.fiyat { Some(f) => { ui.colored_label(Color32::GREEN, format!("B.Fiyat: {} TL", para_formatla(f))); } None => { ui.colored_label(Color32::RED, "Formül"); } }
             });
             ui.label(format!("Kitap: {} ({}/{})", poz.kitap_adi, poz.ay, poz.yil));
             ui.label(format!("Açıklama: {}", poz.tanim));
@@ -460,7 +460,7 @@ impl MetrajApp {
             ui.add_space(2.0);
         }
         if let Some(ref poz) = self.secili_poz {
-            if let Some(f) = poz.fiyat { ui.label(format!("{} | {:.2} TL", poz.tanim, f)); }
+            if let Some(f) = poz.fiyat { ui.label(format!("{} | {} TL", poz.tanim, para_formatla(f))); }
         }
         ui.separator();
         ui.horizontal(|ui| {
@@ -475,7 +475,7 @@ impl MetrajApp {
         ui.separator();
         ScrollArea::vertical().max_height(ui.available_height() - 80.0).show(ui, |ui| { self.render_metraj_kalem_tablosu(ui); });
         ui.separator();
-        ui.horizontal(|ui| { ui.label(RichText::new(format!("GENEL TOPLAM: {:.2} TL", self.toplam_tutar())).size(16.0).strong().color(Color32::GREEN)); });
+        ui.horizontal(|ui| { ui.label(RichText::new(format!("GENEL TOPLAM: {} TL", para_formatla(self.toplam_tutar()))).size(16.0).strong().color(Color32::GREEN)); });
     }
 
     fn render_metraj_kalem_tablosu(&mut self, ui: &mut Ui) {
@@ -497,9 +497,9 @@ impl MetrajApp {
                 let kitap_kisa = metni_kisalt(&kalem.kitap_adi, 18);
                 ui.label(RichText::new(kitap_kisa).size(10.0)).on_hover_text(&kalem.kitap_adi);
                 ui.label(&kalem.birim);
-                ui.label(format!("{:.2}", kalem.birim_fiyat));
+                ui.label(para_formatla(kalem.birim_fiyat));
                 let miktar_response = ui.label(RichText::new(format!("{:.2}", kalem.miktar)).size(11.0));
-                ui.label(RichText::new(format!("{:.2}", kalem.tutar)).size(11.0).strong().color(Color32::GREEN));
+                ui.label(RichText::new(para_formatla(kalem.tutar)).size(11.0).strong().color(Color32::GREEN));
                 if ui.button(RichText::new("✕").color(Color32::RED).size(11.0)).clicked() { sil = Some(idx); }
                 let satir_response = poz_response.union(aciklama_response).union(miktar_response);
                 if satir_response.clicked() {
@@ -544,7 +544,7 @@ impl MetrajApp {
                 });
                 ui.horizontal(|ui| {
                     ui.label(format!("Birim: {}", birim));
-                    ui.colored_label(Color32::GREEN, format!("Birim Fiyat: {:.2} TL", birim_fiyat));
+                    ui.colored_label(Color32::GREEN, format!("Birim Fiyat: {} TL", para_formatla(birim_fiyat)));
                 });
                 ui.separator();
 
@@ -639,7 +639,7 @@ impl MetrajApp {
             ui.label(format!("Fiyatsız: {}", fiyatsiz));
             if self.secili_kitap.is_some() {
                 ui.separator();
-                ui.label(format!("Seçili kitap tutarı: {:.2} TL", secili_kitap_tutari));
+                ui.label(format!("Seçili kitap tutarı: {} TL", para_formatla(secili_kitap_tutari)));
             }
         });
 
@@ -654,11 +654,11 @@ impl MetrajApp {
                 ui.columns(2, |cols| {
                     cols[0].label(RichText::new("Kitap").strong());
                     for (kitap, toplam) in kitap_toplamlari.iter().take(6) {
-                        cols[0].label(format!("{}: {:.2} TL", metni_kisalt(kitap, 28), toplam));
+                        cols[0].label(format!("{}: {} TL", metni_kisalt(kitap, 28), para_formatla(*toplam)));
                     }
                     cols[1].label(RichText::new("Birim").strong());
                     for (birim, toplam) in birim_toplamlari.iter().take(6) {
-                        cols[1].label(format!("{}: {:.2} TL", birim, toplam));
+                        cols[1].label(format!("{}: {} TL", birim, para_formatla(*toplam)));
                     }
                 });
             });
@@ -688,7 +688,7 @@ impl MetrajApp {
         self.poz_form_poz_no = poz.poz_no;
         self.poz_form_tanim = poz.tanim;
         self.poz_form_birim = poz.birim;
-        self.poz_form_fiyat = poz.fiyat.map(|f| format!("{:.2}", f)).unwrap_or_default();
+        self.poz_form_fiyat = poz.fiyat.map(para_formatla).unwrap_or_default();
         self.poz_form_kategori = poz.kategori;
     }
 
@@ -902,7 +902,7 @@ impl MetrajApp {
                 ui.end_row();
 
                 for poz in pozlar {
-                    let fiyat = poz.fiyat.map(|f| format!("{:.2}", f)).unwrap_or_else(|| "---".into());
+                    let fiyat = poz.fiyat.map(para_formatla).unwrap_or_else(|| "---".into());
                     let aciklama = metni_kisalt(&poz.tanim, 85);
                     ui.label(RichText::new(&poz.poz_no).monospace().size(11.0));
                     ui.label(RichText::new(aciklama).size(11.0)).on_hover_text(&poz.tanim);
@@ -1163,8 +1163,28 @@ fn metni_kisalt(metin: &str, en_fazla: usize) -> String {
     format!("{}...", govde)
 }
 
+fn para_formatla(deger: f64) -> String {
+    let isaret = if deger.is_sign_negative() { "-" } else { "" };
+    let yuvarlanmis = format!("{:.2}", deger.abs());
+    let mut parcalar = yuvarlanmis.split('.');
+    let tam = parcalar.next().unwrap_or("0");
+    let kurus = parcalar.next().unwrap_or("00");
+    let mut gruplu_ters = String::new();
+    for (idx, ch) in tam.chars().rev().enumerate() {
+        if idx > 0 && idx % 3 == 0 {
+            gruplu_ters.push('.');
+        }
+        gruplu_ters.push(ch);
+    }
+    let gruplu: String = gruplu_ters.chars().rev().collect();
+    format!("{}{},{}", isaret, gruplu, kurus)
+}
+
 fn sayi_oku(metin: &str) -> Option<f64> {
-    let temiz = metin.trim().replace(' ', "").replace(',', ".");
+    let mut temiz = metin.trim().replace(' ', "");
+    if temiz.contains(',') {
+        temiz = temiz.replace('.', "").replace(',', ".");
+    }
     if temiz.is_empty() {
         return None;
     }
