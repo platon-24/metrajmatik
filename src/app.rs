@@ -325,25 +325,39 @@ impl MetrajApp {
 
         self.cift_tiklama_ekle = false;
         ScrollArea::vertical().max_height(ui.available_height() - 50.0).show(ui, |ui| {
-            egui::Grid::new("arama_sonuc_grid").num_columns(4).min_col_width(42.0).striped(true).show(ui, |ui| {
+            ui.horizontal(|ui| {
                 ui.label(RichText::new("Poz").strong().size(11.0));
+                ui.add_space(52.0);
                 ui.label(RichText::new("Birim").strong().size(11.0));
+                ui.add_space(18.0);
                 ui.label(RichText::new("Fiyat").strong().size(11.0));
-                ui.label(RichText::new("Açıklama").strong().size(11.0));
-                ui.end_row();
+            });
+            ui.separator();
 
-                for poz in pl.iter() {
-                    let secili = self.secili_poz.as_ref().map(|s| s.poz_no == poz.poz_no && s.kitap_id == poz.kitap_id).unwrap_or(false);
-                    let fm = match poz.fiyat { Some(f) => format!("{:.2}", f), None => "---".into() };
-                    let yazi_rengi = if secili { Color32::LIGHT_GREEN } else { ui.style().visuals.text_color() };
-                    let aciklama = metni_kisalt(&poz.tanim, 32);
+            for poz in pl.iter() {
+                let secili = self.secili_poz.as_ref().map(|s| s.poz_no == poz.poz_no && s.kitap_id == poz.kitap_id).unwrap_or(false);
+                let fm = match poz.fiyat { Some(f) => format!("{:.2}", f), None => "---".into() };
+                let yazi_rengi = if secili { Color32::LIGHT_GREEN } else { ui.style().visuals.text_color() };
+                let mut satir_response: Option<egui::Response> = None;
 
-                    let r1 = ui.selectable_label(secili, RichText::new(&poz.poz_no).monospace().size(11.0).color(yazi_rengi));
-                    ui.label(RichText::new(&poz.birim).size(11.0));
-                    ui.label(RichText::new(fm).size(11.0));
-                    let r4 = ui.label(RichText::new(aciklama).size(11.0));
-                    let response = r1.union(r4);
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let r1 = ui.selectable_label(secili, RichText::new(&poz.poz_no).monospace().size(11.0).color(yazi_rengi));
+                        let r2 = ui.label(RichText::new(&poz.birim).size(11.0));
+                        let r3 = ui.label(RichText::new(fm).size(11.0));
+                        satir_response = Some(r1.union(r2).union(r3));
+                    });
+                    let r4 = ui.add(
+                        egui::Label::new(RichText::new(&poz.tanim).size(11.0).color(yazi_rengi))
+                            .wrap()
+                    );
+                    satir_response = Some(match satir_response.take() {
+                        Some(r) => r.union(r4),
+                        None => r4,
+                    });
+                });
 
+                if let Some(response) = satir_response {
                     if response.clicked() {
                         self.secili_poz = Some(poz.clone());
                         self.yeni_poz_no = poz.poz_no.clone();
@@ -354,9 +368,8 @@ impl MetrajApp {
                         self.cift_tiklama_ekle = true;
                     }
                     response.on_hover_text(&format!("{}/{} | {}\nÇift tıkla: metraja ekle", poz.ay, poz.yil, poz.tanim));
-                    ui.end_row();
                 }
-            });
+            }
         });
         if self.cift_tiklama_ekle {
             self.kalem_ekle();
@@ -391,8 +404,16 @@ impl MetrajApp {
         }); ui.separator();
         ui.horizontal(|ui| {
             ui.label("Poz No:");
-            if ui.add(TextEdit::singleline(&mut self.yeni_poz_no).hint_text("15.100.1001").desired_width(140.0)).changed() { self.poz_sorgula(); }
-            if ui.button(RichText::new("➕ Kalem Ekle").color(Color32::WHITE)).highlight().clicked() { self.kalem_ekle(); }
+            let poz_no_response = ui.add(TextEdit::singleline(&mut self.yeni_poz_no).hint_text("15.100.1001").desired_width(140.0));
+            if poz_no_response.changed() { self.poz_sorgula(); }
+            if poz_no_response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                self.poz_sorgula();
+                self.kalem_ekle();
+            }
+            if ui.button(RichText::new("➕ Kalem Ekle").color(Color32::WHITE)).highlight().clicked() {
+                self.poz_sorgula();
+                self.kalem_ekle();
+            }
         });
         // Fiyat güncelleme - hedef kitap seçerek tüm kalemleri yeni fiyatlarla güncelle
         if !self.metraj_kalemleri.is_empty() && self.kitaplar.len() > 1 {
@@ -779,11 +800,25 @@ impl MetrajApp {
     fn poz_no_ara(&mut self) { if self.poz_arama_metni.is_empty() { self.arama_sonuclari.clear(); return; } if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(s) = db.poz_no_ara(&self.poz_arama_metni, kid) { self.arama_sonuclari = s; } } }
     fn aciklama_ara(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(s) = db.tam_metin_ara(&self.aciklama_arama_metni, kid) { self.arama_sonuclari = s; } } }
     fn poz_sorgula(&mut self) {
-        if self.yeni_poz_no.is_empty() { self.secili_poz = None; return; }
+        let poz_no = self.yeni_poz_no.trim().to_string();
+        if poz_no.is_empty() { self.secili_poz = None; return; }
         if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id);
-            match db.poz_getir(&self.yeni_poz_no, kid) {
-                Ok(Some(p)) => self.secili_poz = Some(p),
-                Ok(None) => { if let Ok(s) = db.poz_no_ara(&self.yeni_poz_no, kid) { if s.len() == 1 { self.secili_poz = Some(s[0].clone()); self.yeni_poz_no = s[0].poz_no.clone(); } else { self.arama_sonuclari = s; } } }
+            match db.poz_getir(&poz_no, kid) {
+                Ok(Some(p)) => {
+                    self.secili_poz = Some(p);
+                    self.yeni_poz_no = poz_no;
+                }
+                Ok(None) => {
+                    if let Ok(s) = db.poz_no_ara(&poz_no, kid) {
+                        if s.len() == 1 {
+                            self.secili_poz = Some(s[0].clone());
+                            self.yeni_poz_no = s[0].poz_no.clone();
+                        } else {
+                            self.secili_poz = None;
+                            self.arama_sonuclari = s;
+                        }
+                    }
+                }
                 Err(e) => self.hata_mesaji = format!("{}", e),
             }
         }

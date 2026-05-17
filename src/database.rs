@@ -154,7 +154,7 @@ impl Veritabani {
         if let Some(kid) = kitap_id {
             format!("SELECT poz_no, tanim, birim, fiyat, kategori, kitap_id, kitap_adi, yil, ay FROM pozlar WHERE kitap_id = {}", kid)
         } else {
-            "SELECT poz_no, tanim, birim, fiyat, kategori, kitap_id, kitap_adi, yil, ay FROM pozlar".to_string()
+            "SELECT poz_no, tanim, birim, fiyat, kategori, kitap_id, kitap_adi, yil, ay FROM pozlar WHERE 1 = 1".to_string()
         }
     }
 
