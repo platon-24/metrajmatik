@@ -150,6 +150,33 @@ impl Veritabani {
         Ok(eklenen)
     }
 
+    pub fn poz_ekle(&self, kitap: &Kitap, poz_no: &str, tanim: &str, birim: &str, fiyat: Option<f64>, kategori: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO pozlar (poz_no, tanim, birim, fiyat, kategori, kitap_id, kitap_adi, yil, ay)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![poz_no, tanim, birim, fiyat, kategori, kitap.id, kitap.ad, kitap.yil, kitap.ay],
+        )?;
+        Ok(())
+    }
+
+    pub fn poz_guncelle(&self, kitap: &Kitap, eski_poz_no: &str, poz_no: &str, tanim: &str, birim: &str, fiyat: Option<f64>, kategori: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE pozlar
+             SET poz_no = ?1, tanim = ?2, birim = ?3, fiyat = ?4, kategori = ?5, kitap_adi = ?6, yil = ?7, ay = ?8
+             WHERE kitap_id = ?9 AND poz_no = ?10",
+            params![poz_no, tanim, birim, fiyat, kategori, kitap.ad, kitap.yil, kitap.ay, kitap.id, eski_poz_no],
+        )?;
+        Ok(())
+    }
+
+    pub fn poz_sil(&self, kitap_id: i64, poz_no: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM pozlar WHERE kitap_id = ?1 AND poz_no = ?2",
+            params![kitap_id, poz_no],
+        )?;
+        Ok(())
+    }
+
     fn poz_secim_sql(&self, kitap_id: Option<i64>) -> String {
         if let Some(kid) = kitap_id {
             format!("SELECT poz_no, tanim, birim, fiyat, kategori, kitap_id, kitap_adi, yil, ay FROM pozlar WHERE kitap_id = {}", kid)

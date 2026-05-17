@@ -46,6 +46,15 @@ pub struct MetrajApp {
     pozlar_arama_metni: String,
     pozlar_tablosu: Vec<Poz>,
     pozlar_yuklu_kitap_id: Option<i64>,
+    poz_form_acik: bool,
+    poz_form_duzenleme: bool,
+    poz_form_eski_poz_no: String,
+    poz_form_poz_no: String,
+    poz_form_tanim: String,
+    poz_form_birim: String,
+    poz_form_fiyat: String,
+    poz_form_kategori: String,
+    silinecek_poz: Option<Poz>,
     // Miktar detay popup
     miktar_popup_acik: bool,
     popup_kalem_indeks: Option<usize>,
@@ -80,6 +89,15 @@ impl Default for MetrajApp {
             hata_mesaji: String::new(), basarili_mesaj: String::new(),
             kategoriler: vec![], secili_kategori: "TÜMÜ".into(), kategori_pozlar: vec![],
             pozlar_arama_metni: String::new(), pozlar_tablosu: vec![], pozlar_yuklu_kitap_id: None,
+            poz_form_acik: false,
+            poz_form_duzenleme: false,
+            poz_form_eski_poz_no: String::new(),
+            poz_form_poz_no: String::new(),
+            poz_form_tanim: String::new(),
+            poz_form_birim: String::new(),
+            poz_form_fiyat: String::new(),
+            poz_form_kategori: String::new(),
+            silinecek_poz: None,
             miktar_popup_acik: false,
             popup_kalem_indeks: None,
             popup_detaylar: vec![],
@@ -140,6 +158,9 @@ impl eframe::App for MetrajApp {
                     });
                 });
         }
+
+        self.render_poz_form_popup(ctx);
+        self.render_poz_sil_onay_popup(ctx);
 
         // Miktar detay popup'ı
         self.render_miktar_popup(ctx);
@@ -645,6 +666,183 @@ impl MetrajApp {
     }
 
     // ==================== POZLAR ====================
+    fn poz_formunu_yeni_icin_ac(&mut self) {
+        if self.secili_kitap.is_none() {
+            self.hata_mesaji = "Once pozun eklenecegi kitabi secin.".into();
+            return;
+        }
+        self.poz_form_acik = true;
+        self.poz_form_duzenleme = false;
+        self.poz_form_eski_poz_no.clear();
+        self.poz_form_poz_no.clear();
+        self.poz_form_tanim.clear();
+        self.poz_form_birim.clear();
+        self.poz_form_fiyat.clear();
+        self.poz_form_kategori = "Özel Poz".into();
+    }
+
+    fn poz_formunu_duzenleme_icin_ac(&mut self, poz: Poz) {
+        self.poz_form_acik = true;
+        self.poz_form_duzenleme = true;
+        self.poz_form_eski_poz_no = poz.poz_no.clone();
+        self.poz_form_poz_no = poz.poz_no;
+        self.poz_form_tanim = poz.tanim;
+        self.poz_form_birim = poz.birim;
+        self.poz_form_fiyat = poz.fiyat.map(|f| format!("{:.2}", f)).unwrap_or_default();
+        self.poz_form_kategori = poz.kategori;
+    }
+
+    fn poz_form_fiyat_degeri(&mut self) -> Option<Option<f64>> {
+        let fiyat = self.poz_form_fiyat.trim();
+        if fiyat.is_empty() {
+            return Some(None);
+        }
+        match fiyat.replace(',', ".").parse::<f64>() {
+            Ok(deger) => Some(Some(deger)),
+            Err(_) => {
+                self.hata_mesaji = "Birim fiyat sayi olmali. Ornek: 1250,50".into();
+                None
+            }
+        }
+    }
+
+    fn poz_form_kaydet(&mut self) {
+        let kitap = match self.secili_kitap.clone() {
+            Some(kitap) => kitap,
+            None => {
+                self.hata_mesaji = "Once kitap secin.".into();
+                return;
+            }
+        };
+        let poz_no = self.poz_form_poz_no.trim().to_string();
+        let tanim = self.poz_form_tanim.trim().to_string();
+        let birim = self.poz_form_birim.trim().to_string();
+        let kategori = self.poz_form_kategori.trim().to_string();
+        if poz_no.is_empty() || tanim.is_empty() || birim.is_empty() || kategori.is_empty() {
+            self.hata_mesaji = "Poz no, aciklama, birim ve kategori zorunlu.".into();
+            return;
+        }
+        let fiyat = match self.poz_form_fiyat_degeri() {
+            Some(fiyat) => fiyat,
+            None => return,
+        };
+        if let Some(ref db) = self.db {
+            let sonuc = if self.poz_form_duzenleme {
+                db.poz_guncelle(&kitap, &self.poz_form_eski_poz_no, &poz_no, &tanim, &birim, fiyat, &kategori)
+            } else {
+                db.poz_ekle(&kitap, &poz_no, &tanim, &birim, fiyat, &kategori)
+            };
+            match sonuc {
+                Ok(()) => {
+                    self.poz_form_acik = false;
+                    self.basarili_mesaj = if self.poz_form_duzenleme {
+                        format!("{} guncellendi.", poz_no)
+                    } else {
+                        format!("{} eklendi.", poz_no)
+                    };
+                    self.hata_mesaji.clear();
+                    self.kitaplari_yenile();
+                    self.kategorileri_yukle();
+                    self.pozlar_tablosu_yenile();
+                }
+                Err(e) => self.hata_mesaji = format!("{}", e),
+            }
+        }
+    }
+
+    fn render_poz_form_popup(&mut self, ctx: &egui::Context) {
+        if !self.poz_form_acik {
+            return;
+        }
+        let baslik = if self.poz_form_duzenleme { "Poz Düzenle" } else { "Poz Ekle" };
+        let mut acik = self.poz_form_acik;
+        let mut kaydet = false;
+        let mut iptal = false;
+        egui::Window::new(baslik)
+            .collapsible(false)
+            .resizable(false)
+            .open(&mut acik)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                if let Some(ref kitap) = self.secili_kitap {
+                    ui.label(format!("Kitap: {} ({}/{})", kitap.ad, kitap.ay, kitap.yil));
+                }
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.label("Poz No:");
+                    ui.add(TextEdit::singleline(&mut self.poz_form_poz_no).desired_width(220.0));
+                });
+                ui.label("Açıklama:");
+                ui.add(TextEdit::multiline(&mut self.poz_form_tanim).desired_width(420.0).desired_rows(3));
+                ui.horizontal(|ui| {
+                    ui.label("Birim:");
+                    ui.add(TextEdit::singleline(&mut self.poz_form_birim).desired_width(80.0));
+                    ui.label("B.Fiyat:");
+                    ui.add(TextEdit::singleline(&mut self.poz_form_fiyat).hint_text("bos olabilir").desired_width(120.0));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Kategori:");
+                    ui.add(TextEdit::singleline(&mut self.poz_form_kategori).desired_width(260.0));
+                });
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("💾 Kaydet").clicked() { kaydet = true; }
+                    if ui.button("İptal").clicked() { iptal = true; }
+                });
+            });
+        self.poz_form_acik = acik;
+        if iptal {
+            self.poz_form_acik = false;
+        }
+        if kaydet {
+            self.poz_form_kaydet();
+        }
+    }
+
+    fn render_poz_sil_onay_popup(&mut self, ctx: &egui::Context) {
+        let poz = match self.silinecek_poz.clone() {
+            Some(poz) => poz,
+            None => return,
+        };
+        let mut sil = false;
+        let mut iptal = false;
+        egui::Window::new("Poz Sil")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.colored_label(Color32::YELLOW, "Bu poz kalıcı olarak silinecek.");
+                ui.label(RichText::new(&poz.poz_no).monospace().strong());
+                ui.label(metni_kisalt(&poz.tanim, 90));
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button(RichText::new("Sil").color(Color32::RED)).clicked() { sil = true; }
+                    if ui.button("Vazgeç").clicked() { iptal = true; }
+                });
+            });
+        if iptal {
+            self.silinecek_poz = None;
+        }
+        if sil {
+            if let Some(ref db) = self.db {
+                match db.poz_sil(poz.kitap_id, &poz.poz_no) {
+                    Ok(()) => {
+                        if self.secili_poz.as_ref().map(|p| p.poz_no == poz.poz_no && p.kitap_id == poz.kitap_id).unwrap_or(false) {
+                            self.secili_poz = None;
+                        }
+                        self.silinecek_poz = None;
+                        self.basarili_mesaj = format!("{} silindi.", poz.poz_no);
+                        self.hata_mesaji.clear();
+                        self.kitaplari_yenile();
+                        self.kategorileri_yukle();
+                        self.pozlar_tablosu_yenile();
+                    }
+                    Err(e) => self.hata_mesaji = format!("{}", e),
+                }
+            }
+        }
+    }
+
     fn render_pozlar_tablosu(&mut self, ui: &mut Ui) {
         if self.secili_kitap.as_ref().map(|k| k.id) != self.pozlar_yuklu_kitap_id {
             self.pozlar_tablosu_yenile();
@@ -680,6 +878,9 @@ impl MetrajApp {
                 self.pozlar_tablosu_yenile();
             }
             ui.label(format!("{} poz", self.pozlar_tablosu.len()));
+            if ui.button("➕ Poz Ekle").clicked() {
+                self.poz_formunu_yeni_icin_ac();
+            }
         });
         ui.separator();
 
@@ -688,17 +889,19 @@ impl MetrajApp {
             return;
         }
 
+        let pozlar = self.pozlar_tablosu.clone();
         ScrollArea::vertical().max_height(ui.available_height()).show(ui, |ui| {
-            egui::Grid::new("pozlar_grid").num_columns(6).min_col_width(60.0).striped(true).show(ui, |ui: &mut egui::Ui| {
+            egui::Grid::new("pozlar_grid").num_columns(7).min_col_width(60.0).striped(true).show(ui, |ui: &mut egui::Ui| {
                 ui.label(RichText::new("Poz No").strong().size(12.0));
                 ui.label(RichText::new("Açıklama").strong().size(12.0));
                 ui.label(RichText::new("Birim").strong().size(12.0));
                 ui.label(RichText::new("B.Fiyat").strong().size(12.0));
                 ui.label(RichText::new("Kategori").strong().size(12.0));
                 ui.label(RichText::new("Kitap").strong().size(12.0));
+                ui.label(RichText::new("İşlem").strong().size(12.0));
                 ui.end_row();
 
-                for poz in &self.pozlar_tablosu {
+                for poz in pozlar {
                     let fiyat = poz.fiyat.map(|f| format!("{:.2}", f)).unwrap_or_else(|| "---".into());
                     let aciklama = metni_kisalt(&poz.tanim, 85);
                     ui.label(RichText::new(&poz.poz_no).monospace().size(11.0));
@@ -707,6 +910,14 @@ impl MetrajApp {
                     ui.label(RichText::new(fiyat).size(11.0));
                     ui.label(RichText::new(&poz.kategori).size(10.0));
                     ui.label(RichText::new(format!("{}/{}", poz.ay, poz.yil)).size(10.0));
+                    ui.horizontal(|ui| {
+                        if ui.button("Düzenle").clicked() {
+                            self.poz_formunu_duzenleme_icin_ac(poz.clone());
+                        }
+                        if ui.button(RichText::new("Sil").color(Color32::RED)).clicked() {
+                            self.silinecek_poz = Some(poz.clone());
+                        }
+                    });
                     ui.end_row();
                 }
             });
