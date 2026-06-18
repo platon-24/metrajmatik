@@ -53,6 +53,13 @@ impl Veritabani {
                 UNIQUE(poz_no, kitap_id, yil, ay),
                 FOREIGN KEY(kitap_id) REFERENCES kitaplar(id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS varsayilan_is_gruplari (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ad TEXT NOT NULL,
+                ust_grup_id INTEGER,
+                sira INTEGER NOT NULL,
+                FOREIGN KEY(ust_grup_id) REFERENCES varsayilan_is_gruplari(id) ON DELETE CASCADE
+            );
             CREATE VIRTUAL TABLE IF NOT EXISTS pozlar_fts USING fts5(
                 poz_no, tanim, birim, kategori, kitap_adi,
                 content='pozlar', content_rowid='id'
@@ -72,6 +79,30 @@ impl Veritabani {
                 VALUES (new.id, new.poz_no, new.tanim, new.birim, new.kategori, new.kitap_adi);
             END;",
         )?;
+
+        // Tohumlama (Seed)
+        let count = self.conn.query_row(
+            "SELECT COUNT(*) FROM varsayilan_is_gruplari",
+            [],
+            |row| row.get::<_, u32>(0),
+        ).unwrap_or(0);
+        if count == 0 {
+            self.conn.execute("INSERT INTO varsayilan_is_gruplari (ad, ust_grup_id, sira) VALUES ('İnşaat', NULL, 1)", [])?;
+            let insaat_id = self.conn.last_insert_rowid();
+            self.conn.execute("INSERT INTO varsayilan_is_gruplari (ad, ust_grup_id, sira) VALUES ('Kaba İnşaat', ?1, 1)", params![insaat_id])?;
+            self.conn.execute("INSERT INTO varsayilan_is_gruplari (ad, ust_grup_id, sira) VALUES ('İnce İnşaat', ?1, 2)", params![insaat_id])?;
+
+            self.conn.execute("INSERT INTO varsayilan_is_gruplari (ad, ust_grup_id, sira) VALUES ('Mekanik Tesisat', NULL, 2)", [])?;
+            let mekanik_id = self.conn.last_insert_rowid();
+            self.conn.execute("INSERT INTO varsayilan_is_gruplari (ad, ust_grup_id, sira) VALUES ('Sıhhi Tesisat', ?1, 1)", params![mekanik_id])?;
+            self.conn.execute("INSERT INTO varsayilan_is_gruplari (ad, ust_grup_id, sira) VALUES ('Isıtma Tesisatı', ?1, 2)", params![mekanik_id])?;
+
+            self.conn.execute("INSERT INTO varsayilan_is_gruplari (ad, ust_grup_id, sira) VALUES ('Elektrik Tesisatı', NULL, 3)", [])?;
+            let elektrik_id = self.conn.last_insert_rowid();
+            self.conn.execute("INSERT INTO varsayilan_is_gruplari (ad, ust_grup_id, sira) VALUES ('Kuvvetli Akım', ?1, 1)", params![elektrik_id])?;
+            self.conn.execute("INSERT INTO varsayilan_is_gruplari (ad, ust_grup_id, sira) VALUES ('Zayıf Akım', ?1, 2)", params![elektrik_id])?;
+        }
+
         self.conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode=WAL;")?;
         Ok(())
     }
@@ -258,6 +289,41 @@ impl Veritabani {
 
     pub fn poz_sayisi(&self) -> Result<u32> {
         self.conn.query_row("SELECT COUNT(*) FROM pozlar", [], |row| row.get(0))
+    }
+
+    pub fn varsayilan_gruplari_getir(&self) -> Result<Vec<crate::models::IsGrubu>> {
+        struct DbGrup {
+            id: i64,
+            ad: String,
+            ust_grup_id: Option<i64>,
+        }
+        let mut stmt = self.conn.prepare("SELECT id, ad, ust_grup_id FROM varsayilan_is_gruplari ORDER BY ust_grup_id ASC, sira ASC")?;
+        let db_gruplar: Vec<DbGrup> = stmt.query_map([], |row| {
+            Ok(DbGrup {
+                id: row.get(0)?,
+                ad: row.get(1)?,
+                ust_grup_id: row.get(2)?,
+            })
+        })?.filter_map(|x| x.ok()).collect();
+
+        fn build_tree(db_gruplar: &[DbGrup], parent_id: Option<i64>) -> Vec<crate::models::IsGrubu> {
+            let mut node_list = Vec::new();
+            for g in db_gruplar {
+                if g.ust_grup_id == parent_id {
+                    let children = build_tree(db_gruplar, Some(g.id));
+                    let frontend_id = format!("db_{}", g.id);
+                    node_list.push(crate::models::IsGrubu {
+                        id: frontend_id,
+                        ad: g.ad.clone(),
+                        alt_gruplar: children,
+                        kalemler: Vec::new(),
+                    });
+                }
+            }
+            node_list
+        }
+
+        Ok(build_tree(&db_gruplar, None))
     }
 }
 

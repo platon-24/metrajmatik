@@ -44,6 +44,19 @@ pub fn metraj_excel_aktar(metraj: &KayitliMetraj, dosya_yolu: &Path) -> Result<(
         .set_num_format("#,##0.00")
         .set_background_color(Color::RGB(0xD5F5E3));
 
+    let grup_baslik_format = Format::new()
+        .set_bold()
+        .set_font_size(11)
+        .set_background_color(Color::RGB(0xEAEDED))
+        .set_border(FormatBorder::Thin);
+
+    let grup_alt_toplam_format = Format::new()
+        .set_bold()
+        .set_font_size(10)
+        .set_background_color(Color::RGB(0xF2F4F4))
+        .set_num_format("#,##0.00")
+        .set_border(FormatBorder::Thin);
+
     let toplam_format = Format::new()
         .set_font_size(12)
         .set_bold()
@@ -79,35 +92,133 @@ pub fn metraj_excel_aktar(metraj: &KayitliMetraj, dosya_yolu: &Path) -> Result<(
     worksheet.set_column_width(5, 12).map_err(|e| e.to_string())?;
     worksheet.set_column_width(6, 15).map_err(|e| e.to_string())?;
 
-    // Veri satırları
     let mut satir = 4u32;
-    for (idx, kalem) in metraj.kalemler.iter().enumerate() {
-        worksheet
-            .write_with_format(satir, 0, (idx + 1) as u32, &metin_format)
-            .map_err(|e| e.to_string())?;
-        worksheet
-            .write_with_format(satir, 1, &kalem.poz_no, &metin_format)
-            .map_err(|e| e.to_string())?;
-        worksheet
-            .write_with_format(satir, 2, &kalem.tanim, &metin_format)
-            .map_err(|e| e.to_string())?;
-        worksheet
-            .write_with_format(satir, 3, &kalem.birim, &metin_format)
-            .map_err(|e| e.to_string())?;
-        worksheet
-            .write_with_format(satir, 4, kalem.birim_fiyat, &sayi_format)
-            .map_err(|e| e.to_string())?;
-        worksheet
-            .write_with_format(satir, 5, kalem.miktar, &sayi_format)
-            .map_err(|e| e.to_string())?;
-        worksheet
-            .write_with_format(satir, 6, kalem.tutar, &tutar_format)
-            .map_err(|e| e.to_string())?;
 
+    fn grup_yaz(
+        worksheet: &mut Worksheet,
+        grup: &crate::models::IsGrubu,
+        satir: &mut u32,
+        prefix: &str,
+        grup_baslik_format: &Format,
+        grup_alt_toplam_format: &Format,
+        metin_format: &Format,
+        sayi_format: &Format,
+        tutar_format: &Format,
+    ) -> Result<(), String> {
+        let baslik = if prefix.is_empty() {
+            grup.ad.clone()
+        } else {
+            format!("{}. {}", prefix, grup.ad)
+        };
         worksheet
-            .set_row_height(satir, 22)
+            .merge_range(*satir, 0, *satir, 5, &baslik, grup_baslik_format)
             .map_err(|e| e.to_string())?;
-        satir += 1;
+        worksheet
+            .write_with_format(*satir, 6, "", grup_baslik_format)
+            .map_err(|e| e.to_string())?;
+        worksheet.set_row_height(*satir, 24).map_err(|e| e.to_string())?;
+        *satir += 1;
+
+        for (idx, kalem) in grup.kalemler.iter().enumerate() {
+            worksheet
+                .write_with_format(*satir, 0, (idx + 1) as u32, metin_format)
+                .map_err(|e| e.to_string())?;
+            worksheet
+                .write_with_format(*satir, 1, &kalem.poz_no, metin_format)
+                .map_err(|e| e.to_string())?;
+            worksheet
+                .write_with_format(*satir, 2, &kalem.tanim, metin_format)
+                .map_err(|e| e.to_string())?;
+            worksheet
+                .write_with_format(*satir, 3, &kalem.birim, metin_format)
+                .map_err(|e| e.to_string())?;
+            worksheet
+                .write_with_format(*satir, 4, kalem.birim_fiyat, sayi_format)
+                .map_err(|e| e.to_string())?;
+            worksheet
+                .write_with_format(*satir, 5, kalem.miktar, sayi_format)
+                .map_err(|e| e.to_string())?;
+            worksheet
+                .write_with_format(*satir, 6, kalem.tutar, tutar_format)
+                .map_err(|e| e.to_string())?;
+            worksheet.set_row_height(*satir, 22).map_err(|e| e.to_string())?;
+            *satir += 1;
+        }
+
+        for (idx, alt) in grup.alt_gruplar.iter().enumerate() {
+            let yeni_prefix = if prefix.is_empty() {
+                format!("{}", idx + 1)
+            } else {
+                format!("{}.{}", prefix, idx + 1)
+            };
+            grup_yaz(
+                worksheet,
+                alt,
+                satir,
+                &yeni_prefix,
+                grup_baslik_format,
+                grup_alt_toplam_format,
+                metin_format,
+                sayi_format,
+                tutar_format,
+            )?;
+        }
+
+        let alt_toplam_etiketi = format!("{} ALT TOPLAMI", grup.ad.to_uppercase());
+        worksheet
+            .merge_range(*satir, 0, *satir, 5, &alt_toplam_etiketi, grup_alt_toplam_format)
+            .map_err(|e| e.to_string())?;
+        worksheet
+            .write_with_format(*satir, 6, grup.toplam_tutar(), grup_alt_toplam_format)
+            .map_err(|e| e.to_string())?;
+        worksheet.set_row_height(*satir, 24).map_err(|e| e.to_string())?;
+        *satir += 1;
+
+        Ok(())
+    }
+
+    if !metraj.is_gruplari.is_empty() {
+        for (idx, grup) in metraj.is_gruplari.iter().enumerate() {
+            let prefix = format!("{}", idx + 1);
+            grup_yaz(
+                worksheet,
+                grup,
+                &mut satir,
+                &prefix,
+                &grup_baslik_format,
+                &grup_alt_toplam_format,
+                &metin_format,
+                &sayi_format,
+                &tutar_format,
+            )?;
+        }
+    } else {
+        // Eski flat liste
+        for (idx, kalem) in metraj.kalemler.iter().enumerate() {
+            worksheet
+                .write_with_format(satir, 0, (idx + 1) as u32, &metin_format)
+                .map_err(|e| e.to_string())?;
+            worksheet
+                .write_with_format(satir, 1, &kalem.poz_no, &metin_format)
+                .map_err(|e| e.to_string())?;
+            worksheet
+                .write_with_format(satir, 2, &kalem.tanim, &metin_format)
+                .map_err(|e| e.to_string())?;
+            worksheet
+                .write_with_format(satir, 3, &kalem.birim, &metin_format)
+                .map_err(|e| e.to_string())?;
+            worksheet
+                .write_with_format(satir, 4, kalem.birim_fiyat, &sayi_format)
+                .map_err(|e| e.to_string())?;
+            worksheet
+                .write_with_format(satir, 5, kalem.miktar, &sayi_format)
+                .map_err(|e| e.to_string())?;
+            worksheet
+                .write_with_format(satir, 6, kalem.tutar, &tutar_format)
+                .map_err(|e| e.to_string())?;
+            worksheet.set_row_height(satir, 22).map_err(|e| e.to_string())?;
+            satir += 1;
+        }
     }
 
     // Toplam satırı
