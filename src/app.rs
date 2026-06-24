@@ -232,6 +232,29 @@ impl eframe::App for MetrajApp {
                 });
             });
 
+        // ÖNEMLİ: Alt durum çubuğu CentralPanel'den ÖNCE eklenmeli; aksi halde merkez
+        // içerik pencerenin en altına kadar uzar ve durum çubuğu içeriğin üzerine biner.
+        egui::TopBottomPanel::bottom("status_bar")
+            .frame(egui::Frame::default().fill(tema::ARKA_PLAN).inner_margin(egui::Margin::symmetric(12, 5)))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    let durum = if self.mevcut_dosya_yolu.is_some() {
+                        if self.degisiklik_var { ("● Kaydedilmedi", tema::UYARI) } else { ("✓ Kayıtlı", tema::BASARI) }
+                    } else { ("○ Yeni proje", tema::METIN_SOLUK) };
+                    tema::rozet(ui, durum.0, durum.1);
+                    if let Some(ref k) = self.secili_kitap {
+                        tema::rozet(ui, &format!("📚 {}", metni_kisalt(&k.ad, 30)), tema::METIN_IKINCIL);
+                    }
+                    tema::rozet(ui, &format!("🗂 {} poz", self.poz_sayisi), tema::METIN_IKINCIL);
+                    tema::rozet(ui, &format!("📋 {} kalem", self.metraj_kalemleri.len()), tema::METIN_IKINCIL);
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(RichText::new(format!("{} TL", para_formatla(self.toplam_tutar()))).color(tema::BASARI).strong().size(14.0));
+                        ui.label(RichText::new("Genel Toplam:").color(tema::METIN_SOLUK).size(12.0));
+                    });
+                });
+            });
+
         egui::CentralPanel::default()
             .frame(egui::Frame::default().fill(tema::ARKA_PLAN).inner_margin(egui::Margin::same(12)))
             .show(ctx, |ui| {
@@ -262,27 +285,6 @@ impl eframe::App for MetrajApp {
                 Sekme::PdfYukle => self.render_pdf_yukle(ui),
             }
         });
-
-        egui::TopBottomPanel::bottom("status_bar")
-            .frame(egui::Frame::default().fill(tema::ARKA_PLAN).inner_margin(egui::Margin::symmetric(12, 5)))
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    let durum = if self.mevcut_dosya_yolu.is_some() {
-                        if self.degisiklik_var { ("● Kaydedilmedi", tema::UYARI) } else { ("✓ Kayıtlı", tema::BASARI) }
-                    } else { ("○ Yeni proje", tema::METIN_SOLUK) };
-                    tema::rozet(ui, durum.0, durum.1);
-                    if let Some(ref k) = self.secili_kitap {
-                        tema::rozet(ui, &format!("📚 {}", metni_kisalt(&k.ad, 30)), tema::METIN_IKINCIL);
-                    }
-                    tema::rozet(ui, &format!("🗂 {} poz", self.poz_sayisi), tema::METIN_IKINCIL);
-                    tema::rozet(ui, &format!("📋 {} kalem", self.metraj_kalemleri.len()), tema::METIN_IKINCIL);
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(RichText::new(format!("{} TL", para_formatla(self.toplam_tutar()))).color(tema::BASARI).strong().size(14.0));
-                        ui.label(RichText::new("Genel Toplam:").color(tema::METIN_SOLUK).size(12.0));
-                    });
-                });
-            });
     }
 }
 
