@@ -221,13 +221,45 @@ pub fn metraj_excel_aktar(metraj: &KayitliMetraj, dosya_yolu: &Path) -> Result<(
         }
     }
 
-    // Toplam satırı
+    // Ara toplam satırı
     satir += 1;
+    let ara_toplam = metraj.toplam_tutar();
     worksheet
-        .merge_range(satir, 0, satir, 5, "GENEL TOPLAM", &toplam_format)
+        .merge_range(satir, 0, satir, 5, "ARA TOPLAM (İşçilik + Malzeme)", &grup_alt_toplam_format)
         .map_err(|e| e.to_string())?;
     worksheet
-        .write_with_format(satir, 6, metraj.toplam_tutar(), &toplam_format)
+        .write_with_format(satir, 6, ara_toplam, &grup_alt_toplam_format)
+        .map_err(|e| e.to_string())?;
+    worksheet.set_row_height(satir, 24).map_err(|e| e.to_string())?;
+
+    // Yaklaşık maliyet özeti: genel gider & kâr, KDV
+    let kar = ara_toplam * metraj.genel_gider_kar_orani / 100.0;
+    let kdv_matrahi = ara_toplam + kar;
+    let kdv = kdv_matrahi * metraj.kdv_orani / 100.0;
+    let genel_toplam = kdv_matrahi + kdv;
+
+    for (etiket, deger) in [
+        (format!("Genel Gider & Müteahhit Kârı (% {:.1})", metraj.genel_gider_kar_orani), kar),
+        ("KDV Matrahı".to_string(), kdv_matrahi),
+        (format!("KDV (% {:.1})", metraj.kdv_orani), kdv),
+    ] {
+        satir += 1;
+        worksheet
+            .merge_range(satir, 0, satir, 5, &etiket, &grup_alt_toplam_format)
+            .map_err(|e| e.to_string())?;
+        worksheet
+            .write_with_format(satir, 6, deger, &grup_alt_toplam_format)
+            .map_err(|e| e.to_string())?;
+        worksheet.set_row_height(satir, 22).map_err(|e| e.to_string())?;
+    }
+
+    // Toplam yaklaşık maliyet satırı
+    satir += 1;
+    worksheet
+        .merge_range(satir, 0, satir, 5, "TOPLAM YAKLAŞIK MALİYET", &toplam_format)
+        .map_err(|e| e.to_string())?;
+    worksheet
+        .write_with_format(satir, 6, genel_toplam, &toplam_format)
         .map_err(|e| e.to_string())?;
     worksheet
         .set_row_height(satir, 28)

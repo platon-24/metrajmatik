@@ -9,7 +9,26 @@ use crate::pdf_parser::{pdf_metin_cikar, pozlari_ayristir};
 use crate::tema;
 
 #[derive(Debug, Clone, PartialEq)]
-enum Sekme { MetrajTablosu, Pozlar, KitapYoneticisi, PdfYukle }
+enum Sekme { MetrajTablosu, Icmal, Pozlar, KitapYoneticisi, PdfYukle }
+
+/// Miktar popup'ında bir detay satırının düzenlenebilir (metin) hali.
+#[derive(Default, Clone)]
+struct PopupDetaySatiri {
+    aciklama: String,
+    adet: String,
+    en: String,
+    boy: String,
+    yukseklik: String,
+}
+
+/// Geri al/yinele için projenin düzenlenebilir durumunun anlık görüntüsü.
+#[derive(Clone)]
+struct Anlik {
+    is_gruplari: Vec<IsGrubu>,
+    metraj_kalemleri: Vec<MetrajKalemi>,
+    secili_grup_id: Option<String>,
+    metraj_adi: String,
+}
 
 pub struct MetrajApp {
     db: Option<Veritabani>,
@@ -59,14 +78,26 @@ pub struct MetrajApp {
     // Miktar detay popup
     miktar_popup_acik: bool,
     popup_kalem_indeks: Option<usize>,
-    popup_detaylar: Vec<(String, String)>, // (aciklama, miktar_metni)
-    popup_yeni_aciklama: String,
-    popup_yeni_miktar: String,
+    popup_detaylar: Vec<PopupDetaySatiri>,
+    popup_yeni: PopupDetaySatiri,
 
     // Hiyerarşik İş Grupları alanları
     is_gruplari: Vec<crate::models::IsGrubu>,
     secili_grup_id: Option<String>,
     yeni_grup_adi: String,
+
+    // İcmal / yaklaşık maliyet oranları
+    genel_gider_kar_orani: f64,
+    kdv_orani: f64,
+
+    // Geri al / yinele
+    geri_al_yigini: Vec<Anlik>,
+    yinele_yigini: Vec<Anlik>,
+
+    // Otomatik kayıt
+    son_autosave: f64,
+    autosave_yolu: PathBuf,
+    kurtarma_mevcut: bool,
 }
 
 impl Default for MetrajApp {
@@ -85,6 +116,8 @@ impl Default for MetrajApp {
             .and_then(|vt| vt.varsayilan_gruplari_getir().ok())
             .unwrap_or_default();
         let baslangic_secili = ilk_yaprak_grup_id(&baslangic_gruplari);
+        let autosave_yolu = PathBuf::from("metrajmatik_autosave.mrj");
+        let kurtarma_mevcut = autosave_yolu.exists();
         Self {
             db, poz_sayisi, kitaplar, secili_kitap: None,
             metraj_kalemleri: vec![], metraj_adi: "Isimsiz Metraj".into(),
@@ -112,13 +145,25 @@ impl Default for MetrajApp {
             miktar_popup_acik: false,
             popup_kalem_indeks: None,
             popup_detaylar: vec![],
-            popup_yeni_aciklama: String::new(),
-            popup_yeni_miktar: String::new(),
+            popup_yeni: PopupDetaySatiri::default(),
 
             // Hiyerarşik İş Grupları
             is_gruplari: baslangic_gruplari,
             secili_grup_id: baslangic_secili,
             yeni_grup_adi: String::new(),
+
+            // İcmal oranları (varsayılan)
+            genel_gider_kar_orani: 25.0,
+            kdv_orani: 20.0,
+
+            // Geri al / yinele
+            geri_al_yigini: vec![],
+            yinele_yigini: vec![],
+
+            // Otomatik kayıt
+            son_autosave: 0.0,
+            autosave_yolu,
+            kurtarma_mevcut,
         }
     }
 }
@@ -127,6 +172,11 @@ impl eframe::App for MetrajApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::S)) { self.metraj_kaydet(); }
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::O)) { self.metraj_yukle_diyalog(); }
+        // Geri al / yinele (Ctrl+Z, Ctrl+Y veya Ctrl+Shift+Z)
+        if ctx.input(|i| i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::Z)) { self.geri_al(); }
+        if ctx.input(|i| i.modifiers.ctrl && (i.key_pressed(egui::Key::Y) || (i.modifiers.shift && i.key_pressed(egui::Key::Z)))) { self.yinele(); }
+        // Otomatik kayıt kontrolü
+        self.autosave_kontrol(ctx);
 
         // Kitap düzenleme modal'ı
         if self.duzenlenen_kitap.is_some() {
@@ -200,9 +250,9 @@ impl eframe::App for MetrajApp {
                     ui.add_space(8.0);
 
                     // Sekme "pill"leri
-                    let sekmeler = [Sekme::MetrajTablosu, Sekme::Pozlar, Sekme::KitapYoneticisi, Sekme::PdfYukle];
-                    let isimler = ["📋 Metraj", "🔎 Pozlar", "📚 Kitaplar", "📄 PDF Yükle"];
-                    for i in 0..4 {
+                    let sekmeler = [Sekme::MetrajTablosu, Sekme::Icmal, Sekme::Pozlar, Sekme::KitapYoneticisi, Sekme::PdfYukle];
+                    let isimler = ["📋 Metraj", "📊 İcmal", "🔎 Pozlar", "📚 Kitaplar", "📄 PDF Yükle"];
+                    for i in 0..sekmeler.len() {
                         let s = &sekmeler[i];
                         let aktif = self.aktif_sekme == *s;
                         let yazi = if aktif { Color32::WHITE } else { tema::METIN_IKINCIL };
@@ -278,8 +328,36 @@ impl eframe::App for MetrajApp {
                 tema::bildirim_seridi(ui, &format!("✓  {}", self.basarili_mesaj), tema::BASARI_KOYU, tema::BASARI, tema::BASARI);
                 ui.add_space(6.0);
             }
+            // Kurtarma şeridi: otomatik kayıt dosyası varsa
+            if self.kurtarma_mevcut {
+                let mut kurtar = false;
+                let mut yoksay = false;
+                egui::Frame::default()
+                    .fill(tema::UYARI_KOYU)
+                    .stroke(egui::Stroke::new(1.0, tema::UYARI))
+                    .corner_radius(egui::CornerRadius::same(tema::KOSE_KUCUK))
+                    .inner_margin(egui::Margin::symmetric(10, 7))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("⟲  Önceki oturumdan kurtarılabilir otomatik kayıt bulundu.").color(tema::UYARI));
+                            if tema::birincil_buton(ui, "Kurtar").clicked() { kurtar = true; }
+                            if ui.button("Yoksay").clicked() { yoksay = true; }
+                        });
+                    });
+                ui.add_space(6.0);
+                if kurtar {
+                    let yol = self.autosave_yolu.clone();
+                    self.metraj_dosyadan_yukle(&yol, false);
+                    self.kurtarma_mevcut = false;
+                }
+                if yoksay {
+                    let _ = std::fs::remove_file(&self.autosave_yolu);
+                    self.kurtarma_mevcut = false;
+                }
+            }
             match self.aktif_sekme {
                 Sekme::MetrajTablosu => self.render_metraj_tablosu(ui),
+                Sekme::Icmal => self.render_icmal(ui),
                 Sekme::Pozlar => self.render_pozlar_tablosu(ui),
                 Sekme::KitapYoneticisi => self.render_kitap_yoneticisi(ui),
                 Sekme::PdfYukle => self.render_pdf_yukle(ui),
@@ -409,7 +487,7 @@ impl MetrajApp {
                     if ad.is_empty() {
                         self.hata_mesaji = "Grup adı boş olamaz.".into();
                     } else {
-                        self.aktif_grubu_senkronize();
+                        self.anlik_goruntu_al();
                         self.is_gruplari.push(IsGrubu::yeni(&ad));
                         self.yeni_grup_adi.clear();
                         self.degisiklik_var = true;
@@ -422,7 +500,7 @@ impl MetrajApp {
                         (None, _) => self.hata_mesaji = "Önce bir üst grup seçin.".into(),
                         (_, true) => self.hata_mesaji = "Grup adı boş olamaz.".into(),
                         (Some(ust_id), false) => {
-                            self.aktif_grubu_senkronize();
+                            self.anlik_goruntu_al();
                             if let Some(ust) = grup_bul_mut(&mut self.is_gruplari, &ust_id) {
                                 ust.alt_gruplar.push(IsGrubu::yeni(&ad));
                             }
@@ -441,6 +519,7 @@ impl MetrajApp {
                         (None, _) => self.hata_mesaji = "Önce bir grup seçin.".into(),
                         (_, true) => self.hata_mesaji = "Yeni ad boş olamaz.".into(),
                         (Some(id), false) => {
+                            self.anlik_goruntu_al();
                             if let Some(g) = grup_bul_mut(&mut self.is_gruplari, &id) { g.ad = ad; }
                             self.yeni_grup_adi.clear();
                             self.degisiklik_var = true;
@@ -450,6 +529,7 @@ impl MetrajApp {
                 }
                 if tema::tehlike_buton(ui, "🗑 Sil").clicked() {
                     if let Some(id) = self.secili_grup_id.clone() {
+                        self.anlik_goruntu_al();
                         grup_sil(&mut self.is_gruplari, &id);
                         self.secili_grup_id = None;
                         self.metraj_kalemleri.clear();
@@ -604,7 +684,7 @@ impl MetrajApp {
                 None => {}
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("🗑 Temizle").clicked() { self.metraj_kalemleri.clear(); self.aktif_grubu_senkronize(); self.degisiklik_var = true; self.basarili_mesaj = "Temizlendi.".into(); }
+                if ui.button("🗑 Temizle").clicked() { self.anlik_goruntu_al(); self.metraj_kalemleri.clear(); self.aktif_grubu_senkronize(); self.degisiklik_var = true; self.basarili_mesaj = "Temizlendi.".into(); }
                 if ui.button("📊 Excel").clicked() { self.metraj_excel_diyalog(); }
                 let lbl = if self.mevcut_dosya_yolu.is_some() { "💾 Kaydet" } else { "💾 Kaydet" };
                 if tema::basari_buton(ui, lbl).clicked() { self.metraj_kaydet(); }
@@ -715,7 +795,9 @@ impl MetrajApp {
                 ui.label(RichText::new(&kalem.birim).size(11.0).color(tema::METIN_IKINCIL));
                 ui.label(RichText::new(para_formatla(kalem.birim_fiyat)).size(11.5).color(tema::METIN_IKINCIL));
                 let miktar_renk = if kalem.miktar > 0.0 { tema::METIN } else { tema::UYARI };
-                let miktar_response = ui.label(RichText::new(format!("{:.2}", kalem.miktar)).size(11.5).strong().color(miktar_renk));
+                let miktar_metni = if kalem.detaylar.is_empty() { format!("{:.2}", kalem.miktar) } else { format!("📐 {:.2}", kalem.miktar) };
+                let miktar_response = ui.label(RichText::new(miktar_metni).size(11.5).strong().color(miktar_renk))
+                    .on_hover_text(if kalem.detaylar.is_empty() { "Ölçü detayı yok — düzenlemek için tıkla" } else { "Ölçü kırılımı var — düzenlemek için tıkla" });
                 ui.label(RichText::new(para_formatla(kalem.tutar)).size(11.5).strong().color(tema::BASARI));
                 if ui.add(egui::Button::new(RichText::new("✕").color(tema::TEHLIKE).size(11.0)).fill(Color32::TRANSPARENT).stroke(egui::Stroke::NONE)).on_hover_text("Kalemi sil").clicked() { sil = Some(idx); }
                 let satir_response = poz_response.union(aciklama_response).union(miktar_response);
@@ -724,15 +806,14 @@ impl MetrajApp {
                 }
                 ui.end_row();
             }
-            if let Some(idx) = sil { self.metraj_kalemleri.remove(idx); self.aktif_grubu_senkronize(); self.degisiklik_var = true; }
+            if let Some(idx) = sil { self.anlik_goruntu_al(); self.metraj_kalemleri.remove(idx); self.aktif_grubu_senkronize(); self.degisiklik_var = true; }
         });
         if let Some(idx) = popup_acilacak {
             self.popup_kalem_indeks = Some(idx);
             self.popup_detaylar = self.metraj_kalemleri[idx].detaylar.iter()
-                .map(|d| (d.aciklama.clone(), format!("{:.2}", d.miktar)))
+                .map(detay_to_satir)
                 .collect();
-            self.popup_yeni_aciklama.clear();
-            self.popup_yeni_miktar.clear();
+            self.popup_yeni = PopupDetaySatiri::default();
             self.miktar_popup_acik = true;
         }
     }
@@ -765,61 +846,61 @@ impl MetrajApp {
                 });
                 ui.separator();
 
-                ui.label(RichText::new("Detaylar:").strong().size(13.0));
-                egui::Grid::new("popup_detay_grid").num_columns(3).min_col_width(60.0).striped(true).show(ui, |ui| {
-                    ui.label(RichText::new("#").strong());
-                    ui.label(RichText::new("Açıklama").strong());
-                    ui.label(RichText::new("Miktar").strong());
+                ui.label(RichText::new("Ölçü detayları  ·  boş bırakılan boyut 1 sayılır").color(tema::METIN_SOLUK).size(11.5));
+                ui.add_space(3.0);
+                let bsl = |ui: &mut egui::Ui, t: &str| { ui.label(RichText::new(t).strong().size(11.5).color(tema::METIN_IKINCIL)); };
+                egui::Grid::new("popup_detay_grid").num_columns(8).spacing(egui::vec2(7.0, 6.0)).striped(true).show(ui, |ui| {
+                    bsl(ui, "#"); bsl(ui, "Açıklama"); bsl(ui, "Adet"); bsl(ui, "En"); bsl(ui, "Boy"); bsl(ui, "Yük."); bsl(ui, "= Miktar"); bsl(ui, "");
                     ui.end_row();
 
                     let mut silinecek_satir: Option<usize> = None;
-                    let mut degisen_satir: Option<(usize, String, String)> = None;
-                    for (d_idx, (aciklama, miktar_metni)) in self.popup_detaylar.iter_mut().enumerate() {
-                        ui.label(format!("{}", d_idx + 1));
-                        let mut aciklama_clone = aciklama.clone();
-                        let aciklama_response = ui.add(TextEdit::singleline(&mut aciklama_clone).desired_width(250.0));
-                        if aciklama_response.changed() { degisen_satir = Some((d_idx, aciklama_clone, miktar_metni.clone())); }
-                        let mut miktar_clone = miktar_metni.clone();
-                        let miktar_response = ui.add(TextEdit::singleline(&mut miktar_clone).desired_width(80.0));
-                        if miktar_response.changed() { degisen_satir = Some((d_idx, aciklama.clone(), miktar_clone)); }
-                        if ui.button(RichText::new("🗑").color(Color32::RED).size(11.0)).clicked() {
+                    for (d_idx, satir) in self.popup_detaylar.iter_mut().enumerate() {
+                        ui.label(RichText::new(format!("{}", d_idx + 1)).color(tema::METIN_SOLUK).size(11.0));
+                        ui.add(TextEdit::singleline(&mut satir.aciklama).desired_width(170.0).hint_text("açıklama"));
+                        ui.add(TextEdit::singleline(&mut satir.adet).desired_width(48.0));
+                        ui.add(TextEdit::singleline(&mut satir.en).desired_width(48.0));
+                        ui.add(TextEdit::singleline(&mut satir.boy).desired_width(48.0));
+                        ui.add(TextEdit::singleline(&mut satir.yukseklik).desired_width(48.0));
+                        let m = satir_miktar(satir).unwrap_or(0.0);
+                        ui.label(RichText::new(format!("{:.3}", m)).size(11.5).strong().color(tema::BASARI));
+                        if ui.add(egui::Button::new(RichText::new("🗑").color(tema::TEHLIKE).size(11.0)).fill(Color32::TRANSPARENT).stroke(egui::Stroke::NONE)).clicked() {
                             silinecek_satir = Some(d_idx);
                         }
                         ui.end_row();
                     }
                     if let Some(s) = silinecek_satir { self.popup_detaylar.remove(s); }
-                    if let Some((d_idx, yeni_aciklama, yeni_miktar)) = degisen_satir {
-                        if d_idx < self.popup_detaylar.len() {
-                            self.popup_detaylar[d_idx] = (yeni_aciklama, yeni_miktar);
-                        }
-                    }
                 });
 
-                ui.add_space(5.0);
+                ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    ui.label("Yeni:");
-                    ui.add(TextEdit::singleline(&mut self.popup_yeni_aciklama).hint_text("Açıklama").desired_width(200.0));
-                    ui.add(TextEdit::singleline(&mut self.popup_yeni_miktar).hint_text("0,00").desired_width(70.0));
-                    if ui.button("➕ Ekle").clicked() {
-                        if let Some(m) = sayi_oku(&self.popup_yeni_miktar) {
-                            self.popup_detaylar.push((self.popup_yeni_aciklama.clone(), format!("{:.2}", m)));
-                            self.popup_yeni_aciklama.clear();
-                            self.popup_yeni_miktar.clear();
-                        }
+                    ui.label(RichText::new("Yeni satır").color(tema::METIN_IKINCIL).size(11.5));
+                    ui.add(TextEdit::singleline(&mut self.popup_yeni.aciklama).hint_text("açıklama").desired_width(160.0));
+                    ui.add(TextEdit::singleline(&mut self.popup_yeni.adet).hint_text("adet").desired_width(48.0));
+                    ui.add(TextEdit::singleline(&mut self.popup_yeni.en).hint_text("en").desired_width(48.0));
+                    ui.add(TextEdit::singleline(&mut self.popup_yeni.boy).hint_text("boy").desired_width(48.0));
+                    ui.add(TextEdit::singleline(&mut self.popup_yeni.yukseklik).hint_text("yük.").desired_width(48.0));
+                    let ekle = tema::birincil_buton(ui, "＋ Ekle").clicked();
+                    let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    if (ekle || enter) && satir_miktar(&self.popup_yeni).is_some() {
+                        self.popup_detaylar.push(std::mem::take(&mut self.popup_yeni));
                     }
                 });
                 ui.separator();
 
-                let toplam_miktar: f64 = self.popup_detaylar.iter()
-                    .filter_map(|(_, m)| sayi_oku(m))
-                    .sum();
-                ui.label(RichText::new(format!("Toplam Miktar: {:.2} {}", toplam_miktar, birim)).size(13.0).strong().color(tema::BASARI));
-                ui.add_space(5.0);
+                let toplam_miktar: f64 = self.popup_detaylar.iter().filter_map(satir_miktar).sum();
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(format!("Toplam Miktar: {:.3} {}", toplam_miktar, birim)).size(14.0).strong().color(tema::BASARI));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(RichText::new(format!("≈ {} TL", para_formatla(toplam_miktar * birim_fiyat))).size(13.0).color(tema::METIN_IKINCIL));
+                    });
+                });
+                ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     if tema::basari_buton(ui, "✓ Tamam").clicked() {
                         let detaylar: Vec<MiktarDetay> = self.popup_detaylar.iter()
-                            .filter_map(|(a, m)| sayi_oku(m).map(|mv| MiktarDetay { aciklama: a.clone(), miktar: mv }))
+                            .filter_map(satir_to_detay)
                             .collect();
+                        self.anlik_goruntu_al();
                         if let Some(kalem) = self.metraj_kalemleri.get_mut(idx) {
                             kalem.detaylar = detaylar;
                             kalem.detaylardan_miktar_hesapla();
@@ -879,6 +960,90 @@ impl MetrajApp {
                 });
             });
         }
+    }
+
+    // ==================== İCMAL / YAKLAŞIK MALİYET ====================
+    fn render_icmal(&mut self, ui: &mut Ui) {
+        tema::bolum_basligi(ui, "📊", "Keşif İcmali / Yaklaşık Maliyet");
+        ui.add_space(6.0);
+
+        let secili = self.secili_grup_id.as_deref();
+        // Üst düzey grupların canlı toplamları
+        let grup_satirlari: Vec<(String, f64)> = self.is_gruplari.iter()
+            .map(|g| (g.ad.clone(), grup_canli_toplam(g, secili, &self.metraj_kalemleri)))
+            .collect();
+        let ara_toplam: f64 = self.toplam_tutar();
+
+        // Oran ayarları
+        tema::kart(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Genel Gider + Müteahhit Kârı").color(tema::METIN_IKINCIL).size(12.0));
+                if ui.add(egui::DragValue::new(&mut self.genel_gider_kar_orani).speed(0.5).range(0.0..=100.0).suffix(" %")).changed() { self.degisiklik_var = true; }
+                ui.add_space(20.0);
+                ui.label(RichText::new("KDV").color(tema::METIN_IKINCIL).size(12.0));
+                if ui.add(egui::DragValue::new(&mut self.kdv_orani).speed(0.5).range(0.0..=100.0).suffix(" %")).changed() { self.degisiklik_var = true; }
+            });
+        });
+        ui.add_space(8.0);
+
+        if grup_satirlari.is_empty() {
+            tema::bildirim_seridi(ui, "Henüz iş grubu yok. Metraj sekmesinden grup ve poz ekleyin.", tema::UYARI_KOYU, tema::UYARI, tema::UYARI);
+            return;
+        }
+
+        // İş grupları icmal tablosu
+        tema::kart(ui, |ui| {
+            egui::Grid::new("icmal_grid").num_columns(4).spacing(egui::vec2(16.0, 9.0)).striped(true).show(ui, |ui| {
+                ui.label(RichText::new("Sıra").strong().size(12.0).color(tema::METIN_IKINCIL));
+                ui.label(RichText::new("İş Grubu").strong().size(12.0).color(tema::METIN_IKINCIL));
+                ui.label(RichText::new("Tutar (TL)").strong().size(12.0).color(tema::METIN_IKINCIL));
+                ui.label(RichText::new("Oran").strong().size(12.0).color(tema::METIN_IKINCIL));
+                ui.end_row();
+                for (i, (ad, tutar)) in grup_satirlari.iter().enumerate() {
+                    let yuzde = if ara_toplam > 0.0 { tutar / ara_toplam * 100.0 } else { 0.0 };
+                    ui.label(RichText::new(format!("{}", i + 1)).color(tema::METIN_SOLUK));
+                    ui.label(RichText::new(ad).size(13.5).strong().color(tema::METIN));
+                    ui.label(RichText::new(para_formatla(*tutar)).size(13.0).color(tema::METIN));
+                    ui.label(RichText::new(format!("% {:.1}", yuzde)).size(12.5).color(tema::VURGU_HOVER));
+                    ui.end_row();
+                }
+            });
+        });
+        ui.add_space(10.0);
+
+        // Yaklaşık maliyet özeti
+        let kar = ara_toplam * self.genel_gider_kar_orani / 100.0;
+        let kdv_matrahi = ara_toplam + kar;
+        let kdv = kdv_matrahi * self.kdv_orani / 100.0;
+        let genel_toplam = kdv_matrahi + kdv;
+
+        egui::Frame::default()
+            .fill(tema::YUZEY_2)
+            .stroke(egui::Stroke::new(1.0, tema::KENAR))
+            .corner_radius(egui::CornerRadius::same(tema::KOSE))
+            .inner_margin(egui::Margin::same(14))
+            .show(ui, |ui| {
+                let satir = |ui: &mut egui::Ui, etiket: &str, deger: f64, vurgulu: bool| {
+                    ui.horizontal(|ui| {
+                        let renk = if vurgulu { tema::METIN } else { tema::METIN_IKINCIL };
+                        ui.label(RichText::new(etiket).color(renk).size(if vurgulu { 14.0 } else { 13.0 }).strong());
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(RichText::new(format!("{} TL", para_formatla(deger))).color(if vurgulu { tema::BASARI } else { tema::METIN }).strong().size(if vurgulu { 16.0 } else { 13.0 }));
+                        });
+                    });
+                };
+                satir(ui, "Ara Toplam (İşçilik + Malzeme)", ara_toplam, false);
+                ui.add_space(3.0);
+                satir(ui, &format!("Genel Gider & Müteahhit Kârı (% {:.1})", self.genel_gider_kar_orani), kar, false);
+                ui.add_space(3.0);
+                satir(ui, "KDV Matrahı", kdv_matrahi, false);
+                ui.add_space(3.0);
+                satir(ui, &format!("KDV (% {:.1})", self.kdv_orani), kdv, false);
+                ui.add_space(6.0);
+                ui.separator();
+                ui.add_space(4.0);
+                satir(ui, "TOPLAM YAKLAŞIK MALİYET", genel_toplam, true);
+            });
     }
 
     // ==================== POZLAR ====================
@@ -1219,6 +1384,73 @@ impl MetrajApp {
         self.secili_poz = None;
     }
 
+    // ==================== GERİ AL / YİNELE ====================
+    fn mevcut_anlik(&self) -> Anlik {
+        Anlik {
+            is_gruplari: self.is_gruplari.clone(),
+            metraj_kalemleri: self.metraj_kalemleri.clone(),
+            secili_grup_id: self.secili_grup_id.clone(),
+            metraj_adi: self.metraj_adi.clone(),
+        }
+    }
+    // Değiştiren bir işlemden HEMEN ÖNCE çağrılır: mevcut durumu geri-al yığınına koyar.
+    fn anlik_goruntu_al(&mut self) {
+        self.aktif_grubu_senkronize();
+        let a = self.mevcut_anlik();
+        self.geri_al_yigini.push(a);
+        if self.geri_al_yigini.len() > 50 {
+            self.geri_al_yigini.remove(0);
+        }
+        self.yinele_yigini.clear();
+    }
+    fn anlik_uygula(&mut self, a: Anlik) {
+        self.is_gruplari = a.is_gruplari;
+        self.metraj_kalemleri = a.metraj_kalemleri;
+        self.secili_grup_id = a.secili_grup_id;
+        self.metraj_adi = a.metraj_adi;
+        self.secili_poz = None;
+        self.degisiklik_var = true;
+    }
+    fn geri_al(&mut self) {
+        if let Some(a) = self.geri_al_yigini.pop() {
+            self.aktif_grubu_senkronize();
+            let mevcut = self.mevcut_anlik();
+            self.yinele_yigini.push(mevcut);
+            self.anlik_uygula(a);
+            self.basarili_mesaj = "↩ Geri alındı.".into();
+            self.hata_mesaji.clear();
+        }
+    }
+    fn yinele(&mut self) {
+        if let Some(a) = self.yinele_yigini.pop() {
+            self.aktif_grubu_senkronize();
+            let mevcut = self.mevcut_anlik();
+            self.geri_al_yigini.push(mevcut);
+            self.anlik_uygula(a);
+            self.basarili_mesaj = "↪ Yinelendi.".into();
+            self.hata_mesaji.clear();
+        }
+    }
+
+    // ==================== OTOMATİK KAYIT ====================
+    fn autosave_kontrol(&mut self, ctx: &egui::Context) {
+        if !self.degisiklik_var {
+            return;
+        }
+        let now = ctx.input(|i| i.time);
+        if self.son_autosave == 0.0 {
+            self.son_autosave = now; // ilk işaretleme; hemen kaydetme
+            return;
+        }
+        if now - self.son_autosave < 30.0 {
+            return;
+        }
+        self.son_autosave = now;
+        let yol = self.autosave_yolu.clone();
+        let m = self.proje_olustur();
+        let _ = metraj_json_kaydet(&m, &yol);
+    }
+
     // Hiyerarşik is_gruplari yapısını düzleştirip (eski sürümler için) kalemler ile birlikte döndürür.
     fn kayit_yapisi_hazirla(&mut self) -> (Vec<IsGrubu>, Vec<MetrajKalemi>) {
         self.aktif_grubu_senkronize();
@@ -1335,6 +1567,7 @@ impl MetrajApp {
             self.hata_mesaji.clear();
             return;
         }
+        self.anlik_goruntu_al();
         let kalem = MetrajKalemi::yeni(&poz, 0.0);
         self.metraj_kalemleri.push(kalem);
         self.metraj_kalemleri.sort_by(|a, b| a.poz_no.cmp(&b.poz_no));
@@ -1364,10 +1597,21 @@ impl MetrajApp {
         }
         self.pdf_yukleniyor = false;
     }
+    // Mevcut durumdan kaydedilebilir proje nesnesi oluşturur (oranlar dahil).
+    fn proje_olustur(&mut self) -> KayitliMetraj {
+        let (is_gruplari, kalemler) = self.kayit_yapisi_hazirla();
+        KayitliMetraj {
+            ad: self.metraj_adi.clone(),
+            kalemler,
+            is_gruplari,
+            tarih: krono_tarih(),
+            genel_gider_kar_orani: self.genel_gider_kar_orani,
+            kdv_orani: self.kdv_orani,
+        }
+    }
     fn metraj_kaydet(&mut self) {
         // Ileri donuk uyumluluk: hem hiyerarsik is_gruplari hem de duzlestirilmis kalemler yazilir
-        let (is_gruplari, kalemler) = self.kayit_yapisi_hazirla();
-        let m = KayitliMetraj { ad: self.metraj_adi.clone(), kalemler, is_gruplari, tarih: krono_tarih() };
+        let m = self.proje_olustur();
         if let Some(ref y) = self.mevcut_dosya_yolu { match metraj_json_kaydet(&m, y) { Ok(()) => { self.degisiklik_var = false; self.basarili_mesaj = format!("Kaydedildi: {}", y.display()); } Err(e) => self.hata_mesaji = format!("{}", e) } }
         else if let Some(d) = rfd::FileDialog::new().add_filter("Metrajmatik Projesi", &["mrj"]).set_file_name(&format!("{}.mrj", self.metraj_adi)).save_file() { match metraj_json_kaydet(&m, &d) { Ok(()) => { self.mevcut_dosya_yolu = Some(d.clone()); self.degisiklik_var = false; self.basarili_mesaj = format!("Kaydedildi: {}", d.display()); } Err(e) => self.hata_mesaji = format!("{}", e) } }
     }
@@ -1376,62 +1620,75 @@ impl MetrajApp {
             .add_filter("Metrajmatik Projesi", &["mrj", "json"])
             .pick_file()
         {
-            match metraj_json_yukle(&d) {
-                Ok(m) => {
-                    let KayitliMetraj { ad, kalemler, is_gruplari, .. } = m;
-                    self.secili_grup_id = None;
-                    self.secili_poz = None;
-                    let mut birlesen = 0;
+            self.metraj_dosyadan_yukle(&d, true);
+        }
+    }
+    // Bir dosyadan projeyi yükler. `dosya_olarak` true ise yol "mevcut dosya" olur (kurtarmada false).
+    fn metraj_dosyadan_yukle(&mut self, d: &std::path::Path, dosya_olarak: bool) {
+        match metraj_json_yukle(d) {
+            Ok(m) => {
+                let KayitliMetraj { ad, kalemler, is_gruplari, genel_gider_kar_orani, kdv_orani, .. } = m;
+                self.genel_gider_kar_orani = genel_gider_kar_orani;
+                self.kdv_orani = kdv_orani;
+                self.geri_al_yigini.clear();
+                self.yinele_yigini.clear();
+                self.secili_grup_id = None;
+                self.secili_poz = None;
+                let mut birlesen = 0;
 
-                    if is_gruplari.is_empty() {
-                        // Eski flat proje: kalemleri tekilleştir ve otomatik gruba aktar
-                        self.is_gruplari = vec![];
-                        self.metraj_kalemleri = kalemler;
-                        birlesen = self.metraj_kalemlerini_tekillestir();
-                        if !self.metraj_kalemleri.is_empty() {
-                            self.is_gruplari = vec![
-                                IsGrubu {
-                                    id: "otomatik_insaat".into(),
-                                    ad: "İnşaat".into(),
-                                    alt_gruplar: vec![
-                                        IsGrubu {
-                                            id: "otomatik_kaba_insaat".into(),
-                                            ad: "Kaba İnşaat".into(),
-                                            alt_gruplar: vec![],
-                                            kalemler: std::mem::take(&mut self.metraj_kalemleri),
-                                        },
-                                    ],
-                                    kalemler: vec![],
-                                },
-                            ];
-                        }
-                    } else {
-                        // Hiyerarşik proje: kalemler grupların içinde, tampon boş başlar
-                        self.is_gruplari = is_gruplari;
-                        self.metraj_kalemleri = vec![];
+                if is_gruplari.is_empty() {
+                    // Eski flat proje: kalemleri tekilleştir ve otomatik gruba aktar
+                    self.is_gruplari = vec![];
+                    self.metraj_kalemleri = kalemler;
+                    birlesen = self.metraj_kalemlerini_tekillestir();
+                    if !self.metraj_kalemleri.is_empty() {
+                        self.is_gruplari = vec![
+                            IsGrubu {
+                                id: "otomatik_insaat".into(),
+                                ad: "İnşaat".into(),
+                                alt_gruplar: vec![
+                                    IsGrubu {
+                                        id: "otomatik_kaba_insaat".into(),
+                                        ad: "Kaba İnşaat".into(),
+                                        alt_gruplar: vec![],
+                                        kalemler: std::mem::take(&mut self.metraj_kalemleri),
+                                    },
+                                ],
+                                kalemler: vec![],
+                            },
+                        ];
                     }
+                } else {
+                    // Hiyerarşik proje: kalemler grupların içinde, tampon boş başlar
+                    self.is_gruplari = is_gruplari;
+                    self.metraj_kalemleri = vec![];
+                }
 
-                    // İlk yaprak grubu aktif yap ve kalemlerini tampona yükle
-                    if let Some(id) = ilk_yaprak_grup_id(&self.is_gruplari) {
-                        self.grup_sec(id);
-                    }
+                // İlk yaprak grubu aktif yap ve kalemlerini tampona yükle
+                if let Some(id) = ilk_yaprak_grup_id(&self.is_gruplari) {
+                    self.grup_sec(id);
+                }
 
-                    self.metraj_adi = ad;
-                    self.mevcut_dosya_yolu = Some(d.clone());
+                self.metraj_adi = ad;
+                if dosya_olarak {
+                    self.mevcut_dosya_yolu = Some(d.to_path_buf());
                     self.degisiklik_var = birlesen > 0;
                     self.basarili_mesaj = if birlesen > 0 {
-                        format!("Acildi: {} ({} yinelenen poz birlestirildi)", d.display(), birlesen)
+                        format!("Açıldı: {} ({} yinelenen poz birleştirildi)", d.display(), birlesen)
                     } else {
-                        format!("Acildi: {}", d.display())
+                        format!("Açıldı: {}", d.display())
                     };
+                } else {
+                    // Kurtarma: kaydedilmemiş sayılır
+                    self.degisiklik_var = true;
+                    self.basarili_mesaj = "Otomatik kayıttan kurtarıldı. Lütfen 'Kaydet' ile kalıcı hale getirin.".into();
                 }
-                Err(e) => self.hata_mesaji = format!("{}", e),
             }
+            Err(e) => self.hata_mesaji = format!("{}", e),
         }
     }
     fn metraj_excel_diyalog(&mut self) {
-        let (is_gruplari, kalemler) = self.kayit_yapisi_hazirla();
-        let m = KayitliMetraj { ad: self.metraj_adi.clone(), kalemler, is_gruplari, tarih: krono_tarih() };
+        let m = self.proje_olustur();
         if let Some(d) = rfd::FileDialog::new().add_filter("Excel", &["xlsx"]).set_file_name(&format!("{}.xlsx", self.metraj_adi)).save_file() { match metraj_excel_aktar(&m, &d) { Ok(()) => { self.basarili_mesaj = format!("Excel: {}", d.display()); } Err(e) => self.hata_mesaji = format!("{}", e) } }
     }
 
@@ -1441,7 +1698,7 @@ impl MetrajApp {
             None => { self.hata_mesaji = "Lutfen hedef kitap secin!".into(); return; }
         };
         // Aktif grubun tampondaki kalemlerini ağaca yaz ki güncelleme tüm gruplara uygulansın
-        self.aktif_grubu_senkronize();
+        self.anlik_goruntu_al();
         if let Some(ref db) = self.db {
             let mut guncellenen = 0;
             let mut bulunamayan = 0;
@@ -1600,6 +1857,54 @@ fn is_grubu_agac_ciz(
             ui.indent(g.id.clone(), |ui| {
                 is_grubu_agac_ciz(ui, &g.alt_gruplar, secili_id, aktif_kalemler, secilen_out);
             });
+        }
+    }
+}
+
+// ==================== MİKTAR DETAY (BOYUT) YARDIMCILARI ====================
+fn opt_str(o: Option<f64>) -> String {
+    o.map(|v| format!("{}", v).replace('.', ",")).unwrap_or_default()
+}
+
+// Bir popup satırının boyutlarından miktarı hesaplar (hiç boyut yoksa None).
+fn satir_miktar(s: &PopupDetaySatiri) -> Option<f64> {
+    let a = sayi_oku(&s.adet);
+    let e = sayi_oku(&s.en);
+    let b = sayi_oku(&s.boy);
+    let y = sayi_oku(&s.yukseklik);
+    if a.is_none() && e.is_none() && b.is_none() && y.is_none() {
+        return None;
+    }
+    Some(a.unwrap_or(1.0) * e.unwrap_or(1.0) * b.unwrap_or(1.0) * y.unwrap_or(1.0))
+}
+
+fn satir_to_detay(s: &PopupDetaySatiri) -> Option<MiktarDetay> {
+    let m = satir_miktar(s)?;
+    Some(MiktarDetay {
+        aciklama: s.aciklama.clone(),
+        miktar: m,
+        adet: sayi_oku(&s.adet),
+        en: sayi_oku(&s.en),
+        boy: sayi_oku(&s.boy),
+        yukseklik: sayi_oku(&s.yukseklik),
+    })
+}
+
+fn detay_to_satir(d: &MiktarDetay) -> PopupDetaySatiri {
+    if d.boyutlu_mu() {
+        PopupDetaySatiri {
+            aciklama: d.aciklama.clone(),
+            adet: opt_str(d.adet),
+            en: opt_str(d.en),
+            boy: opt_str(d.boy),
+            yukseklik: opt_str(d.yukseklik),
+        }
+    } else {
+        // Eski/elle girilmiş detay: miktarı "Adet" sütununa koy
+        PopupDetaySatiri {
+            aciklama: d.aciklama.clone(),
+            adet: if d.miktar != 0.0 { opt_str(Some(d.miktar)) } else { String::new() },
+            ..Default::default()
         }
     }
 }

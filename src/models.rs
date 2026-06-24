@@ -26,7 +26,34 @@ pub struct Kitap {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MiktarDetay {
     pub aciklama: String,
-    pub miktar: f64,
+    pub miktar: f64, // hesaplanmış sonuç (boyutlar varsa onların çarpımı, yoksa elle girilen)
+    #[serde(default)]
+    pub adet: Option<f64>,
+    #[serde(default)]
+    pub en: Option<f64>,
+    #[serde(default)]
+    pub boy: Option<f64>,
+    #[serde(default)]
+    pub yukseklik: Option<f64>,
+}
+
+impl MiktarDetay {
+    /// Boyutlardan miktarı hesaplar. Hiç boyut girilmemişse elle girilen `miktar` korunur.
+    pub fn hesaplanan_miktar(&self) -> f64 {
+        if self.adet.is_none() && self.en.is_none() && self.boy.is_none() && self.yukseklik.is_none() {
+            self.miktar
+        } else {
+            self.adet.unwrap_or(1.0)
+                * self.en.unwrap_or(1.0)
+                * self.boy.unwrap_or(1.0)
+                * self.yukseklik.unwrap_or(1.0)
+        }
+    }
+
+    /// Boyut tabanlı mı yoksa elle girilmiş mi?
+    pub fn boyutlu_mu(&self) -> bool {
+        self.adet.is_some() || self.en.is_some() || self.boy.is_some() || self.yukseklik.is_some()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +85,10 @@ impl MetrajKalemi {
     }
 
     pub fn detaylardan_miktar_hesapla(&mut self) {
+        // Her detayın miktarını boyutlarından tazele, sonra topla
+        for d in self.detaylar.iter_mut() {
+            d.miktar = d.hesaplanan_miktar();
+        }
         self.miktar = self.detaylar.iter().map(|d| d.miktar).sum();
         self.tutar_guncelle();
     }
@@ -110,7 +141,14 @@ pub struct KayitliMetraj {
     #[serde(default)]
     pub is_gruplari: Vec<IsGrubu>,   // Yeni hiyerarşik yapı için
     pub tarih: String,
+    #[serde(default = "varsayilan_kar_orani")]
+    pub genel_gider_kar_orani: f64, // % müteahhit kârı + genel gider
+    #[serde(default = "varsayilan_kdv_orani")]
+    pub kdv_orani: f64, // % KDV
 }
+
+fn varsayilan_kar_orani() -> f64 { 25.0 }
+fn varsayilan_kdv_orani() -> f64 { 20.0 }
 
 impl KayitliMetraj {
     pub fn toplam_tutar(&self) -> f64 {
@@ -170,7 +208,7 @@ mod testler {
 
     #[test]
     fn gruplu_proje_toplami_gruplardan_hesaplanir() {
-        let m = KayitliMetraj { ad: "T".into(), kalemler: vec![], is_gruplari: ornek_agac(), tarih: "2026-01-01".into() };
+        let m = KayitliMetraj { ad: "T".into(), kalemler: vec![], is_gruplari: ornek_agac(), tarih: "2026-01-01".into(), genel_gider_kar_orani: 25.0, kdv_orani: 20.0 };
         assert_eq!(m.toplam_tutar(), 175.0);
     }
 
@@ -182,5 +220,44 @@ mod testler {
         assert!(m.is_gruplari.is_empty());
         assert_eq!(m.kalemler.len(), 1);
         assert_eq!(m.toplam_tutar(), 20.0);
+        // Oranlar varsayılana düşmeli
+        assert_eq!(m.genel_gider_kar_orani, 25.0);
+        assert_eq!(m.kdv_orani, 20.0);
+    }
+
+    #[test]
+    fn boyutlardan_miktar_carpilir() {
+        let d = MiktarDetay { aciklama: "kiriş".into(), miktar: 0.0, adet: Some(4.0), en: Some(0.30), boy: Some(5.0), yukseklik: Some(0.40) };
+        assert!((d.hesaplanan_miktar() - 2.4).abs() < 1e-9); // 4 * 0.30 * 5 * 0.40
+        assert!(d.boyutlu_mu());
+    }
+
+    #[test]
+    fn eksik_boyutlar_bir_sayilir() {
+        // sadece adet ve boy verilmiş; en/yükseklik 1 sayılır
+        let d = MiktarDetay { aciklama: "".into(), miktar: 0.0, adet: Some(3.0), en: None, boy: Some(2.5), yukseklik: None };
+        assert!((d.hesaplanan_miktar() - 7.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn boyutsuz_detay_elle_girilen_miktari_korur() {
+        let d = MiktarDetay { aciklama: "hazır".into(), miktar: 12.0, adet: None, en: None, boy: None, yukseklik: None };
+        assert_eq!(d.hesaplanan_miktar(), 12.0);
+        assert!(!d.boyutlu_mu());
+    }
+
+    #[test]
+    fn kalem_detaylardan_toplam_miktar_ve_tutar() {
+        let mut k = MetrajKalemi {
+            poz_no: "P".into(), tanim: "t".into(), birim: "m3".into(),
+            birim_fiyat: 100.0, miktar: 0.0, tutar: 0.0, kitap_adi: "K".into(),
+            detaylar: vec![
+                MiktarDetay { aciklama: "a".into(), miktar: 0.0, adet: Some(2.0), en: None, boy: None, yukseklik: None },
+                MiktarDetay { aciklama: "b".into(), miktar: 0.0, adet: Some(1.0), en: Some(3.0), boy: Some(0.5), yukseklik: None },
+            ],
+        };
+        k.detaylardan_miktar_hesapla();
+        assert_eq!(k.miktar, 3.5); // 2 + 1.5
+        assert_eq!(k.tutar, 350.0);
     }
 }
