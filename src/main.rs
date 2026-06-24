@@ -3,6 +3,7 @@ mod database;
 mod export;
 mod models;
 mod pdf_parser;
+mod tema;
 
 use eframe::egui;
 
@@ -20,6 +21,9 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         "Metrajmatik",
         options,
-        Box::new(|_cc| Ok(Box::new(app::MetrajApp::default()))),
+        Box::new(|cc| {
+            tema::uygula(&cc.egui_ctx);
+            Ok(Box::new(app::MetrajApp::default()))
+        }),
     )
 }
