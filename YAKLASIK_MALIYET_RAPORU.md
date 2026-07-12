@@ -199,9 +199,9 @@ Gerçek metrajda satırın **imalatın cinsi** açıklaması, poz açıklamasın
 ### P0 — "Yaklaşık maliyeti TAMAMLA" (mevzuata doğru MVP)
 > Bunlar bitmeden ürün "yaklaşık maliyet programı" sayılmaz.
 
-- [ ] **H1 düzelt:** poz bazında `kar_dahil` bayrağı; %25 sadece analiz fiyatlarına.
-- [ ] **H2 düzelt:** "Kamu/Özel" kipi; kamuda KDV hariç.
-- [ ] **H3 düzelt:** doğru tarih.
+- [x] **H2 düzeltildi:** "Kamu/Özel" kipi eklendi (`models::HesapTuru`); Kamu'da KDV hariç. Tek kaynak `maliyet::MaliyetOzeti`.
+- [~] **H1 kısmen düzeltildi:** Kamu kipinde kâr+genel gider varsayılanı %0 (kurum fiyatları zaten içerir) + İcmal uyarısı → çifte sayım varsayılanda önlendi. **Kalan:** poz bazında `kar_dahil` bayrağı (analiz altyapısıyla gelecek; %25'i karışık projede otomatik yalnız analiz pozlarına uygulamak için).
+- [x] **H3 düzeltildi:** `bicim::krono_tarih` artık gerçek Gregoryen takvim (artık yıllar dahil, Howard Hinnant algoritması) + Türkiye saati (UTC+3). Takvim testleriyle kilitlendi. Bağımlılık eklenmedi.
 - [ ] **Birim fiyat analizi (E1/E2):** rayiç kitabı + analiz föyü + analizden poz fiyatı üretimi.
 - [ ] **Metraj cetveli olgunlaşması (E5/E6):** benzer adedi, +/− çıkan, formül, imalat cinsi.
 - [ ] **Resmî çıktılar (E9/E10):** Yaklaşık Maliyet Hesap Cetveli + Metraj Cetveli + Metraj İcmali + Analiz Föyü → Excel **ve** PDF; "Gizli / Onaya esas" damgası.
@@ -344,7 +344,7 @@ Bu 6 sprint sonunda Metrajmatik **mevzuata doğru, analiz yapabilen, resmî çı
 
 ---
 
-### Ek: En kritik 3 iş (bugün başlanacak)
-1. **İcmal doğruluğu (H1+H2).** `app.rs:1015-1018` ve `export.rs:236-239` — kâr çifte sayımını ve KDV'yi düzelt; "Kamu/Özel" anahtarı ekle. *En düşük efor, en yüksek itibar.*
-2. **Veri yerini güvene al (E8).** `app.rs:105,119` — `%APPDATA%\Metrajmatik\`. *Veri kaybını önler.*
-3. **Analiz çekirdeği (E1).** Rayiç kitabı + analiz föyü. *OSKA/AMP'den ayıran asıl özellik.*
+### Ek: En kritik işler
+1. ~~**İcmal doğruluğu (H1+H2).**~~ ✅ **Tamamlandı** — Kamu/Özel kipi (`maliyet::MaliyetOzeti`, `models::HesapTuru`, `app/gorunum_diger.rs::render_icmal`). Kalan: tam H1 için poz bazında `kar_dahil` (analizle birlikte).
+2. **Veri yerini güvene al (E8).** `app/mod.rs` Default — DB/autosave `%APPDATA%\Metrajmatik\`. *Veri kaybını önler.*
+3. **Analiz çekirdeği (E1).** Rayiç kitabı + analiz föyü. *OSKA/AMP'den ayıran asıl özellik + tam H1'i mümkün kılar.*

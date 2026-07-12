@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use crate::bicim::{metni_kisalt, para_formatla};
 use crate::database::Veritabani;
 use crate::is_grubu::ilk_yaprak_grup_id;
-use crate::models::{IsGrubu, Kitap, MetrajKalemi, Poz};
+use crate::models::{HesapTuru, IsGrubu, Kitap, MetrajKalemi, Poz};
 use crate::tema;
 
 mod gorunum_diger;
@@ -99,6 +99,7 @@ pub struct MetrajApp {
     yeni_grup_adi: String,
 
     // İcmal / yaklaşık maliyet oranları
+    hesap_turu: HesapTuru,
     genel_gider_kar_orani: f64,
     kdv_orani: f64,
 
@@ -164,8 +165,10 @@ impl Default for MetrajApp {
             secili_grup_id: baslangic_secili,
             yeni_grup_adi: String::new(),
 
-            // İcmal oranları (varsayılan)
-            genel_gider_kar_orani: 25.0,
+            // İcmal oranları (varsayılan): yeni proje Kamu → KDV hariç, kâr %0
+            // (kurum birim fiyatları kâr+genel gideri zaten içerir).
+            hesap_turu: HesapTuru::Kamu,
+            genel_gider_kar_orani: 0.0,
             kdv_orani: 20.0,
 
             // Geri al / yinele

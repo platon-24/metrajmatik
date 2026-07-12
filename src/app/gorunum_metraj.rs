@@ -249,6 +249,12 @@ impl MetrajApp {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("🗑 Temizle").clicked() { self.anlik_goruntu_al(); self.metraj_kalemleri.clear(); self.aktif_grubu_senkronize(); self.degisiklik_var = true; self.basarili_mesaj = "Temizlendi.".into(); }
+                if ui.button("📋 Panoya").on_hover_text("Metraj özetini metin olarak panoya kopyala").clicked() {
+                    let m = self.proje_olustur();
+                    let ozet = crate::export::metraj_metin_ozet(&m);
+                    ui.ctx().copy_text(ozet);
+                    self.basarili_mesaj = "Metraj özeti panoya kopyalandı.".into();
+                }
                 if ui.button("📊 Excel").clicked() { self.metraj_excel_diyalog(); }
                 if tema::basari_buton(ui, "💾 Kaydet").clicked() { self.metraj_kaydet(); }
                 if ui.button("📂 Aç").clicked() { self.metraj_yukle_diyalog(); }

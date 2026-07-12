@@ -133,6 +133,22 @@ impl IsGrubu {
     }
 }
 
+/// Yaklaşık maliyet hesap türü.
+/// - **Kamu**: Kamu ihalesi. Yaklaşık maliyet **KDV hariç** hesaplanır. Kâr + genel
+///   gider yalnızca analizle (rayiçten) bulunan özel pozlara uygulanır; kurum birim
+///   fiyatları bunu zaten içerdiğinden varsayılan oran %0'dır.
+/// - **Ozel**: Özel sektör. KDV dahil; kâr + genel gider kullanıcı denetiminde.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HesapTuru { Kamu, Ozel }
+
+impl Default for HesapTuru {
+    fn default() -> Self { HesapTuru::Kamu }
+}
+
+impl HesapTuru {
+    pub fn kamu_mu(self) -> bool { matches!(self, HesapTuru::Kamu) }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KayitliMetraj {
     pub ad: String,
@@ -145,10 +161,16 @@ pub struct KayitliMetraj {
     pub genel_gider_kar_orani: f64, // % müteahhit kârı + genel gider
     #[serde(default = "varsayilan_kdv_orani")]
     pub kdv_orani: f64, // % KDV
+    // Eski dosyalar bu alan OLMADAN kaydedildiği için varsayılanı ÖZEL'dir: böylece
+    // eski projelerin KDV dahil toplamı açılışta sessizce değişmez. Yeni projeler
+    // MetrajApp::default içinde KAMU olarak başlar.
+    #[serde(default = "varsayilan_hesap_turu")]
+    pub hesap_turu: HesapTuru,
 }
 
 fn varsayilan_kar_orani() -> f64 { 25.0 }
 fn varsayilan_kdv_orani() -> f64 { 20.0 }
+fn varsayilan_hesap_turu() -> HesapTuru { HesapTuru::Ozel }
 
 impl KayitliMetraj {
     pub fn toplam_tutar(&self) -> f64 {
@@ -208,7 +230,7 @@ mod testler {
 
     #[test]
     fn gruplu_proje_toplami_gruplardan_hesaplanir() {
-        let m = KayitliMetraj { ad: "T".into(), kalemler: vec![], is_gruplari: ornek_agac(), tarih: "2026-01-01".into(), genel_gider_kar_orani: 25.0, kdv_orani: 20.0 };
+        let m = KayitliMetraj { ad: "T".into(), kalemler: vec![], is_gruplari: ornek_agac(), tarih: "2026-01-01".into(), genel_gider_kar_orani: 25.0, kdv_orani: 20.0, hesap_turu: HesapTuru::Kamu };
         assert_eq!(m.toplam_tutar(), 175.0);
     }
 
@@ -223,6 +245,8 @@ mod testler {
         // Oranlar varsayılana düşmeli
         assert_eq!(m.genel_gider_kar_orani, 25.0);
         assert_eq!(m.kdv_orani, 20.0);
+        // Eski dosya hesap türü alanı içermez → ÖZEL'e düşmeli (KDV dahil davranışı korunur)
+        assert_eq!(m.hesap_turu, HesapTuru::Ozel);
     }
 
     #[test]

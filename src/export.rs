@@ -234,13 +234,19 @@ pub fn metraj_excel_aktar(metraj: &KayitliMetraj, dosya_yolu: &Path) -> Result<(
     worksheet.set_row_height(satir, 24).map_err(|e| e.to_string())?;
 
     // Yaklaşık maliyet özeti: genel gider & kâr, KDV (tek kaynak: maliyet::MaliyetOzeti)
-    let ozet = MaliyetOzeti::hesapla(ara_toplam, metraj.genel_gider_kar_orani, metraj.kdv_orani);
+    let ozet = MaliyetOzeti::hesapla(ara_toplam, metraj.genel_gider_kar_orani, metraj.kdv_orani, metraj.hesap_turu);
 
-    for (etiket, deger) in [
-        (format!("Genel Gider & Müteahhit Kârı (% {:.1})", metraj.genel_gider_kar_orani), ozet.kar),
-        ("KDV Matrahı".to_string(), ozet.kdv_matrahi),
-        (format!("KDV (% {:.1})", metraj.kdv_orani), ozet.kdv),
-    ] {
+    // Özet satırları hesap türüne göre: kâr 0 ise kâr satırı yok; Kamu'da KDV satırları yok.
+    let mut ozet_satirlari: Vec<(String, f64)> = Vec::new();
+    if metraj.genel_gider_kar_orani > 0.0 {
+        ozet_satirlari.push((format!("Genel Gider & Müteahhit Kârı (% {:.1})", metraj.genel_gider_kar_orani), ozet.kar));
+    }
+    if !metraj.hesap_turu.kamu_mu() {
+        ozet_satirlari.push(("KDV Matrahı".to_string(), ozet.kdv_matrahi));
+        ozet_satirlari.push((format!("KDV (% {:.1})", metraj.kdv_orani), ozet.kdv));
+    }
+
+    for (etiket, deger) in ozet_satirlari {
         satir += 1;
         worksheet
             .merge_range(satir, 0, satir, 5, &etiket, &grup_alt_toplam_format)
@@ -251,10 +257,15 @@ pub fn metraj_excel_aktar(metraj: &KayitliMetraj, dosya_yolu: &Path) -> Result<(
         worksheet.set_row_height(satir, 22).map_err(|e| e.to_string())?;
     }
 
-    // Toplam yaklaşık maliyet satırı
+    // Toplam yaklaşık maliyet satırı (Kamu: KDV hariç)
     satir += 1;
+    let toplam_baslik = if metraj.hesap_turu.kamu_mu() {
+        "TOPLAM YAKLAŞIK MALİYET (KDV Hariç)"
+    } else {
+        "TOPLAM YAKLAŞIK MALİYET (KDV Dahil)"
+    };
     worksheet
-        .merge_range(satir, 0, satir, 5, "TOPLAM YAKLAŞIK MALİYET", &toplam_format)
+        .merge_range(satir, 0, satir, 5, toplam_baslik, &toplam_format)
         .map_err(|e| e.to_string())?;
     worksheet
         .write_with_format(satir, 6, ozet.genel_toplam, &toplam_format)

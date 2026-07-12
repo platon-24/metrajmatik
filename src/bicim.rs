@@ -3,19 +3,34 @@
 //! `app.rs` hem `database.rs` içinde; biçimlendirme fonksiyonları `app.rs` içinde
 //! serbest fonksiyonlardı.)
 
-/// UNIX zamanından basit "YYYY-AA-GG" üretir.
+/// Bugünün tarihini "YYYY-AA-GG" olarak Türkiye saatiyle üretir.
 ///
-/// NOT: Bu hesap yaklaşıktır (artık yıl yok, ay = 30 gün varsayımı). Davranış eski
-/// `krono_tarih` ile birebir korunmuştur; gerçek takvime taşınması ayrı bir iş.
+/// Gregoryen takvim; artık yıllar doğru hesaplanır. Türkiye 2016'dan beri kalıcı
+/// olarak UTC+3'tür (yaz saati yok), bu yüzden sabit +3 saat ofseti uygulanır.
 pub fn krono_tarih() -> String {
     let s = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    let d = s / 86400;
-    let y = 1970 + d / 365;
-    let r = d % 365;
-    format!("{:04}-{:02}-{:02}", y, r / 30 + 1, r % 30 + 1)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let yerel = s as i64 + 3 * 3600; // Türkiye saati (UTC+3)
+    let gun = yerel.div_euclid(86400); // 1970-01-01 = 0
+    let (y, a, g) = takvim_gununden(gun);
+    format!("{:04}-{:02}-{:02}", y, a, g)
+}
+
+/// Gün sayısını (1970-01-01 = 0) Gregoryen (yıl, ay, gün)'e çevirir.
+/// Howard Hinnant'ın `civil_from_days` algoritması (public domain, artık yıl doğru).
+fn takvim_gununden(z: i64) -> (i64, u32, u32) {
+    let z = z + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z - era * 146097; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; // [0, 399]
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let g = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let a = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    (if a <= 2 { y + 1 } else { y }, a as u32, g as u32)
 }
 
 /// Metni en fazla `en_fazla` karaktere kısaltır, taşarsa sonuna "..." ekler.
@@ -79,5 +94,19 @@ mod testler {
     fn metin_kisaltma() {
         assert_eq!(metni_kisalt("kısa", 10), "kısa");
         assert_eq!(metni_kisalt("çok uzun bir metin", 8), "çok u...");
+    }
+
+    #[test]
+    fn takvim_bilinen_gunler() {
+        assert_eq!(takvim_gununden(0), (1970, 1, 1));
+        assert_eq!(takvim_gununden(10957), (2000, 1, 1));
+        assert_eq!(takvim_gununden(-1), (1969, 12, 31)); // negatif gün de doğru
+    }
+
+    #[test]
+    fn takvim_artik_yil() {
+        // 2020 artık yıl: 29 Şubat gerçek bir gün, 1 Mart'a doğru geçmeli
+        assert_eq!(takvim_gununden(18321), (2020, 2, 29));
+        assert_eq!(takvim_gununden(18322), (2020, 3, 1));
     }
 }

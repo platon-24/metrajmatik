@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use crate::bicim::{metni_kisalt, para_formatla};
 use crate::is_grubu::grup_canli_toplam;
 use crate::maliyet::MaliyetOzeti;
-use crate::models::Poz;
+use crate::models::{HesapTuru, Poz};
 use crate::tema;
 
 use super::MetrajApp;
@@ -108,15 +108,31 @@ impl MetrajApp {
             .collect();
         let ara_toplam: f64 = self.toplam_tutar();
 
-        // Oran ayarları
+        // Hesap türü + oran ayarları
         tema::kart(ui, |ui| {
             ui.horizontal(|ui| {
+                ui.label(RichText::new("Hesap Türü").color(tema::METIN_IKINCIL).size(12.0));
+                if ui.selectable_label(self.hesap_turu == HesapTuru::Kamu, "🏛 Kamu (KDV hariç)").clicked() {
+                    self.hesap_turu = HesapTuru::Kamu; self.degisiklik_var = true;
+                }
+                if ui.selectable_label(self.hesap_turu == HesapTuru::Ozel, "🏢 Özel (KDV dahil)").clicked() {
+                    self.hesap_turu = HesapTuru::Ozel; self.degisiklik_var = true;
+                }
+                ui.add_space(18.0);
+                ui.separator();
+                ui.add_space(18.0);
                 ui.label(RichText::new("Genel Gider + Müteahhit Kârı").color(tema::METIN_IKINCIL).size(12.0));
                 if ui.add(egui::DragValue::new(&mut self.genel_gider_kar_orani).speed(0.5).range(0.0..=100.0).suffix(" %")).changed() { self.degisiklik_var = true; }
-                ui.add_space(20.0);
-                ui.label(RichText::new("KDV").color(tema::METIN_IKINCIL).size(12.0));
-                if ui.add(egui::DragValue::new(&mut self.kdv_orani).speed(0.5).range(0.0..=100.0).suffix(" %")).changed() { self.degisiklik_var = true; }
+                if self.hesap_turu == HesapTuru::Ozel {
+                    ui.add_space(18.0);
+                    ui.label(RichText::new("KDV").color(tema::METIN_IKINCIL).size(12.0));
+                    if ui.add(egui::DragValue::new(&mut self.kdv_orani).speed(0.5).range(0.0..=100.0).suffix(" %")).changed() { self.degisiklik_var = true; }
+                }
             });
+            if self.hesap_turu == HesapTuru::Kamu {
+                ui.add_space(5.0);
+                ui.label(RichText::new("⚠ Kurum birim fiyatları kâr ve genel gideri zaten içerir. Bu oranı yalnızca analiz/rayiç ile fiyatlandırdığınız özel pozlar için girin. Kamu yaklaşık maliyeti KDV hariç hesaplanır.").color(tema::UYARI).size(11.0));
+            }
         });
         ui.add_space(8.0);
 
@@ -146,7 +162,10 @@ impl MetrajApp {
         ui.add_space(10.0);
 
         // Yaklaşık maliyet özeti (tek kaynak: maliyet::MaliyetOzeti)
-        let ozet = MaliyetOzeti::hesapla(ara_toplam, self.genel_gider_kar_orani, self.kdv_orani);
+        let ozet = MaliyetOzeti::hesapla(ara_toplam, self.genel_gider_kar_orani, self.kdv_orani, self.hesap_turu);
+        let kamu = self.hesap_turu == HesapTuru::Kamu;
+        let kar_orani = self.genel_gider_kar_orani;
+        let kdv_orani = self.kdv_orani;
 
         egui::Frame::default()
             .fill(tema::YUZEY_2)
@@ -164,16 +183,23 @@ impl MetrajApp {
                     });
                 };
                 satir(ui, "Ara Toplam (İşçilik + Malzeme)", ozet.ara_toplam, false);
-                ui.add_space(3.0);
-                satir(ui, &format!("Genel Gider & Müteahhit Kârı (% {:.1})", self.genel_gider_kar_orani), ozet.kar, false);
-                ui.add_space(3.0);
-                satir(ui, "KDV Matrahı", ozet.kdv_matrahi, false);
-                ui.add_space(3.0);
-                satir(ui, &format!("KDV (% {:.1})", self.kdv_orani), ozet.kdv, false);
+                // Kâr satırı yalnızca bir oran girildiğinde (analiz pozları için) gösterilir.
+                if kar_orani > 0.0 {
+                    ui.add_space(3.0);
+                    satir(ui, &format!("Genel Gider & Müteahhit Kârı (% {:.1})", kar_orani), ozet.kar, false);
+                }
+                // KDV yalnızca Özel türünde.
+                if !kamu {
+                    ui.add_space(3.0);
+                    satir(ui, "KDV Matrahı", ozet.kdv_matrahi, false);
+                    ui.add_space(3.0);
+                    satir(ui, &format!("KDV (% {:.1})", kdv_orani), ozet.kdv, false);
+                }
                 ui.add_space(6.0);
                 ui.separator();
                 ui.add_space(4.0);
-                satir(ui, "TOPLAM YAKLAŞIK MALİYET", ozet.genel_toplam, true);
+                let toplam_baslik = if kamu { "TOPLAM YAKLAŞIK MALİYET (KDV Hariç)" } else { "TOPLAM YAKLAŞIK MALİYET (KDV Dahil)" };
+                satir(ui, toplam_baslik, ozet.genel_toplam, true);
             });
     }
 
