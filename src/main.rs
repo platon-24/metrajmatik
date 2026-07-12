@@ -1,6 +1,9 @@
 mod app;
+mod bicim;
 mod database;
 mod export;
+mod is_grubu;
+mod maliyet;
 mod models;
 mod pdf_parser;
 mod tema;

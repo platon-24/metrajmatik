@@ -294,8 +294,16 @@ metrajmatik/
 ├── metrajmatik_veriler.db  # SQLite veritabanı (otomatik oluşur)
 ├── src/
 │   ├── main.rs             # Uygulama giriş noktası (1400x800 pencere)
-│   ├── app.rs              # Tüm UI ve uygulama durumu
-│   ├── models.rs           # Veri modelleri (Poz, Kitap, MetrajKalemi)
+│   ├── app/                # UI katmanı (sorumluluğa göre bölünmüş)
+│   │   ├── mod.rs          # Durum (MetrajApp) + update() akışı, menü/durum çubuğu
+│   │   ├── islemler.rs     # UI-dışı mantık: arama, dosya, geri-al/yinele, fiyat güncelleme
+│   │   ├── gorunum_metraj.rs  # Metraj sekmesi çizimleri + miktar popup + ağaç çizimi
+│   │   └── gorunum_diger.rs   # Kitap / İcmal / Pozlar / PDF çizimleri
+│   ├── models.rs           # Veri modelleri (Poz, Kitap, MetrajKalemi, IsGrubu)
+│   ├── bicim.rs            # Biçim/ayrıştırma: para, tarih, metin, sayı (tek kaynak)
+│   ├── maliyet.rs          # Yaklaşık maliyet özeti hesabı (tek kaynak)
+│   ├── is_grubu.rs         # İş grubu ağaç işlemleri (saf, egui'siz)
+│   ├── tema.rs             # Tema ve yeniden kullanılabilir bileşen yardımcıları
 │   ├── pdf_parser.rs       # PDF metin çıkarma ve poz ayrıştırma
 │   ├── database.rs         # SQLite + FTS5 veritabanı (kitaplar, pozlar)
 │   └── export.rs           # Excel (.xlsx) ve JSON dışa/içe aktarma

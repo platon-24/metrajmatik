@@ -1,0 +1,427 @@
+//! UI-dışı iş mantığı: toplam hesabı, aktif grup senkronizasyonu, geri-al/yinele,
+//! otomatik kayıt, arama, poz sorgulama, kalem ekleme, dosya (kaydet/yükle/Excel/PDF)
+//! ve toplu fiyat güncelleme. Tümü `MetrajApp` üzerinde `pub(crate)` metotlardır.
+
+use eframe::egui;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+use crate::bicim::krono_tarih;
+use crate::export::{metraj_excel_aktar, metraj_json_kaydet, metraj_json_yukle};
+use crate::is_grubu::{grup_bul_mut, grup_bul_ref, grup_canli_toplam, ilk_yaprak_grup_id};
+use crate::models::{IsGrubu, KayitliMetraj, MetrajKalemi, Poz};
+use crate::pdf_parser::{pdf_metin_cikar, pozlari_ayristir};
+
+use super::{Anlik, MetrajApp};
+
+impl MetrajApp {
+    // ==================== YARDIMCI ====================
+    pub(crate) fn toplam_tutar(&self) -> f64 {
+        if self.is_gruplari.is_empty() {
+            return self.metraj_kalemleri.iter().map(|k| k.tutar).sum();
+        }
+        let secili = self.secili_grup_id.as_deref();
+        self.is_gruplari
+            .iter()
+            .map(|g| grup_canli_toplam(g, secili, &self.metraj_kalemleri))
+            .sum()
+    }
+
+    // Aktif (seçili) grubun kalemlerini düzenleme tamponundan (metraj_kalemleri) ağaca geri yazar.
+    pub(crate) fn aktif_grubu_senkronize(&mut self) {
+        if let Some(id) = self.secili_grup_id.clone() {
+            if let Some(g) = grup_bul_mut(&mut self.is_gruplari, &id) {
+                g.kalemler = self.metraj_kalemleri.clone();
+            }
+        }
+    }
+
+    // Bir grubu aktif yapar: önceki aktif grubu kaydeder, yeni grubun kalemlerini tampona yükler.
+    pub(crate) fn grup_sec(&mut self, id: String) {
+        if self.secili_grup_id.as_deref() == Some(id.as_str()) {
+            return;
+        }
+        self.aktif_grubu_senkronize();
+        let kalemler = grup_bul_ref(&self.is_gruplari, &id)
+            .map(|g| g.kalemler.clone())
+            .unwrap_or_default();
+        self.secili_grup_id = Some(id);
+        self.metraj_kalemleri = kalemler;
+        self.secili_poz = None;
+    }
+
+    // ==================== GERİ AL / YİNELE ====================
+    fn mevcut_anlik(&self) -> Anlik {
+        Anlik {
+            is_gruplari: self.is_gruplari.clone(),
+            metraj_kalemleri: self.metraj_kalemleri.clone(),
+            secili_grup_id: self.secili_grup_id.clone(),
+            metraj_adi: self.metraj_adi.clone(),
+        }
+    }
+    // Değiştiren bir işlemden HEMEN ÖNCE çağrılır: mevcut durumu geri-al yığınına koyar.
+    pub(crate) fn anlik_goruntu_al(&mut self) {
+        self.aktif_grubu_senkronize();
+        let a = self.mevcut_anlik();
+        self.geri_al_yigini.push(a);
+        if self.geri_al_yigini.len() > 50 {
+            self.geri_al_yigini.remove(0);
+        }
+        self.yinele_yigini.clear();
+    }
+    fn anlik_uygula(&mut self, a: Anlik) {
+        self.is_gruplari = a.is_gruplari;
+        self.metraj_kalemleri = a.metraj_kalemleri;
+        self.secili_grup_id = a.secili_grup_id;
+        self.metraj_adi = a.metraj_adi;
+        self.secili_poz = None;
+        self.degisiklik_var = true;
+    }
+    pub(crate) fn geri_al(&mut self) {
+        if let Some(a) = self.geri_al_yigini.pop() {
+            self.aktif_grubu_senkronize();
+            let mevcut = self.mevcut_anlik();
+            self.yinele_yigini.push(mevcut);
+            self.anlik_uygula(a);
+            self.basarili_mesaj = "↩ Geri alındı.".into();
+            self.hata_mesaji.clear();
+        }
+    }
+    pub(crate) fn yinele(&mut self) {
+        if let Some(a) = self.yinele_yigini.pop() {
+            self.aktif_grubu_senkronize();
+            let mevcut = self.mevcut_anlik();
+            self.geri_al_yigini.push(mevcut);
+            self.anlik_uygula(a);
+            self.basarili_mesaj = "↪ Yinelendi.".into();
+            self.hata_mesaji.clear();
+        }
+    }
+
+    // ==================== OTOMATİK KAYIT ====================
+    pub(crate) fn autosave_kontrol(&mut self, ctx: &egui::Context) {
+        if !self.degisiklik_var {
+            return;
+        }
+        let now = ctx.input(|i| i.time);
+        if self.son_autosave == 0.0 {
+            self.son_autosave = now; // ilk işaretleme; hemen kaydetme
+            return;
+        }
+        if now - self.son_autosave < 30.0 {
+            return;
+        }
+        self.son_autosave = now;
+        let yol = self.autosave_yolu.clone();
+        let m = self.proje_olustur();
+        let _ = metraj_json_kaydet(&m, &yol);
+    }
+
+    // Hiyerarşik is_gruplari yapısını düzleştirip (eski sürümler için) kalemler ile birlikte döndürür.
+    fn kayit_yapisi_hazirla(&mut self) -> (Vec<IsGrubu>, Vec<MetrajKalemi>) {
+        self.aktif_grubu_senkronize();
+        if self.is_gruplari.is_empty() {
+            (vec![], self.metraj_kalemleri.clone())
+        } else {
+            let mut flat = Vec::new();
+            for g in &self.is_gruplari {
+                flat.extend(g.tum_kalemler_duz());
+            }
+            (self.is_gruplari.clone(), flat)
+        }
+    }
+    pub(crate) fn kitaplari_yenile(&mut self) { if let Some(ref db) = self.db { if let Ok(k) = db.kitaplari_listele() { self.kitaplar = k; } } }
+    fn metraj_kalemlerini_tekillestir(&mut self) -> usize {
+        let mut birlesen = 0;
+        let mut tekil: Vec<MetrajKalemi> = Vec::with_capacity(self.metraj_kalemleri.len());
+        for kalem in self.metraj_kalemleri.drain(..) {
+            if let Some(mevcut) = tekil.iter_mut().find(|m| m.poz_no == kalem.poz_no) {
+                mevcut.miktar += kalem.miktar;
+                mevcut.detaylar.extend(kalem.detaylar);
+                mevcut.tutar_guncelle();
+                birlesen += 1;
+            } else {
+                tekil.push(kalem);
+            }
+        }
+        tekil.sort_by(|a, b| a.poz_no.cmp(&b.poz_no));
+        self.metraj_kalemleri = tekil;
+        birlesen
+    }
+    pub(crate) fn pozlar_tablosu_yenile(&mut self) {
+        self.pozlar_tablosu.clear();
+        self.pozlar_yuklu_kitap_id = self.secili_kitap.as_ref().map(|k| k.id);
+        if let (Some(ref db), Some(ref kitap)) = (&self.db, &self.secili_kitap) {
+            match db.pozlari_listele(kitap.id, &self.pozlar_arama_metni) {
+                Ok(pozlar) => self.pozlar_tablosu = pozlar,
+                Err(e) => self.hata_mesaji = format!("{}", e),
+            }
+        }
+    }
+    pub(crate) fn akilli_ara(&mut self) {
+        self.poz_arama_metni.clear();
+        self.aciklama_arama_metni.clear();
+        self.kategori_pozlar.clear();
+        let sorgu = self.akilli_arama_metni.trim();
+        if sorgu.is_empty() {
+            self.arama_sonuclari.clear();
+            return;
+        }
+        if let Some(ref db) = self.db {
+            let kid = self.secili_kitap.as_ref().map(|k| k.id);
+            let mut sonuc: Vec<Poz> = Vec::new();
+            let poz_gibi = sorgu.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false);
+            if poz_gibi {
+                if let Ok(mut pozlar) = db.poz_no_ara(sorgu, kid) {
+                    sonuc.append(&mut pozlar);
+                }
+            }
+            if (!poz_gibi || sonuc.len() < 20) && sorgu.split_whitespace().all(|t| !t.is_empty()) {
+                if let Ok(pozlar) = db.tam_metin_ara(sorgu, kid) {
+                    for poz in pozlar {
+                        if !sonuc.iter().any(|p| p.poz_no == poz.poz_no && p.kitap_id == poz.kitap_id) {
+                            sonuc.push(poz);
+                        }
+                    }
+                }
+            }
+            sonuc.sort_by(|a, b| a.poz_no.cmp(&b.poz_no));
+            sonuc.truncate(100);
+            self.arama_sonuclari = sonuc;
+        }
+    }
+    pub(crate) fn poz_no_ara(&mut self) { if self.poz_arama_metni.is_empty() { self.arama_sonuclari.clear(); return; } if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(s) = db.poz_no_ara(&self.poz_arama_metni, kid) { self.arama_sonuclari = s; } } }
+    pub(crate) fn aciklama_ara(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(s) = db.tam_metin_ara(&self.aciklama_arama_metni, kid) { self.arama_sonuclari = s; } } }
+    pub(crate) fn poz_sorgula(&mut self) {
+        let poz_no = self.yeni_poz_no.trim().to_string();
+        if poz_no.is_empty() { self.secili_poz = None; return; }
+        if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id);
+            match db.poz_getir(&poz_no, kid) {
+                Ok(Some(p)) => {
+                    self.secili_poz = Some(p);
+                    self.yeni_poz_no = poz_no;
+                }
+                Ok(None) => {
+                    if let Ok(s) = db.poz_no_ara(&poz_no, kid) {
+                        if s.len() == 1 {
+                            self.secili_poz = Some(s[0].clone());
+                            self.yeni_poz_no = s[0].poz_no.clone();
+                        } else {
+                            self.secili_poz = None;
+                            self.arama_sonuclari = s;
+                        }
+                    }
+                }
+                Err(e) => self.hata_mesaji = format!("{}", e),
+            }
+        }
+    }
+    pub(crate) fn kalem_ekle(&mut self) {
+        let poz = match self.secili_poz.clone() {
+            Some(p) => p,
+            None => { self.hata_mesaji = "Once bir poz secin.".into(); return; }
+        };
+        // Gruplar varsa kalem mutlaka bir aktif gruba eklenir.
+        if !self.is_gruplari.is_empty() && self.secili_grup_id.is_none() {
+            self.hata_mesaji = "Önce soldaki ağaçtan bir iş grubu seçin.".into();
+            self.basarili_mesaj.clear();
+            return;
+        }
+        // metraj_kalemleri aktif grubun düzenleme tamponudur; aynı poz tekrar eklenmez.
+        if self.metraj_kalemleri.iter().any(|k| k.poz_no == poz.poz_no) {
+            self.basarili_mesaj = format!("{} zaten listede var. Miktarını düzenlemek için satıra tıklayın.", poz.poz_no);
+            self.hata_mesaji.clear();
+            return;
+        }
+        self.anlik_goruntu_al();
+        let kalem = MetrajKalemi::yeni(&poz, 0.0);
+        self.metraj_kalemleri.push(kalem);
+        self.metraj_kalemleri.sort_by(|a, b| a.poz_no.cmp(&b.poz_no));
+        self.aktif_grubu_senkronize();
+        self.degisiklik_var = true;
+        self.basarili_mesaj = format!("{} eklendi.", poz.poz_no);
+        self.hata_mesaji.clear();
+    }
+    pub(crate) fn kategorileri_yukle(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(k) = db.kategoriler(kid) { self.kategoriler = k; } } }
+    pub(crate) fn kategori_filtrele(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(t) = db.tum_pozlar(kid) { self.kategori_pozlar = t.into_iter().filter(|p| p.kategori == self.secili_kategori).collect(); } } }
+
+    // ==================== DOSYA ====================
+    pub(crate) fn pdf_sec_ve_yukle(&mut self) { if let Some(y) = rfd::FileDialog::new().add_filter("PDF", &["pdf"]).pick_file() { self.pdf_yukle(y); } }
+    pub(crate) fn pdf_yukle(&mut self, pdf_yolu: PathBuf) {
+        let kitap = match self.secili_kitap.clone() { Some(k) => k, None => { self.hata_mesaji = "Once hedef kitap secin!".into(); return; } };
+        self.pdf_yukleniyor = true; self.pdf_durumu = format!("PDF okunuyor...");
+        match pdf_metin_cikar(&pdf_yolu) {
+            Ok(metin) => {
+                let pozlar = pozlari_ayristir(&metin, kitap.id, &kitap.ad, kitap.yil, kitap.ay);
+                self.pdf_durumu = format!("{} poz ayrıştırıldı.", pozlar.len());
+                if let Some(ref db) = self.db { match db.pozlari_yukle(kitap.id, &kitap, &pozlar) {
+                    Ok(sayi) => { self.poz_sayisi = db.poz_sayisi().unwrap_or(0); self.basarili_mesaj = format!("✅ {} ({}/{}) kitabina {} poz yuklendi!", kitap.ad, kitap.ay, kitap.yil, sayi); self.pdf_durumu = format!("✅ {} poz yuklendi.", sayi); if let Ok(Some(yk)) = db.kitap_getir(kitap.id) { self.secili_kitap = Some(yk); } self.kitaplari_yenile(); self.pozlar_tablosu_yenile(); }
+                    Err(e) => self.hata_mesaji = format!("{}", e),
+                }}
+            }
+            Err(e) => self.hata_mesaji = format!("{}", e),
+        }
+        self.pdf_yukleniyor = false;
+    }
+    // Mevcut durumdan kaydedilebilir proje nesnesi oluşturur (oranlar dahil).
+    pub(crate) fn proje_olustur(&mut self) -> KayitliMetraj {
+        let (is_gruplari, kalemler) = self.kayit_yapisi_hazirla();
+        KayitliMetraj {
+            ad: self.metraj_adi.clone(),
+            kalemler,
+            is_gruplari,
+            tarih: krono_tarih(),
+            genel_gider_kar_orani: self.genel_gider_kar_orani,
+            kdv_orani: self.kdv_orani,
+        }
+    }
+    pub(crate) fn metraj_kaydet(&mut self) {
+        // Ileri donuk uyumluluk: hem hiyerarsik is_gruplari hem de duzlestirilmis kalemler yazilir
+        let m = self.proje_olustur();
+        if let Some(ref y) = self.mevcut_dosya_yolu { match metraj_json_kaydet(&m, y) { Ok(()) => { self.degisiklik_var = false; self.basarili_mesaj = format!("Kaydedildi: {}", y.display()); } Err(e) => self.hata_mesaji = format!("{}", e) } }
+        else if let Some(d) = rfd::FileDialog::new().add_filter("Metrajmatik Projesi", &["mrj"]).set_file_name(&format!("{}.mrj", self.metraj_adi)).save_file() { match metraj_json_kaydet(&m, &d) { Ok(()) => { self.mevcut_dosya_yolu = Some(d.clone()); self.degisiklik_var = false; self.basarili_mesaj = format!("Kaydedildi: {}", d.display()); } Err(e) => self.hata_mesaji = format!("{}", e) } }
+    }
+    pub(crate) fn metraj_yukle_diyalog(&mut self) {
+        if let Some(d) = rfd::FileDialog::new()
+            .add_filter("Metrajmatik Projesi", &["mrj", "json"])
+            .pick_file()
+        {
+            self.metraj_dosyadan_yukle(&d, true);
+        }
+    }
+    // Bir dosyadan projeyi yükler. `dosya_olarak` true ise yol "mevcut dosya" olur (kurtarmada false).
+    pub(crate) fn metraj_dosyadan_yukle(&mut self, d: &Path, dosya_olarak: bool) {
+        match metraj_json_yukle(d) {
+            Ok(m) => {
+                let KayitliMetraj { ad, kalemler, is_gruplari, genel_gider_kar_orani, kdv_orani, .. } = m;
+                self.genel_gider_kar_orani = genel_gider_kar_orani;
+                self.kdv_orani = kdv_orani;
+                self.geri_al_yigini.clear();
+                self.yinele_yigini.clear();
+                self.secili_grup_id = None;
+                self.secili_poz = None;
+                let mut birlesen = 0;
+
+                if is_gruplari.is_empty() {
+                    // Eski flat proje: kalemleri tekilleştir ve otomatik gruba aktar
+                    self.is_gruplari = vec![];
+                    self.metraj_kalemleri = kalemler;
+                    birlesen = self.metraj_kalemlerini_tekillestir();
+                    if !self.metraj_kalemleri.is_empty() {
+                        self.is_gruplari = vec![
+                            IsGrubu {
+                                id: "otomatik_insaat".into(),
+                                ad: "İnşaat".into(),
+                                alt_gruplar: vec![
+                                    IsGrubu {
+                                        id: "otomatik_kaba_insaat".into(),
+                                        ad: "Kaba İnşaat".into(),
+                                        alt_gruplar: vec![],
+                                        kalemler: std::mem::take(&mut self.metraj_kalemleri),
+                                    },
+                                ],
+                                kalemler: vec![],
+                            },
+                        ];
+                    }
+                } else {
+                    // Hiyerarşik proje: kalemler grupların içinde, tampon boş başlar
+                    self.is_gruplari = is_gruplari;
+                    self.metraj_kalemleri = vec![];
+                }
+
+                // İlk yaprak grubu aktif yap ve kalemlerini tampona yükle
+                if let Some(id) = ilk_yaprak_grup_id(&self.is_gruplari) {
+                    self.grup_sec(id);
+                }
+
+                self.metraj_adi = ad;
+                if dosya_olarak {
+                    self.mevcut_dosya_yolu = Some(d.to_path_buf());
+                    self.degisiklik_var = birlesen > 0;
+                    self.basarili_mesaj = if birlesen > 0 {
+                        format!("Açıldı: {} ({} yinelenen poz birleştirildi)", d.display(), birlesen)
+                    } else {
+                        format!("Açıldı: {}", d.display())
+                    };
+                } else {
+                    // Kurtarma: kaydedilmemiş sayılır
+                    self.degisiklik_var = true;
+                    self.basarili_mesaj = "Otomatik kayıttan kurtarıldı. Lütfen 'Kaydet' ile kalıcı hale getirin.".into();
+                }
+            }
+            Err(e) => self.hata_mesaji = format!("{}", e),
+        }
+    }
+    pub(crate) fn metraj_excel_diyalog(&mut self) {
+        let m = self.proje_olustur();
+        if let Some(d) = rfd::FileDialog::new().add_filter("Excel", &["xlsx"]).set_file_name(&format!("{}.xlsx", self.metraj_adi)).save_file() { match metraj_excel_aktar(&m, &d) { Ok(()) => { self.basarili_mesaj = format!("Excel: {}", d.display()); } Err(e) => self.hata_mesaji = format!("{}", e) } }
+    }
+
+    pub(crate) fn fiyatlari_guncelle(&mut self) {
+        let hedef_kitap = match self.fiyat_guncelle_hedef.clone() {
+            Some(k) => k,
+            None => { self.hata_mesaji = "Lutfen hedef kitap secin!".into(); return; }
+        };
+        // Aktif grubun tampondaki kalemlerini ağaca yaz ki güncelleme tüm gruplara uygulansın
+        self.anlik_goruntu_al();
+        if let Some(ref db) = self.db {
+            let mut guncellenen = 0;
+            let mut bulunamayan = 0;
+            // Kitap bazlı sayaç: (eski_kitap_adi, guncellenen, bulunamayan)
+            let mut kitap_bazli: HashMap<String, (u32, u32)> = HashMap::new();
+
+            // Tek bir kalemi güncelleyen kapanış (closure)
+            let mut kalem_guncelle = |kalem: &mut MetrajKalemi| {
+                let eski_kitap = kalem.kitap_adi.clone();
+                if let Ok(Some(poz)) = db.poz_getir(&kalem.poz_no, Some(hedef_kitap.id)) {
+                    if let Some(yeni_fiyat) = poz.fiyat {
+                        kalem.birim_fiyat = yeni_fiyat;
+                        kalem.kitap_adi = format!("{} ({}/{})", hedef_kitap.ad, hedef_kitap.ay, hedef_kitap.yil);
+                        kalem.tutar_guncelle();
+                        guncellenen += 1;
+                        let entry = kitap_bazli.entry(eski_kitap).or_insert((0, 0));
+                        entry.0 += 1;
+                        return;
+                    }
+                }
+                bulunamayan += 1;
+                let entry = kitap_bazli.entry(eski_kitap).or_insert((0, 0));
+                entry.1 += 1;
+            };
+
+            // Ağaçtaki tüm grupları gezerek her kalemi güncelle
+            fn agaci_gez(gruplar: &mut [IsGrubu], f: &mut dyn FnMut(&mut MetrajKalemi)) {
+                for g in gruplar.iter_mut() {
+                    for kalem in g.kalemler.iter_mut() { f(kalem); }
+                    agaci_gez(&mut g.alt_gruplar, f);
+                }
+            }
+
+            if self.is_gruplari.is_empty() {
+                for kalem in self.metraj_kalemleri.iter_mut() { kalem_guncelle(&mut *kalem); }
+            } else {
+                agaci_gez(&mut self.is_gruplari, &mut kalem_guncelle);
+            }
+            self.degisiklik_var = true;
+            self.fiyat_guncelle_hedef = None;
+
+            let mut detay = String::new();
+            for (kitap, (g, b)) in &kitap_bazli {
+                if *g > 0 || *b > 0 {
+                    detay.push_str(&format!("\n  📦 {}: {} güncellendi, {} bulunamadı", kitap, g, b));
+                }
+            }
+            self.basarili_mesaj = format!(
+                "✅ {} kalem güncellendi (→ {} fiyatlarıyla). {} kalem hedef kitapta bulunamadı.{}",
+                guncellenen, hedef_kitap.ad, bulunamayan, detay
+            );
+        }
+        // Aktif grubun tampondaki kalemlerini güncellenmiş ağaçtan tazele
+        if let Some(id) = self.secili_grup_id.clone() {
+            if let Some(g) = grup_bul_ref(&self.is_gruplari, &id) {
+                self.metraj_kalemleri = g.kalemler.clone();
+            }
+        }
+    }
+}

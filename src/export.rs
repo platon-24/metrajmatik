@@ -1,6 +1,7 @@
 use rust_xlsxwriter::*;
 use std::path::Path;
 
+use crate::maliyet::MaliyetOzeti;
 use crate::models::KayitliMetraj;
 
 /// Metrajı Excel dosyasına aktarır
@@ -232,16 +233,13 @@ pub fn metraj_excel_aktar(metraj: &KayitliMetraj, dosya_yolu: &Path) -> Result<(
         .map_err(|e| e.to_string())?;
     worksheet.set_row_height(satir, 24).map_err(|e| e.to_string())?;
 
-    // Yaklaşık maliyet özeti: genel gider & kâr, KDV
-    let kar = ara_toplam * metraj.genel_gider_kar_orani / 100.0;
-    let kdv_matrahi = ara_toplam + kar;
-    let kdv = kdv_matrahi * metraj.kdv_orani / 100.0;
-    let genel_toplam = kdv_matrahi + kdv;
+    // Yaklaşık maliyet özeti: genel gider & kâr, KDV (tek kaynak: maliyet::MaliyetOzeti)
+    let ozet = MaliyetOzeti::hesapla(ara_toplam, metraj.genel_gider_kar_orani, metraj.kdv_orani);
 
     for (etiket, deger) in [
-        (format!("Genel Gider & Müteahhit Kârı (% {:.1})", metraj.genel_gider_kar_orani), kar),
-        ("KDV Matrahı".to_string(), kdv_matrahi),
-        (format!("KDV (% {:.1})", metraj.kdv_orani), kdv),
+        (format!("Genel Gider & Müteahhit Kârı (% {:.1})", metraj.genel_gider_kar_orani), ozet.kar),
+        ("KDV Matrahı".to_string(), ozet.kdv_matrahi),
+        (format!("KDV (% {:.1})", metraj.kdv_orani), ozet.kdv),
     ] {
         satir += 1;
         worksheet
@@ -259,7 +257,7 @@ pub fn metraj_excel_aktar(metraj: &KayitliMetraj, dosya_yolu: &Path) -> Result<(
         .merge_range(satir, 0, satir, 5, "TOPLAM YAKLAŞIK MALİYET", &toplam_format)
         .map_err(|e| e.to_string())?;
     worksheet
-        .write_with_format(satir, 6, genel_toplam, &toplam_format)
+        .write_with_format(satir, 6, ozet.genel_toplam, &toplam_format)
         .map_err(|e| e.to_string())?;
     worksheet
         .set_row_height(satir, 28)

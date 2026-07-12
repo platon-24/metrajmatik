@@ -1,6 +1,7 @@
 use rusqlite::{params, Connection, Result};
 use std::path::Path;
 
+use crate::bicim::krono_tarih;
 use crate::models::{Kitap, Poz};
 
 pub struct Veritabani {
@@ -325,13 +326,4 @@ impl Veritabani {
 
         Ok(build_tree(&db_gruplar, None))
     }
-}
-
-fn krono_tarih() -> String {
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap();
-    let secs = now.as_secs();
-    let days = secs / 86400;
-    let years = 1970 + days / 365;
-    let rem = days % 365;
-    format!("{:04}-{:02}-{:02}", years, rem / 30 + 1, rem % 30 + 1)
 }
