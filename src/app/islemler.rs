@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::bicim::krono_tarih;
-use crate::export::{metraj_excel_aktar, metraj_json_kaydet, metraj_json_yukle};
+use crate::export::{metraj_excel_aktar, metraj_json_kaydet, metraj_json_yukle, AnalizFoyu};
 use crate::is_grubu::{grup_bul_mut, grup_bul_ref, grup_canli_toplam, ilk_yaprak_grup_id};
 use crate::models::{IsGrubu, KayitliMetraj, MetrajKalemi, Poz};
 use crate::pdf_parser::{pdf_metin_cikar, pozlari_ayristir};
@@ -377,7 +377,32 @@ impl MetrajApp {
     }
     pub(crate) fn metraj_excel_diyalog(&mut self) {
         let m = self.proje_olustur();
-        if let Some(d) = rfd::FileDialog::new().add_filter("Excel", &["xlsx"]).set_file_name(&format!("{}.xlsx", self.metraj_adi)).save_file() { match metraj_excel_aktar(&m, &d) { Ok(()) => { self.basarili_mesaj = format!("Excel: {}", d.display()); } Err(e) => self.hata_mesaji = format!("{}", e) } }
+        // Analiz föyleri: metrajda analizi olan (kitap_id bilinen) pozlar için girdiler.
+        let mut analizler: Vec<AnalizFoyu> = Vec::new();
+        if let Some(ref db) = self.db {
+            let mut gorulen: std::collections::HashSet<(i64, String)> = std::collections::HashSet::new();
+            for kalem in &m.kalemler {
+                if kalem.kitap_id > 0 && gorulen.insert((kalem.kitap_id, kalem.poz_no.clone())) {
+                    if let Ok(girdiler) = db.analiz_getir(kalem.kitap_id, &kalem.poz_no) {
+                        if !girdiler.is_empty() {
+                            analizler.push(AnalizFoyu {
+                                poz_no: kalem.poz_no.clone(),
+                                tanim: kalem.tanim.clone(),
+                                birim: kalem.birim.clone(),
+                                birim_fiyat: kalem.birim_fiyat,
+                                girdiler,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(d) = rfd::FileDialog::new().add_filter("Excel", &["xlsx"]).set_file_name(&format!("{}.xlsx", self.metraj_adi)).save_file() {
+            match metraj_excel_aktar(&m, &analizler, &d) {
+                Ok(()) => { self.basarili_mesaj = format!("Excel: {}", d.display()); }
+                Err(e) => self.hata_mesaji = format!("{}", e),
+            }
+        }
     }
 
     pub(crate) fn fiyatlari_guncelle(&mut self) {

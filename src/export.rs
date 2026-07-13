@@ -2,10 +2,20 @@ use rust_xlsxwriter::*;
 use std::path::Path;
 
 use crate::maliyet::MaliyetOzeti;
-use crate::models::KayitliMetraj;
+use crate::models::{AnalizGirdisi, KayitliMetraj};
 
-/// Metrajı Excel dosyasına aktarır
-pub fn metraj_excel_aktar(metraj: &KayitliMetraj, dosya_yolu: &Path) -> Result<(), String> {
+/// Bir pozun analiz föyü: girdiler + poza uygulanan birim fiyat.
+/// (Genel gider + kâr, birim fiyat ile ara toplam farkından geri hesaplanır.)
+pub struct AnalizFoyu {
+    pub poz_no: String,
+    pub tanim: String,
+    pub birim: String,
+    pub birim_fiyat: f64,
+    pub girdiler: Vec<AnalizGirdisi>,
+}
+
+/// Metrajı Excel dosyasına aktarır (Yaklaşık Maliyet + Metraj Cetveli + Analiz Föyleri).
+pub fn metraj_excel_aktar(metraj: &KayitliMetraj, analizler: &[AnalizFoyu], dosya_yolu: &Path) -> Result<(), String> {
     let mut workbook = Workbook::new();
     let worksheet = workbook.add_worksheet();
     worksheet.set_name("Yaklaşık Maliyet").map_err(|e| e.to_string())?;
@@ -311,8 +321,83 @@ pub fn metraj_excel_aktar(metraj: &KayitliMetraj, dosya_yolu: &Path) -> Result<(
 
     // İkinci sayfa: detaylı Metraj Cetveli
     metraj_cetveli_sayfasi(&mut workbook, metraj)?;
+    // Üçüncü sayfa: Analiz Föyleri (varsa)
+    analiz_foyleri_sayfasi(&mut workbook, analizler)?;
 
     workbook.save(dosya_yolu).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Üçüncü Excel sayfası: Birim Fiyat Analiz Föyleri. Her analizli poz için girdiler
+/// (işçilik/malzeme/makine), ara toplam, genel gider + kâr ve sonuç birim fiyat.
+fn analiz_foyleri_sayfasi(workbook: &mut Workbook, analizler: &[AnalizFoyu]) -> Result<(), String> {
+    if analizler.is_empty() {
+        return Ok(());
+    }
+    let ws = workbook.add_worksheet();
+    ws.set_name("Analiz Föyleri").map_err(|e| e.to_string())?;
+
+    let foy_baslik_format = Format::new()
+        .set_bold().set_font_size(12).set_font_color(Color::White)
+        .set_background_color(Color::RGB(0x2C3E50)).set_text_wrap();
+    let sutun_format = Format::new()
+        .set_bold().set_font_size(9).set_background_color(Color::RGB(0x34495E))
+        .set_font_color(Color::White).set_border(FormatBorder::Thin).set_align(FormatAlign::Center);
+    let metin_format = Format::new().set_font_size(9).set_border(FormatBorder::Thin).set_text_wrap();
+    let sayi_format = Format::new().set_font_size(9).set_border(FormatBorder::Thin).set_num_format("#,##0.00");
+    let ara_format = Format::new().set_bold().set_font_size(9).set_background_color(Color::RGB(0xF2F4F4)).set_border(FormatBorder::Thin).set_num_format("#,##0.00");
+    let sonuc_format = Format::new().set_bold().set_font_size(10).set_font_color(Color::White).set_background_color(Color::RGB(0x27AE60)).set_border(FormatBorder::Thin).set_num_format("#,##0.00");
+
+    for (i, w) in [14.0, 40.0, 8.0, 14.0, 12.0, 14.0, 12.0].iter().enumerate() {
+        ws.set_column_width(i as u16, *w).map_err(|e| e.to_string())?;
+    }
+
+    let mut satir = 0u32;
+    for foy in analizler {
+        ws.merge_range(satir, 0, satir, 6, &format!("ANALİZ  —  {} : {} ({})", foy.poz_no, foy.tanim, foy.birim), &foy_baslik_format).map_err(|e| e.to_string())?;
+        ws.set_row_height(satir, 26).map_err(|e| e.to_string())?;
+        satir += 1;
+
+        for (c, b) in ["Girdi No", "Tanım", "Birim", "Birim Fiyat", "Miktar", "Tutar", "Tür"].iter().enumerate() {
+            ws.write_with_format(satir, c as u16, *b, &sutun_format).map_err(|e| e.to_string())?;
+        }
+        satir += 1;
+
+        let mut ara_toplam = 0.0;
+        for g in &foy.girdiler {
+            let tutar = g.miktar * g.birim_fiyat;
+            ara_toplam += tutar;
+            ws.write_with_format(satir, 0, &g.girdi_no, &metin_format).map_err(|e| e.to_string())?;
+            ws.write_with_format(satir, 1, &g.tanim, &metin_format).map_err(|e| e.to_string())?;
+            ws.write_with_format(satir, 2, &g.birim, &metin_format).map_err(|e| e.to_string())?;
+            ws.write_with_format(satir, 3, g.birim_fiyat, &sayi_format).map_err(|e| e.to_string())?;
+            ws.write_with_format(satir, 4, g.miktar, &sayi_format).map_err(|e| e.to_string())?;
+            ws.write_with_format(satir, 5, tutar, &sayi_format).map_err(|e| e.to_string())?;
+            ws.write_with_format(satir, 6, &g.tur, &metin_format).map_err(|e| e.to_string())?;
+            satir += 1;
+        }
+
+        // Ara toplam
+        ws.merge_range(satir, 0, satir, 4, "ARA TOPLAM", &ara_format).map_err(|e| e.to_string())?;
+        ws.write_with_format(satir, 5, ara_toplam, &ara_format).map_err(|e| e.to_string())?;
+        ws.write_with_format(satir, 6, "", &ara_format).map_err(|e| e.to_string())?;
+        satir += 1;
+
+        // Genel gider + kâr (birim fiyattan geri hesap)
+        let kar = foy.birim_fiyat - ara_toplam;
+        let kar_yuzde = if ara_toplam > 0.0 { (foy.birim_fiyat / ara_toplam - 1.0) * 100.0 } else { 0.0 };
+        ws.merge_range(satir, 0, satir, 4, &format!("Genel Gider + Müteahhit Kârı (% {:.1})", kar_yuzde), &ara_format).map_err(|e| e.to_string())?;
+        ws.write_with_format(satir, 5, kar, &ara_format).map_err(|e| e.to_string())?;
+        ws.write_with_format(satir, 6, "", &ara_format).map_err(|e| e.to_string())?;
+        satir += 1;
+
+        // Sonuç birim fiyat
+        ws.merge_range(satir, 0, satir, 4, &format!("SONUÇ — {} BİRİM FİYATI", foy.birim), &sonuc_format).map_err(|e| e.to_string())?;
+        ws.write_with_format(satir, 5, foy.birim_fiyat, &sonuc_format).map_err(|e| e.to_string())?;
+        ws.write_with_format(satir, 6, "", &sonuc_format).map_err(|e| e.to_string())?;
+        satir += 2; // föyler arası boşluk
+    }
+
     Ok(())
 }
 
@@ -461,6 +546,7 @@ mod testler {
                 MiktarDetay { aciklama: "duvar".into(), miktar: 30.0, adet: Some(1.0), en: Some(10.0), boy: Some(3.0), yukseklik: None, cikan: false },
                 MiktarDetay { aciklama: "pencere".into(), miktar: -3.0, adet: Some(2.0), en: Some(1.5), boy: Some(1.0), yukseklik: None, cikan: true },
             ],
+            kitap_id: 0,
         };
         KayitliMetraj {
             ad: "Test Projesi".into(),
@@ -482,9 +568,16 @@ mod testler {
     }
 
     #[test]
-    fn excel_iki_sayfa_hatasiz_uretilir() {
+    fn excel_uc_sayfa_analiz_foyu_ile_uretilir() {
         let yol = gecici_yol("xlsx");
-        metraj_excel_aktar(&ornek_metraj(), &yol).expect("Excel üretilmeli");
+        let foy = AnalizFoyu {
+            poz_no: "15.150.1001".into(), tanim: "Beton".into(), birim: "m³".into(), birim_fiyat: 1000.0,
+            girdiler: vec![
+                AnalizGirdisi { girdi_no: "10.100.1001".into(), tanim: "işçi".into(), birim: "saat".into(), birim_fiyat: 100.0, miktar: 2.0, tur: "İşçilik".into() },
+                AnalizGirdisi { girdi_no: "10.130".into(), tanim: "çimento".into(), birim: "kg".into(), birim_fiyat: 5.0, miktar: 50.0, tur: "Malzeme".into() },
+            ],
+        };
+        metraj_excel_aktar(&ornek_metraj(), &[foy], &yol).expect("Excel üretilmeli");
         assert!(std::fs::metadata(&yol).unwrap().len() > 0, "Excel boş olmamalı");
         let _ = std::fs::remove_file(&yol);
     }

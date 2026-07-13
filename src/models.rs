@@ -82,6 +82,8 @@ pub struct MetrajKalemi {
     pub detaylar: Vec<MiktarDetay>,
     #[serde(default)]
     pub imalat_cinsi: String, // metrajın neyi ölçtüğü (ör. "Zemin kat perde duvarları")
+    #[serde(default)]
+    pub kitap_id: i64, // analiz föyüne bağlanmak için kurum kimliği (0 = bilinmiyor)
 }
 
 impl MetrajKalemi {
@@ -98,6 +100,7 @@ impl MetrajKalemi {
             kitap_adi: format!("{} ({}/{})", poz.kitap_adi, poz.ay, poz.yil),
             detaylar: Vec::new(),
             imalat_cinsi: String::new(),
+            kitap_id: poz.kitap_id,
         }
     }
 
@@ -241,6 +244,7 @@ mod testler {
             kitap_adi: "K".into(),
             detaylar: vec![],
             imalat_cinsi: String::new(),
+            kitap_id: 0,
         }
     }
 
@@ -327,6 +331,7 @@ mod testler {
                 MiktarDetay { aciklama: "pencere".into(), miktar: 0.0, adet: Some(2.0), en: Some(1.5), boy: Some(1.0), yukseklik: None, cikan: true },
             ],
             imalat_cinsi: String::new(),
+            kitap_id: 0,
         };
         k.detaylardan_miktar_hesapla();
         assert_eq!(k.miktar, 27.0); // 30 - 3
@@ -353,6 +358,7 @@ mod testler {
                 MiktarDetay { aciklama: "b".into(), miktar: 0.0, adet: Some(1.0), en: Some(3.0), boy: Some(0.5), yukseklik: None, cikan: false },
             ],
             imalat_cinsi: String::new(),
+            kitap_id: 0,
         };
         k.detaylardan_miktar_hesapla();
         assert_eq!(k.miktar, 3.5); // 2 + 1.5
