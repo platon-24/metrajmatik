@@ -272,7 +272,7 @@ impl MetrajApp {
     // ==================== POZLAR ====================
     fn poz_formunu_yeni_icin_ac(&mut self) {
         if self.secili_kitap.is_none() {
-            self.hata_mesaji = "Once pozun eklenecegi kitabi secin.".into();
+            self.hata_mesaji = "Önce pozun ekleneceği kurumu seçin.".into();
             return;
         }
         self.poz_form_acik = true;
@@ -283,6 +283,10 @@ impl MetrajApp {
         self.poz_form_birim.clear();
         self.poz_form_fiyat.clear();
         self.poz_form_kategori = "Özel Poz".into();
+        // Yeni pozun dönemi varsayılan olarak kurumun en son dönemi (yoksa 2026/1)
+        let (y, a) = self.secili_kitap.as_ref().map(|k| if k.yil > 0 { (k.yil, k.ay) } else { (2026, 1) }).unwrap_or((2026, 1));
+        self.poz_form_yil = y;
+        self.poz_form_ay = a;
     }
 
     fn poz_formunu_duzenleme_icin_ac(&mut self, poz: Poz) {
@@ -294,6 +298,9 @@ impl MetrajApp {
         self.poz_form_birim = poz.birim;
         self.poz_form_fiyat = poz.fiyat.map(para_formatla).unwrap_or_default();
         self.poz_form_kategori = poz.kategori;
+        // Düzenlenen pozun görüntülenen dönemi
+        self.poz_form_yil = poz.yil;
+        self.poz_form_ay = poz.ay;
     }
 
     fn poz_form_fiyat_degeri(&mut self) -> Option<Option<f64>> {
@@ -330,9 +337,8 @@ impl MetrajApp {
             Some(fiyat) => fiyat,
             None => return,
         };
-        // Özel poz eklerken/düzenlerken fiyat, kurumun en son dönemine yazılır
-        // (kurum boşsa varsayılan 2026/1).
-        let (yil, ay) = if kitap.yil > 0 { (kitap.yil, kitap.ay) } else { (2026, 1) };
+        // Fiyat, formda seçilen döneme yazılır.
+        let (yil, ay) = (self.poz_form_yil, self.poz_form_ay);
         if let Some(ref db) = self.db {
             let sonuc = if self.poz_form_duzenleme {
                 db.poz_guncelle(kitap.id, yil, ay, &self.poz_form_eski_poz_no, &poz_no, &tanim, &birim, fiyat, &kategori)
@@ -372,7 +378,7 @@ impl MetrajApp {
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
                 if let Some(ref kitap) = self.secili_kitap {
-                    ui.label(RichText::new(format!("📚 {} ({}/{})", kitap.ad, kitap.ay, kitap.yil)).color(tema::METIN_IKINCIL).size(12.0));
+                    ui.label(RichText::new(format!("📚 {}", kitap.ad)).color(tema::METIN_IKINCIL).size(12.0));
                 }
                 ui.separator();
                 ui.horizontal(|ui| {
@@ -390,6 +396,16 @@ impl MetrajApp {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Kategori").color(tema::METIN_IKINCIL).size(12.0));
                     ui.add(TextEdit::singleline(&mut self.poz_form_kategori).desired_width(260.0));
+                });
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Dönem").color(tema::METIN_IKINCIL).size(12.0));
+                    egui::ComboBox::from_id_salt("poz_form_yil").selected_text(format!("{}", self.poz_form_yil)).width(70.0).show_ui(ui, |ui| {
+                        for y in [2024u32, 2025, 2026, 2027, 2028] { if ui.selectable_label(self.poz_form_yil == y, format!("{}", y)).clicked() { self.poz_form_yil = y; } }
+                    });
+                    egui::ComboBox::from_id_salt("poz_form_ay").selected_text(format!("{}", self.poz_form_ay)).width(50.0).show_ui(ui, |ui| {
+                        for a in 1u32..=12 { if ui.selectable_label(self.poz_form_ay == a, format!("{}", a)).clicked() { self.poz_form_ay = a; } }
+                    });
+                    ui.label(RichText::new("bu fiyatın ait olduğu ay/yıl").color(tema::METIN_SOLUK).size(11.0));
                 });
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {

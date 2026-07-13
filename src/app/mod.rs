@@ -101,6 +101,8 @@ pub struct MetrajApp {
     poz_form_birim: String,
     poz_form_fiyat: String,
     poz_form_kategori: String,
+    poz_form_yil: u32,
+    poz_form_ay: u32,
     silinecek_poz: Option<Poz>,
     // Miktar detay popup
     miktar_popup_acik: bool,
@@ -207,6 +209,8 @@ impl Default for MetrajApp {
             poz_form_birim: String::new(),
             poz_form_fiyat: String::new(),
             poz_form_kategori: String::new(),
+            poz_form_yil: 2026,
+            poz_form_ay: 1,
             silinecek_poz: None,
             miktar_popup_acik: false,
             popup_kalem_indeks: None,
