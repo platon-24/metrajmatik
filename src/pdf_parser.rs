@@ -149,6 +149,9 @@ pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str, yil: u32, a
     // Birim tablolarda fiyatın hemen solundadır. Bu yüzden birimi satır sonundan
     // ayırmak, açıklamadaki "m" harflerini yanlış birim sanmaktan daha güvenlidir.
     let birim_sonda_re = Regex::new(r"(?i)(?:^|\s)(1000\s*ad|1000\s*m\s*[²2]|100\s*m\s*[²2]|m\s*[³3]|m\s*[²2]|metre|adet|saat|ton|kg|km|sa|ad|mt|m|[³²])\s*(?:₺|tl)?\s*$").unwrap();
+    // Yapışık birim (ör. DSİ "bedelimetre"): boşluk ŞARTI YOK, yalnız çok-harfli
+    // yazılı birimler. Sadece normal (boşluklu) tespit başarısız olunca son çare olarak.
+    let birim_bitisik_re = Regex::new(r"(?i)(metre|adet|saat|ton|kg|m\s*[³3]|m\s*[²2])\s*(?:₺|tl)?\s*$").unwrap();
     let sayfa_no_re = Regex::new(r"^\s*\d+\s*$").unwrap();
 
     let mut pozlar: Vec<Poz> = Vec::new();
@@ -224,6 +227,10 @@ pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str, yil: u32, a
             if let Some(b) = satir_birimi {
                 birim = b;
                 tanim_parcalari = vec![satir_tanimi];
+            } else {
+                // Son çare: yapışık yazılı birim (DSİ "…boru bedelimetre" → "metre").
+                let (t2, b2) = tanim_ve_birim_ayir(&bl, &birim_bitisik_re);
+                if let Some(b) = b2 { birim = b; tanim_parcalari = vec![t2]; }
             }
         }
         let mut tanim = tanim_parcalari.join(" ").replace("  ", " ").trim().to_string();
@@ -446,6 +453,21 @@ mod testler {
         assert_eq!(pozlar[0].fiyat, Some(440.0));
     }
 
+    #[test]
+    fn dsi_yapisik_birim_ayrilir() {
+        // DSİ tek-satır: poz açıklamaya, birim "metre" de "bedeli"ye yapışık.
+        let pozlar = pozlari_ayristir(
+            "50.205.1001DSİ PE100 uygun PN6 DN110 boru bedelimetre 117,00\n50.205.1002DSİ PE100 uygun PN6 DN125 boru bedelimetre 152,00",
+            1, "T", 2026, 1, &AyristirmaProfili::csb(),
+        );
+        assert_eq!(pozlar.len(), 2);
+        assert_eq!(pozlar[0].poz_no, "50.205.1001");
+        assert_eq!(pozlar[0].fiyat, Some(117.0));
+        assert_eq!(pozlar[0].birim, "m"); // "metre" → normalize → "m"
+        assert!(pozlar[0].tanim.contains("boru bedeli"), "tanım: {}", pozlar[0].tanim);
+        assert!(!pozlar[0].tanim.contains("bedelimetre"), "birim ayrılmalı: {}", pozlar[0].tanim);
+    }
+
     /// Gerçek kurum PDF'leriyle uçtan uca doğrulama (örnekler `D:\metrajmatik\` altında).
     /// Normal test koşusunda çalışmaz; elle: `cargo test gercek_kitaplar -- --ignored --nocapture`.
     #[test]
@@ -467,7 +489,8 @@ mod testler {
             let profil = profil_otomatik_sec(&metin);
             let pozlar = pozlari_ayristir(&metin, 1, "T", 2026, 1, &profil);
             let fiyatli = pozlar.iter().filter(|p| p.fiyat.is_some()).count();
-            eprintln!("{}: profil={} poz={} fiyatli={}", ad, profil.ad, pozlar.len(), fiyatli);
+            let birimli = pozlar.iter().filter(|p| p.birim != "---").count();
+            eprintln!("{}: profil={} poz={} fiyatli={} birimli={}", ad, profil.ad, pozlar.len(), fiyatli, birimli);
             assert_eq!(&profil.ad, beklenen_profil, "{} için yanlış profil", ad);
             assert!(fiyatli >= *en_az, "{}: {} fiyatlı poz (en az {} beklendi)", ad, fiyatli, en_az);
         }
