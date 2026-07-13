@@ -460,16 +460,39 @@ impl MetrajApp {
         ui.add_space(6.0);
         tema::kart(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Kitap").color(tema::METIN_IKINCIL).size(12.0));
-                let km = self.secili_kitap.as_ref().map(|k| format!("{} ({}/{})", k.ad, k.ay, k.yil)).unwrap_or_else(|| "Kitap seçin".into());
-                egui::ComboBox::from_id_salt("pozlar_kitap_secici").selected_text(&km).width(340.0).show_ui(ui, |ui| {
+                ui.label(RichText::new("Kurum").color(tema::METIN_IKINCIL).size(12.0));
+                let km = self.secili_kitap.as_ref().map(|k| k.ad.clone()).unwrap_or_else(|| "Kurum seçin".into());
+                egui::ComboBox::from_id_salt("pozlar_kitap_secici").selected_text(&km).width(300.0).show_ui(ui, |ui| {
                     for k in self.kitaplar.clone() {
-                        if ui.selectable_label(self.secili_kitap.as_ref().map(|sk| sk.id == k.id).unwrap_or(false), format!("{} ({}/{})", k.ad, k.ay, k.yil)).clicked() {
+                        if ui.selectable_label(self.secili_kitap.as_ref().map(|sk| sk.id == k.id).unwrap_or(false), &k.ad).clicked() {
                             self.secili_kitap = Some(k);
+                            self.pozlar_donem = None; // kurum değişti → en son döneme dön
                             self.pozlar_tablosu_yenile();
                         }
                     }
                 });
+                // Dönem seçici — eski fiyatları görmek için
+                if self.secili_kitap.is_some() && !self.pozlar_donemler.is_empty() {
+                    ui.add_space(10.0);
+                    ui.label(RichText::new("Dönem").color(tema::METIN_IKINCIL).size(12.0));
+                    let dm = match self.pozlar_donem {
+                        Some((y, a)) => format!("{}/{}", a, y),
+                        None => "En son (güncel)".into(),
+                    };
+                    egui::ComboBox::from_id_salt("pozlar_donem_secici").selected_text(&dm).width(150.0).show_ui(ui, |ui| {
+                        if ui.selectable_label(self.pozlar_donem.is_none(), "En son (güncel)").clicked() {
+                            self.pozlar_donem = None;
+                            self.pozlar_tablosu_yenile();
+                        }
+                        for d in self.pozlar_donemler.clone() {
+                            let secili = self.pozlar_donem == Some((d.yil, d.ay));
+                            if ui.selectable_label(secili, format!("{}/{} · {} poz", d.ay, d.yil, d.poz_sayisi)).clicked() {
+                                self.pozlar_donem = Some((d.yil, d.ay));
+                                self.pozlar_tablosu_yenile();
+                            }
+                        }
+                    });
+                }
             });
             if self.secili_kitap.is_some() {
                 ui.add_space(6.0);

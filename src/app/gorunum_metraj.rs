@@ -401,6 +401,7 @@ impl MetrajApp {
         let tanim = kalem.tanim.clone();
         let birim = kalem.birim.clone();
         let birim_fiyat = kalem.birim_fiyat;
+        let kitap_adi = kalem.kitap_adi.clone();
 
         egui::Window::new("📐 Miktar Detayları")
             .collapsible(false)
@@ -415,6 +416,7 @@ impl MetrajApp {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(format!("Birim: {}", birim)).color(tema::METIN_IKINCIL));
                     ui.label(RichText::new(format!("Birim Fiyat: {} TL", para_formatla(birim_fiyat))).color(tema::BASARI));
+                    ui.label(RichText::new(format!("· 📅 {}", kitap_adi)).color(tema::METIN_SOLUK).size(12.0));
                 });
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("İmalat cinsi").size(12.0).color(tema::METIN_IKINCIL));

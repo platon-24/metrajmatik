@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use crate::bicim::{metni_kisalt, para_formatla};
 use crate::database::Veritabani;
 use crate::is_grubu::ilk_yaprak_grup_id;
-use crate::models::{HesapTuru, IsGrubu, Kitap, MetrajKalemi, Poz};
+use crate::models::{Donem, HesapTuru, IsGrubu, Kitap, MetrajKalemi, Poz};
 use crate::tema;
 
 mod analiz_ui;
@@ -91,6 +91,8 @@ pub struct MetrajApp {
     pozlar_arama_metni: String,
     pozlar_tablosu: Vec<Poz>,
     pozlar_yuklu_kitap_id: Option<i64>,
+    pozlar_donem: Option<(u32, u32)>, // Pozlar sekmesinde seçili dönem (None = en son)
+    pozlar_donemler: Vec<Donem>,      // Seçili kurumun dönemleri (dönem seçici için)
     poz_form_acik: bool,
     poz_form_duzenleme: bool,
     poz_form_eski_poz_no: String,
@@ -196,6 +198,7 @@ impl Default for MetrajApp {
             hata_mesaji: String::new(), basarili_mesaj: String::new(),
             kategoriler: vec![], secili_kategori: "TÜMÜ".into(), kategori_pozlar: vec![],
             pozlar_arama_metni: String::new(), pozlar_tablosu: vec![], pozlar_yuklu_kitap_id: None,
+            pozlar_donem: None, pozlar_donemler: vec![],
             poz_form_acik: false,
             poz_form_duzenleme: false,
             poz_form_eski_poz_no: String::new(),

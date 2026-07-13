@@ -459,6 +459,29 @@ impl Veritabani {
         Ok(rows.filter_map(|p| p.ok()).collect())
     }
 
+    /// Belirli bir DÖNEMİN pozlarını (o dönemki fiyatlarıyla) listeler — eski fiyat
+    /// görüntüleme için. O dönemde fiyatı olmayan pozlar listede olmaz.
+    pub fn pozlari_listele_donem(&self, kitap_id: i64, yil: u32, ay: u32, arama: &str) -> Result<Vec<Poz>> {
+        let arama = arama.trim();
+        let base = format!(
+            "SELECT p.poz_no, p.tanim, p.birim, f.fiyat, p.kategori, p.kitap_id, k.ad, f.yil, f.ay \
+             FROM pozlar p JOIN kitaplar k ON k.id = p.kitap_id \
+             JOIN poz_fiyatlari f ON f.poz_id = p.id AND f.yil = {} AND f.ay = {} \
+             WHERE p.kitap_id = {}",
+            yil, ay, kitap_id,
+        );
+        if arama.is_empty() {
+            let sql = format!("{} ORDER BY p.poz_no", base);
+            let mut stmt = self.conn.prepare(&sql)?;
+            let rows = stmt.query_map([], Self::poz_map)?;
+            return Ok(rows.filter_map(|p| p.ok()).collect());
+        }
+        let sql = format!("{} AND (p.poz_no LIKE ?1 OR p.tanim LIKE ?1 OR p.birim LIKE ?1 OR p.kategori LIKE ?1) ORDER BY p.poz_no", base);
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![format!("%{}%", arama)], Self::poz_map)?;
+        Ok(rows.filter_map(|p| p.ok()).collect())
+    }
+
     pub fn kategoriler(&self, kitap_id: Option<i64>) -> Result<Vec<String>> {
         let sql = if let Some(kid) = kitap_id {
             format!("SELECT DISTINCT kategori FROM pozlar WHERE kitap_id = {} ORDER BY kategori", kid)
@@ -544,6 +567,11 @@ mod testler {
         let d = db.donemler(kid).unwrap();
         assert_eq!(d.len(), 2);
         assert_eq!((d[0].yil, d[0].ay), (2026, 6));
+        // Belirli dönem seçimi: 5/2026 ESKİ fiyatı (800) vermeli
+        let eski = db.pozlari_listele_donem(kid, 2026, 5, "").unwrap();
+        assert_eq!(eski.len(), 1);
+        assert_eq!(eski[0].fiyat, Some(800.0));
+        assert_eq!((eski[0].yil, eski[0].ay), (2026, 5));
         drop(db);
         let _ = std::fs::remove_file(&yol);
     }

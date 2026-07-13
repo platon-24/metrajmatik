@@ -151,11 +151,23 @@ impl MetrajApp {
     pub(crate) fn pozlar_tablosu_yenile(&mut self) {
         self.pozlar_tablosu.clear();
         self.analizli_pozlar.clear();
+        self.pozlar_donemler.clear();
         self.pozlar_yuklu_kitap_id = self.secili_kitap.as_ref().map(|k| k.id);
         let kitap_id = match self.pozlar_yuklu_kitap_id { Some(id) => id, None => return };
         let arama = self.pozlar_arama_metni.clone();
         if let Some(ref db) = self.db {
-            match db.pozlari_listele(kitap_id, &arama) {
+            self.pozlar_donemler = db.donemler(kitap_id).unwrap_or_default();
+            // Seçili dönem artık geçerli değilse (kurum değişti) en sona dön
+            if let Some((y, a)) = self.pozlar_donem {
+                if !self.pozlar_donemler.iter().any(|d| d.yil == y && d.ay == a) {
+                    self.pozlar_donem = None;
+                }
+            }
+            let sonuc = match self.pozlar_donem {
+                Some((y, a)) => db.pozlari_listele_donem(kitap_id, y, a, &arama),
+                None => db.pozlari_listele(kitap_id, &arama),
+            };
+            match sonuc {
                 Ok(pozlar) => self.pozlar_tablosu = pozlar,
                 Err(e) => self.hata_mesaji = format!("{}", e),
             }
