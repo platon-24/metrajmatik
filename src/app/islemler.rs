@@ -150,11 +150,17 @@ impl MetrajApp {
     }
     pub(crate) fn pozlar_tablosu_yenile(&mut self) {
         self.pozlar_tablosu.clear();
+        self.analizli_pozlar.clear();
         self.pozlar_yuklu_kitap_id = self.secili_kitap.as_ref().map(|k| k.id);
-        if let (Some(ref db), Some(ref kitap)) = (&self.db, &self.secili_kitap) {
-            match db.pozlari_listele(kitap.id, &self.pozlar_arama_metni) {
+        let kitap_id = match self.pozlar_yuklu_kitap_id { Some(id) => id, None => return };
+        let arama = self.pozlar_arama_metni.clone();
+        if let Some(ref db) = self.db {
+            match db.pozlari_listele(kitap_id, &arama) {
                 Ok(pozlar) => self.pozlar_tablosu = pozlar,
                 Err(e) => self.hata_mesaji = format!("{}", e),
+            }
+            if let Ok(nolar) = db.analizli_poz_nolari(kitap_id) {
+                self.analizli_pozlar = nolar.into_iter().collect();
             }
         }
     }

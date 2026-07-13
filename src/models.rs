@@ -35,19 +35,23 @@ pub struct MiktarDetay {
     pub boy: Option<f64>,
     #[serde(default)]
     pub yukseklik: Option<f64>,
+    #[serde(default)]
+    pub cikan: bool, // true ise miktar düşülür (çıkan: boşluk / pencere / kapı vb.)
 }
 
 impl MiktarDetay {
-    /// Boyutlardan miktarı hesaplar. Hiç boyut girilmemişse elle girilen `miktar` korunur.
+    /// Boyutlardan (işaretli) miktarı hesaplar. Hiç boyut girilmemişse elle girilen
+    /// `miktar` korunur. `cikan` ise sonuç negatiftir (metrajdan düşülür).
     pub fn hesaplanan_miktar(&self) -> f64 {
-        if self.adet.is_none() && self.en.is_none() && self.boy.is_none() && self.yukseklik.is_none() {
+        let buyukluk = if self.adet.is_none() && self.en.is_none() && self.boy.is_none() && self.yukseklik.is_none() {
             self.miktar
         } else {
             self.adet.unwrap_or(1.0)
                 * self.en.unwrap_or(1.0)
                 * self.boy.unwrap_or(1.0)
                 * self.yukseklik.unwrap_or(1.0)
-        }
+        };
+        if self.cikan { -buyukluk.abs() } else { buyukluk }
     }
 
     /// Boyut tabanlı mı yoksa elle girilmiş mi?
@@ -66,6 +70,8 @@ pub struct MetrajKalemi {
     pub tutar: f64,
     pub kitap_adi: String,
     pub detaylar: Vec<MiktarDetay>,
+    #[serde(default)]
+    pub imalat_cinsi: String, // metrajın neyi ölçtüğü (ör. "Zemin kat perde duvarları")
 }
 
 impl MetrajKalemi {
@@ -81,6 +87,7 @@ impl MetrajKalemi {
             tutar,
             kitap_adi: format!("{} ({}/{})", poz.kitap_adi, poz.ay, poz.yil),
             detaylar: Vec::new(),
+            imalat_cinsi: String::new(),
         }
     }
 
@@ -96,6 +103,33 @@ impl MetrajKalemi {
     pub fn tutar_guncelle(&mut self) {
         self.tutar = self.birim_fiyat * self.miktar;
     }
+}
+
+/// Bir birim fiyat analizinin tek girdisi (rayiç: işçilik / malzeme / makine kalemi).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalizGirdisi {
+    pub girdi_no: String,   // rayiç / girdi poz numarası
+    pub tanim: String,
+    pub birim: String,
+    pub birim_fiyat: f64,   // girdinin birim fiyatı (rayiçten alınan değer)
+    pub miktar: f64,        // katsayı: 1 birim imalat için gereken girdi miktarı
+    pub tur: String,        // "İşçilik" | "Malzeme" | "Makine"
+}
+
+impl AnalizGirdisi {
+    pub fn tutar(&self) -> f64 { self.miktar * self.birim_fiyat }
+}
+
+/// Analiz girdilerinin (kâr + genel gider hariç) ara toplamı.
+pub fn analiz_ara_toplam(girdiler: &[AnalizGirdisi]) -> f64 {
+    girdiler.iter().map(|g| g.tutar()).sum()
+}
+
+/// Analizden çıkan birim fiyat = ara toplam × (1 + kâr/genel gider oranı).
+/// Kamu yaklaşık maliyetinde %25'in uygulandığı yer BURASIDIR (hazır kurum birim
+/// fiyatları değil — onlar bu oranı zaten içerir). Bkz. [[mevzuat]] / rapor H1.
+pub fn analiz_birim_fiyat(girdiler: &[AnalizGirdisi], kar_orani: f64) -> f64 {
+    analiz_ara_toplam(girdiler) * (1.0 + kar_orani / 100.0)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -196,6 +230,7 @@ mod testler {
             tutar,
             kitap_adi: "K".into(),
             detaylar: vec![],
+            imalat_cinsi: String::new(),
         }
     }
 
@@ -251,7 +286,7 @@ mod testler {
 
     #[test]
     fn boyutlardan_miktar_carpilir() {
-        let d = MiktarDetay { aciklama: "kiriş".into(), miktar: 0.0, adet: Some(4.0), en: Some(0.30), boy: Some(5.0), yukseklik: Some(0.40) };
+        let d = MiktarDetay { aciklama: "kiriş".into(), miktar: 0.0, adet: Some(4.0), en: Some(0.30), boy: Some(5.0), yukseklik: Some(0.40), cikan: false };
         assert!((d.hesaplanan_miktar() - 2.4).abs() < 1e-9); // 4 * 0.30 * 5 * 0.40
         assert!(d.boyutlu_mu());
     }
@@ -259,15 +294,43 @@ mod testler {
     #[test]
     fn eksik_boyutlar_bir_sayilir() {
         // sadece adet ve boy verilmiş; en/yükseklik 1 sayılır
-        let d = MiktarDetay { aciklama: "".into(), miktar: 0.0, adet: Some(3.0), en: None, boy: Some(2.5), yukseklik: None };
+        let d = MiktarDetay { aciklama: "".into(), miktar: 0.0, adet: Some(3.0), en: None, boy: Some(2.5), yukseklik: None, cikan: false };
         assert!((d.hesaplanan_miktar() - 7.5).abs() < 1e-9);
     }
 
     #[test]
     fn boyutsuz_detay_elle_girilen_miktari_korur() {
-        let d = MiktarDetay { aciklama: "hazır".into(), miktar: 12.0, adet: None, en: None, boy: None, yukseklik: None };
+        let d = MiktarDetay { aciklama: "hazır".into(), miktar: 12.0, adet: None, en: None, boy: None, yukseklik: None, cikan: false };
         assert_eq!(d.hesaplanan_miktar(), 12.0);
         assert!(!d.boyutlu_mu());
+    }
+
+    #[test]
+    fn cikan_detay_metrajdan_dusulur() {
+        let mut k = MetrajKalemi {
+            poz_no: "P".into(), tanim: "duvar".into(), birim: "m2".into(),
+            birim_fiyat: 10.0, miktar: 0.0, tutar: 0.0, kitap_adi: "K".into(),
+            detaylar: vec![
+                // Brüt duvar: 10 x 3 = 30 m²
+                MiktarDetay { aciklama: "duvar".into(), miktar: 0.0, adet: Some(1.0), en: Some(10.0), boy: Some(3.0), yukseklik: None, cikan: false },
+                // 2 pencere boşluğu: 2 x 1.5 x 1.0 = 3 m² düşülür
+                MiktarDetay { aciklama: "pencere".into(), miktar: 0.0, adet: Some(2.0), en: Some(1.5), boy: Some(1.0), yukseklik: None, cikan: true },
+            ],
+            imalat_cinsi: String::new(),
+        };
+        k.detaylardan_miktar_hesapla();
+        assert_eq!(k.miktar, 27.0); // 30 - 3
+        assert_eq!(k.tutar, 270.0);
+    }
+
+    #[test]
+    fn analiz_birim_fiyati_kar_uygular() {
+        let g = vec![
+            AnalizGirdisi { girdi_no: "10.100.1001".into(), tanim: "Düz işçi".into(), birim: "saat".into(), birim_fiyat: 100.0, miktar: 2.0, tur: "İşçilik".into() },
+            AnalizGirdisi { girdi_no: "10.130.1001".into(), tanim: "Çimento".into(), birim: "kg".into(), birim_fiyat: 5.0, miktar: 50.0, tur: "Malzeme".into() },
+        ];
+        assert_eq!(analiz_ara_toplam(&g), 450.0); // 200 + 250
+        assert_eq!(analiz_birim_fiyat(&g, 25.0), 562.5); // 450 * 1.25
     }
 
     #[test]
@@ -276,9 +339,10 @@ mod testler {
             poz_no: "P".into(), tanim: "t".into(), birim: "m3".into(),
             birim_fiyat: 100.0, miktar: 0.0, tutar: 0.0, kitap_adi: "K".into(),
             detaylar: vec![
-                MiktarDetay { aciklama: "a".into(), miktar: 0.0, adet: Some(2.0), en: None, boy: None, yukseklik: None },
-                MiktarDetay { aciklama: "b".into(), miktar: 0.0, adet: Some(1.0), en: Some(3.0), boy: Some(0.5), yukseklik: None },
+                MiktarDetay { aciklama: "a".into(), miktar: 0.0, adet: Some(2.0), en: None, boy: None, yukseklik: None, cikan: false },
+                MiktarDetay { aciklama: "b".into(), miktar: 0.0, adet: Some(1.0), en: Some(3.0), boy: Some(0.5), yukseklik: None, cikan: false },
             ],
+            imalat_cinsi: String::new(),
         };
         k.detaylardan_miktar_hesapla();
         assert_eq!(k.miktar, 3.5); // 2 + 1.5

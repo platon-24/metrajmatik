@@ -200,12 +200,12 @@ Gerçek metrajda satırın **imalatın cinsi** açıklaması, poz açıklamasın
 > Bunlar bitmeden ürün "yaklaşık maliyet programı" sayılmaz.
 
 - [x] **H2 düzeltildi:** "Kamu/Özel" kipi eklendi (`models::HesapTuru`); Kamu'da KDV hariç. Tek kaynak `maliyet::MaliyetOzeti`.
-- [~] **H1 kısmen düzeltildi:** Kamu kipinde kâr+genel gider varsayılanı %0 (kurum fiyatları zaten içerir) + İcmal uyarısı → çifte sayım varsayılanda önlendi. **Kalan:** poz bazında `kar_dahil` bayrağı (analiz altyapısıyla gelecek; %25'i karışık projede otomatik yalnız analiz pozlarına uygulamak için).
-- [x] **H3 düzeltildi:** `bicim::krono_tarih` artık gerçek Gregoryen takvim (artık yıllar dahil, Howard Hinnant algoritması) + Türkiye saati (UTC+3). Takvim testleriyle kilitlendi. Bağımlılık eklenmedi.
-- [ ] **Birim fiyat analizi (E1/E2):** rayiç kitabı + analiz föyü + analizden poz fiyatı üretimi.
-- [ ] **Metraj cetveli olgunlaşması (E5/E6):** benzer adedi, +/− çıkan, formül, imalat cinsi.
-- [ ] **Resmî çıktılar (E9/E10):** Yaklaşık Maliyet Hesap Cetveli + Metraj Cetveli + Metraj İcmali + Analiz Föyü → Excel **ve** PDF; "Gizli / Onaya esas" damgası.
-- [ ] **Veri konumu (E8):** DB/autosave `%APPDATA%\Metrajmatik\` altına; taşınırlık için "veri klasörü" ayarı.
+- [x] **H1 çözüldü (pratikte):** Kamu kipinde kâr+genel gider varsayılanı %0 + İcmal uyarısı. Analiz altyapısı geldiği için artık hem kurum fiyatları hem analizden üretilen fiyatlar kâr+genel gideri **içerir** → Kamu+%0 doğru sonucu verir, çifte sayım yok. (Poz bazında `kar_dahil` bayrağı yalnızca ham/kârsız fiyat gösterimi istenirse gerekli — o P1 rafinesi.)
+- [x] **H3 düzeltildi:** `bicim::krono_tarih` gerçek Gregoryen takvim (artık yıllar, Howard Hinnant) + Türkiye saati (UTC+3). Takvim testleriyle kilitli.
+- [x] **Birim fiyat analizi (E1/E2) — TAMAM:** `analiz_girdileri` tablosu + `AnalizGirdisi` modeli + analiz föyü popup'ı (`app/analiz_ui.rs`): rayiç arama, işçilik/malzeme/makine dökümü, %kâr, sonuç → "Poz Fiyatı Yap" ile poza uygulanır. Pozlar sekmesinde 🧮 rozeti. DB round-trip testiyle doğrulandı.
+- [~] **Metraj cetveli (E5/E6) — büyük ölçüde:** ✅ **çıkan (±)** boşluk/pencere düşme (`MiktarDetay.cikan`, popup onay kutusu, testli), ✅ **imalat cinsi** (`MetrajKalemi.imalat_cinsi`, popup + tablo + Excel). Benzer adedi zaten `adet` sütunuyla var. **Kalan:** serbest **formül** girişi (P1'e uygun — adet/en/boy/yük + çıkan çoğu durumu kapsıyor).
+- [~] **Resmî çıktılar (E9/E10) — Excel tarafı TAMAM:** ✅ İki sayfalı workbook: **Yaklaşık Maliyet Hesap Cetveli** (resmî başlık, "GİZLİDİR" damgası, hesap türü, Düzenleyen/Kontrol/Onay imza blokları) + **Metraj Cetveli** (imalat cinsi + boyut/çıkan kırılımı). Export + JSON round-trip testli. **Kalan:** PDF çıktı (kullanıcı tercihi: Excel önce) + Analiz Föyü Excel'e (kitap_id bağı gerektirir) + formül.
+- [x] **Veri konumu (E8) — TAMAM:** DB/autosave `%APPDATA%\Metrajmatik\` altında; eski çalışma-dizini verisi için tek seferlik güvenli taşıma (WAL dahil).
 
 ### P1 — Piyasa paritesi (OSKA/AMP ile aynı masada)
 - [ ] **Çok formatlı PDF/Excel içe aktarma (E3/E4):** kurum bazlı ayrıştırma profilleri (ÇŞB, KGM, DSİ, İLBANK, Kültür/Vakıflar). Regex'ler profil dosyasına taşınır.

@@ -8,6 +8,7 @@
 
 use eframe::egui;
 use egui::{Color32, RichText, TextEdit};
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use crate::bicim::{metni_kisalt, para_formatla};
@@ -16,6 +17,7 @@ use crate::is_grubu::ilk_yaprak_grup_id;
 use crate::models::{HesapTuru, IsGrubu, Kitap, MetrajKalemi, Poz};
 use crate::tema;
 
+mod analiz_ui;
 mod gorunum_diger;
 mod gorunum_metraj;
 mod islemler;
@@ -31,6 +33,18 @@ pub(crate) struct PopupDetaySatiri {
     en: String,
     boy: String,
     yukseklik: String,
+    cikan: bool,
+}
+
+/// Analiz popup'ında düzenlenebilir bir girdi satırı (katsayı/tür metin olarak tutulur).
+#[derive(Default, Clone)]
+pub(crate) struct AnalizGirdiSatiri {
+    girdi_no: String,
+    tanim: String,
+    birim: String,
+    birim_fiyat: f64,
+    miktar_metni: String,
+    tur: String,
 }
 
 /// Geri al/yinele için projenin düzenlenebilir durumunun anlık görüntüsü.
@@ -92,6 +106,16 @@ pub struct MetrajApp {
     popup_kalem_indeks: Option<usize>,
     popup_detaylar: Vec<PopupDetaySatiri>,
     popup_yeni: PopupDetaySatiri,
+    popup_imalat_cinsi: String,
+
+    // Analiz popup
+    analiz_popup_acik: bool,
+    analiz_poz: Option<Poz>,
+    analiz_girdileri: Vec<AnalizGirdiSatiri>,
+    analiz_kar_orani: f64,
+    analiz_rayic_arama: String,
+    analiz_rayic_sonuc: Vec<Poz>,
+    analizli_pozlar: HashSet<String>, // Pozlar sekmesinde analizli poz rozeti için
 
     // Hiyerarşik İş Grupları alanları
     is_gruplari: Vec<crate::models::IsGrubu>,
@@ -113,9 +137,36 @@ pub struct MetrajApp {
     kurtarma_mevcut: bool,
 }
 
+/// Uygulama veri dizini: `%APPDATA%\Metrajmatik` (yoksa çalışma dizini). Oluşturulur.
+fn veri_dizini() -> PathBuf {
+    let taban = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    let dizin = taban.join("Metrajmatik");
+    let _ = std::fs::create_dir_all(&dizin);
+    dizin
+}
+
+/// Dosyayı veri dizinindeki yolu ile döndürür. Yeni konumda yoksa ama eski (çalışma
+/// dizini) konumda varsa, veri kaybını önlemek için bir kereye mahsus taşır
+/// (kopyalar; SQLite WAL/SHM yan dosyaları dahil). Kopyalama, taşıma bozulursa eski
+/// veri elde kalsın diyedir.
+fn veri_yolu(dosya_adi: &str) -> PathBuf {
+    let dizin = veri_dizini();
+    let yeni = dizin.join(dosya_adi);
+    let eski = PathBuf::from(dosya_adi);
+    if !yeni.exists() && eski.exists() {
+        for ek in ["", "-wal", "-shm"] {
+            let kaynak = PathBuf::from(format!("{}{}", dosya_adi, ek));
+            if kaynak.exists() {
+                let _ = std::fs::copy(&kaynak, dizin.join(format!("{}{}", dosya_adi, ek)));
+            }
+        }
+    }
+    yeni
+}
+
 impl Default for MetrajApp {
     fn default() -> Self {
-        let db_yolu = PathBuf::from("metrajmatik_veriler.db");
+        let db_yolu = veri_yolu("metrajmatik_veriler.db");
         let (db, poz_sayisi, kitaplar) = match Veritabani::ac(&db_yolu) {
             Ok(vt) => {
                 let s = vt.poz_sayisi().unwrap_or(0);
@@ -129,7 +180,7 @@ impl Default for MetrajApp {
             .and_then(|vt| vt.varsayilan_gruplari_getir().ok())
             .unwrap_or_default();
         let baslangic_secili = ilk_yaprak_grup_id(&baslangic_gruplari);
-        let autosave_yolu = PathBuf::from("metrajmatik_autosave.mrj");
+        let autosave_yolu = veri_yolu("metrajmatik_autosave.mrj");
         let kurtarma_mevcut = autosave_yolu.exists();
         Self {
             db, poz_sayisi, kitaplar, secili_kitap: None,
@@ -159,6 +210,16 @@ impl Default for MetrajApp {
             popup_kalem_indeks: None,
             popup_detaylar: vec![],
             popup_yeni: PopupDetaySatiri::default(),
+            popup_imalat_cinsi: String::new(),
+
+            // Analiz popup
+            analiz_popup_acik: false,
+            analiz_poz: None,
+            analiz_girdileri: vec![],
+            analiz_kar_orani: 25.0,
+            analiz_rayic_arama: String::new(),
+            analiz_rayic_sonuc: vec![],
+            analizli_pozlar: HashSet::new(),
 
             // Hiyerarşik İş Grupları
             is_gruplari: baslangic_gruplari,
@@ -245,6 +306,9 @@ impl eframe::App for MetrajApp {
 
         // Miktar detay popup'ı
         self.render_miktar_popup(ctx);
+
+        // Birim fiyat analizi popup'ı
+        self.render_analiz_popup(ctx);
 
         egui::TopBottomPanel::top("menu_bar")
             .frame(egui::Frame::default().fill(tema::ARKA_PLAN).inner_margin(egui::Margin::symmetric(14, 9)))

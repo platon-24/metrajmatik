@@ -450,13 +450,19 @@ impl MetrajApp {
                     let fiyat = poz.fiyat.map(|f| format!("{} TL", para_formatla(f))).unwrap_or_else(|| "Formül".into());
                     let fiyat_renk = if poz.fiyat.is_some() { tema::BASARI } else { tema::UYARI };
                     let aciklama = metni_kisalt(&poz.tanim, 85);
-                    ui.label(RichText::new(&poz.poz_no).monospace().size(11.5).color(tema::METIN));
+                    let analizli = self.analizli_pozlar.contains(&poz.poz_no);
+                    let poz_no_goster = if analizli { format!("🧮 {}", poz.poz_no) } else { poz.poz_no.clone() };
+                    let poz_lbl = ui.label(RichText::new(poz_no_goster).monospace().size(11.5).color(tema::METIN));
+                    if analizli { poz_lbl.on_hover_text("Birim fiyatı analizden üretildi"); }
                     ui.label(RichText::new(aciklama).size(11.5).color(tema::METIN_IKINCIL)).on_hover_text(&poz.tanim);
                     ui.label(RichText::new(&poz.birim).size(11.0).color(tema::METIN_IKINCIL));
                     ui.label(RichText::new(fiyat).size(11.5).color(fiyat_renk));
                     ui.label(RichText::new(&poz.kategori).size(10.5).color(tema::METIN_SOLUK));
                     ui.label(RichText::new(format!("{}/{}", poz.ay, poz.yil)).size(10.5).color(tema::METIN_SOLUK));
                     ui.horizontal(|ui| {
+                        if ui.button("🧮 Analiz").on_hover_text("Birim fiyat analizi yap / düzenle").clicked() {
+                            self.analiz_popup_ac(poz.clone());
+                        }
                         if ui.button("✏ Düzenle").clicked() {
                             self.poz_formunu_duzenleme_icin_ac(poz.clone());
                         }

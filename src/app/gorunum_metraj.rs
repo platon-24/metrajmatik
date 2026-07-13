@@ -357,8 +357,10 @@ impl MetrajApp {
             for (idx, kalem) in self.metraj_kalemleri.iter().enumerate() {
                 ui.label(RichText::new(format!("{}", idx + 1)).color(tema::METIN_SOLUK).size(11.0));
                 let poz_response = ui.label(RichText::new(&kalem.poz_no).size(11.5).monospace().color(tema::METIN));
-                let kisa = metni_kisalt(&kalem.tanim, 46);
-                let aciklama_response = ui.label(RichText::new(kisa).size(11.5).color(tema::METIN_IKINCIL)).on_hover_text(&kalem.tanim);
+                let imalatli = !kalem.imalat_cinsi.trim().is_empty();
+                let birincil = if imalatli { metni_kisalt(&kalem.imalat_cinsi, 46) } else { metni_kisalt(&kalem.tanim, 46) };
+                let hover = if imalatli { format!("İmalat cinsi: {}\nPoz: {}", kalem.imalat_cinsi, kalem.tanim) } else { kalem.tanim.clone() };
+                let aciklama_response = ui.label(RichText::new(birincil).size(11.5).color(tema::METIN_IKINCIL)).on_hover_text(hover);
                 let kitap_kisa = metni_kisalt(&kalem.kitap_adi, 18);
                 ui.label(RichText::new(kitap_kisa).size(10.5).color(tema::METIN_SOLUK)).on_hover_text(&kalem.kitap_adi);
                 ui.label(RichText::new(&kalem.birim).size(11.0).color(tema::METIN_IKINCIL));
@@ -382,6 +384,7 @@ impl MetrajApp {
             self.popup_detaylar = self.metraj_kalemleri[idx].detaylar.iter()
                 .map(detay_to_satir)
                 .collect();
+            self.popup_imalat_cinsi = self.metraj_kalemleri[idx].imalat_cinsi.clone();
             self.popup_yeni = PopupDetaySatiri::default();
             self.miktar_popup_acik = true;
         }
@@ -413,13 +416,17 @@ impl MetrajApp {
                     ui.label(RichText::new(format!("Birim: {}", birim)).color(tema::METIN_IKINCIL));
                     ui.label(RichText::new(format!("Birim Fiyat: {} TL", para_formatla(birim_fiyat))).color(tema::BASARI));
                 });
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("İmalat cinsi").size(12.0).color(tema::METIN_IKINCIL));
+                    ui.add(TextEdit::singleline(&mut self.popup_imalat_cinsi).hint_text("ör. Zemin kat perde duvarları").desired_width(380.0));
+                });
                 ui.separator();
 
-                ui.label(RichText::new("Ölçü detayları  ·  boş bırakılan boyut 1 sayılır").color(tema::METIN_SOLUK).size(11.5));
+                ui.label(RichText::new("Ölçü detayları  ·  boş bırakılan boyut 1 sayılır  ·  “çıkan” işaretli satırlar düşülür").color(tema::METIN_SOLUK).size(11.5));
                 ui.add_space(3.0);
                 let bsl = |ui: &mut egui::Ui, t: &str| { ui.label(RichText::new(t).strong().size(11.5).color(tema::METIN_IKINCIL)); };
-                egui::Grid::new("popup_detay_grid").num_columns(8).spacing(egui::vec2(7.0, 6.0)).striped(true).show(ui, |ui| {
-                    bsl(ui, "#"); bsl(ui, "Açıklama"); bsl(ui, "Adet"); bsl(ui, "En"); bsl(ui, "Boy"); bsl(ui, "Yük."); bsl(ui, "= Miktar"); bsl(ui, "");
+                egui::Grid::new("popup_detay_grid").num_columns(9).spacing(egui::vec2(7.0, 6.0)).striped(true).show(ui, |ui| {
+                    bsl(ui, "#"); bsl(ui, "Açıklama"); bsl(ui, "Adet"); bsl(ui, "En"); bsl(ui, "Boy"); bsl(ui, "Yük."); bsl(ui, "Çıkan"); bsl(ui, "= Miktar"); bsl(ui, "");
                     ui.end_row();
 
                     let mut silinecek_satir: Option<usize> = None;
@@ -430,8 +437,10 @@ impl MetrajApp {
                         ui.add(TextEdit::singleline(&mut satir.en).desired_width(48.0));
                         ui.add(TextEdit::singleline(&mut satir.boy).desired_width(48.0));
                         ui.add(TextEdit::singleline(&mut satir.yukseklik).desired_width(48.0));
+                        ui.checkbox(&mut satir.cikan, "");
                         let m = satir_miktar(satir).unwrap_or(0.0);
-                        ui.label(RichText::new(format!("{:.3}", m)).size(11.5).strong().color(tema::BASARI));
+                        let renk = if m < 0.0 { tema::UYARI } else { tema::BASARI };
+                        ui.label(RichText::new(format!("{:.3}", m)).size(11.5).strong().color(renk));
                         if ui.add(egui::Button::new(RichText::new("🗑").color(tema::TEHLIKE).size(11.0)).fill(Color32::TRANSPARENT).stroke(egui::Stroke::NONE)).clicked() {
                             silinecek_satir = Some(d_idx);
                         }
@@ -448,6 +457,7 @@ impl MetrajApp {
                     ui.add(TextEdit::singleline(&mut self.popup_yeni.en).hint_text("en").desired_width(48.0));
                     ui.add(TextEdit::singleline(&mut self.popup_yeni.boy).hint_text("boy").desired_width(48.0));
                     ui.add(TextEdit::singleline(&mut self.popup_yeni.yukseklik).hint_text("yük.").desired_width(48.0));
+                    ui.checkbox(&mut self.popup_yeni.cikan, "çıkan");
                     let ekle = tema::birincil_buton(ui, "＋ Ekle").clicked();
                     let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
                     if (ekle || enter) && satir_miktar(&self.popup_yeni).is_some() {
@@ -469,9 +479,11 @@ impl MetrajApp {
                         let detaylar: Vec<MiktarDetay> = self.popup_detaylar.iter()
                             .filter_map(satir_to_detay)
                             .collect();
+                        let imalat = self.popup_imalat_cinsi.clone();
                         self.anlik_goruntu_al();
                         if let Some(kalem) = self.metraj_kalemleri.get_mut(idx) {
                             kalem.detaylar = detaylar;
+                            kalem.imalat_cinsi = imalat;
                             kalem.detaylardan_miktar_hesapla();
                             self.degisiklik_var = true;
                         }
@@ -570,7 +582,8 @@ fn opt_str(o: Option<f64>) -> String {
     o.map(|v| format!("{}", v).replace('.', ",")).unwrap_or_default()
 }
 
-// Bir popup satırının boyutlarından miktarı hesaplar (hiç boyut yoksa None).
+// Bir popup satırının boyutlarından (işaretli) miktarı hesaplar; hiç boyut yoksa None.
+// `cikan` işaretliyse sonuç negatiftir (metrajdan düşülür).
 fn satir_miktar(s: &PopupDetaySatiri) -> Option<f64> {
     let a = sayi_oku(&s.adet);
     let e = sayi_oku(&s.en);
@@ -579,7 +592,8 @@ fn satir_miktar(s: &PopupDetaySatiri) -> Option<f64> {
     if a.is_none() && e.is_none() && b.is_none() && y.is_none() {
         return None;
     }
-    Some(a.unwrap_or(1.0) * e.unwrap_or(1.0) * b.unwrap_or(1.0) * y.unwrap_or(1.0))
+    let m = a.unwrap_or(1.0) * e.unwrap_or(1.0) * b.unwrap_or(1.0) * y.unwrap_or(1.0);
+    Some(if s.cikan { -m.abs() } else { m })
 }
 
 fn satir_to_detay(s: &PopupDetaySatiri) -> Option<MiktarDetay> {
@@ -591,6 +605,7 @@ fn satir_to_detay(s: &PopupDetaySatiri) -> Option<MiktarDetay> {
         en: sayi_oku(&s.en),
         boy: sayi_oku(&s.boy),
         yukseklik: sayi_oku(&s.yukseklik),
+        cikan: s.cikan,
     })
 }
 
@@ -602,12 +617,14 @@ fn detay_to_satir(d: &MiktarDetay) -> PopupDetaySatiri {
             en: opt_str(d.en),
             boy: opt_str(d.boy),
             yukseklik: opt_str(d.yukseklik),
+            cikan: d.cikan,
         }
     } else {
         // Eski/elle girilmiş detay: miktarı "Adet" sütununa koy
         PopupDetaySatiri {
             aciklama: d.aciklama.clone(),
-            adet: if d.miktar != 0.0 { opt_str(Some(d.miktar)) } else { String::new() },
+            adet: if d.miktar != 0.0 { opt_str(Some(d.miktar.abs())) } else { String::new() },
+            cikan: d.cikan,
             ..Default::default()
         }
     }

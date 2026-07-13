@@ -2,7 +2,7 @@ use rusqlite::{params, Connection, Result};
 use std::path::Path;
 
 use crate::bicim::krono_tarih;
-use crate::models::{Kitap, Poz};
+use crate::models::{AnalizGirdisi, Kitap, Poz};
 
 pub struct Veritabani {
     conn: Connection,
@@ -61,6 +61,20 @@ impl Veritabani {
                 sira INTEGER NOT NULL,
                 FOREIGN KEY(ust_grup_id) REFERENCES varsayilan_is_gruplari(id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS analiz_girdileri (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kitap_id INTEGER NOT NULL,
+                poz_no TEXT NOT NULL,
+                girdi_no TEXT NOT NULL,
+                tanim TEXT NOT NULL,
+                birim TEXT NOT NULL,
+                birim_fiyat REAL NOT NULL,
+                miktar REAL NOT NULL,
+                tur TEXT NOT NULL DEFAULT 'Malzeme',
+                sira INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(kitap_id) REFERENCES kitaplar(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_analiz_poz ON analiz_girdileri(kitap_id, poz_no);
             CREATE VIRTUAL TABLE IF NOT EXISTS pozlar_fts USING fts5(
                 poz_no, tanim, birim, kategori, kitap_adi,
                 content='pozlar', content_rowid='id'
@@ -209,6 +223,60 @@ impl Veritabani {
         Ok(())
     }
 
+    /// Yalnızca bir pozun birim fiyatını günceller (analiz sonucunu poza uygularken).
+    pub fn poz_fiyat_guncelle(&self, kitap_id: i64, poz_no: &str, fiyat: f64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE pozlar SET fiyat = ?1 WHERE kitap_id = ?2 AND poz_no = ?3",
+            params![fiyat, kitap_id, poz_no],
+        )?;
+        Ok(())
+    }
+
+    // ==================== ANALİZ ====================
+    pub fn analiz_getir(&self, kitap_id: i64, poz_no: &str) -> Result<Vec<AnalizGirdisi>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT girdi_no, tanim, birim, birim_fiyat, miktar, tur
+             FROM analiz_girdileri WHERE kitap_id = ?1 AND poz_no = ?2 ORDER BY sira, id",
+        )?;
+        let rows = stmt.query_map(params![kitap_id, poz_no], |row| {
+            Ok(AnalizGirdisi {
+                girdi_no: row.get(0)?,
+                tanim: row.get(1)?,
+                birim: row.get(2)?,
+                birim_fiyat: row.get(3)?,
+                miktar: row.get(4)?,
+                tur: row.get(5)?,
+            })
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    /// Bir pozun analiz girdilerini (varsa eskisini silip) atomik olarak kaydeder.
+    pub fn analiz_kaydet(&self, kitap_id: i64, poz_no: &str, girdiler: &[AnalizGirdisi]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM analiz_girdileri WHERE kitap_id = ?1 AND poz_no = ?2", params![kitap_id, poz_no])?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO analiz_girdileri (kitap_id, poz_no, girdi_no, tanim, birim, birim_fiyat, miktar, tur, sira)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            )?;
+            for (i, g) in girdiler.iter().enumerate() {
+                stmt.execute(params![kitap_id, poz_no, g.girdi_no, g.tanim, g.birim, g.birim_fiyat, g.miktar, g.tur, i as i64])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Bir kitapta analizi (girdisi) olan poz numaralarını döndürür (rozet için).
+    pub fn analizli_poz_nolari(&self, kitap_id: i64) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT poz_no FROM analiz_girdileri WHERE kitap_id = ?1",
+        )?;
+        let rows = stmt.query_map(params![kitap_id], |r| r.get::<_, String>(0))?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
     fn poz_secim_sql(&self, kitap_id: Option<i64>) -> String {
         if let Some(kid) = kitap_id {
             format!("SELECT poz_no, tanim, birim, fiyat, kategori, kitap_id, kitap_adi, yil, ay FROM pozlar WHERE kitap_id = {}", kid)
@@ -325,5 +393,58 @@ impl Veritabani {
         }
 
         Ok(build_tree(&db_gruplar, None))
+    }
+}
+
+#[cfg(test)]
+mod testler {
+    use super::Veritabani;
+    use crate::models::AnalizGirdisi;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    static SAYAC: AtomicU32 = AtomicU32::new(0);
+
+    fn gecici_db() -> (Veritabani, std::path::PathBuf) {
+        let n = SAYAC.fetch_add(1, Ordering::SeqCst);
+        let mut yol = std::env::temp_dir();
+        yol.push(format!("mm_test_{}_{}.db", std::process::id(), n));
+        let _ = std::fs::remove_file(&yol);
+        (Veritabani::ac(&yol).unwrap(), yol)
+    }
+
+    fn ornek_girdiler() -> Vec<AnalizGirdisi> {
+        vec![
+            AnalizGirdisi { girdi_no: "10.100.1001".into(), tanim: "Düz işçi".into(), birim: "saat".into(), birim_fiyat: 100.0, miktar: 2.0, tur: "İşçilik".into() },
+            AnalizGirdisi { girdi_no: "10.130.1001".into(), tanim: "Çimento".into(), birim: "kg".into(), birim_fiyat: 5.0, miktar: 50.0, tur: "Malzeme".into() },
+        ]
+    }
+
+    #[test]
+    fn analiz_kaydet_getir_ve_fiyat_uygula() {
+        let (db, yol) = gecici_db();
+        let kid = db.kitap_ekle("Test", 2026, 5).unwrap();
+        let kitap = db.kitap_getir(kid).unwrap().unwrap();
+        db.poz_ekle(&kitap, "15.100.1001", "Test poz", "m³", None, "Beton").unwrap();
+
+        // Kaydet + oku (round-trip, sıra korunur)
+        db.analiz_kaydet(kid, "15.100.1001", &ornek_girdiler()).unwrap();
+        let okunan = db.analiz_getir(kid, "15.100.1001").unwrap();
+        assert_eq!(okunan.len(), 2);
+        assert_eq!(okunan[0].girdi_no, "10.100.1001");
+        assert_eq!(okunan[1].miktar, 50.0);
+
+        // Analizli poz listesi (rozet)
+        assert!(db.analizli_poz_nolari(kid).unwrap().contains(&"15.100.1001".to_string()));
+
+        // Sonucu poz fiyatı yap
+        db.poz_fiyat_guncelle(kid, "15.100.1001", 562.5).unwrap();
+        assert_eq!(db.poz_getir("15.100.1001", Some(kid)).unwrap().unwrap().fiyat, Some(562.5));
+
+        // Yeniden kaydet = değiştir (eski girdiler silinir)
+        db.analiz_kaydet(kid, "15.100.1001", &ornek_girdiler()[..1]).unwrap();
+        assert_eq!(db.analiz_getir(kid, "15.100.1001").unwrap().len(), 1);
+
+        drop(db);
+        let _ = std::fs::remove_file(&yol);
     }
 }
