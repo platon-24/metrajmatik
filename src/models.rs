@@ -196,6 +196,44 @@ impl HesapTuru {
     pub fn kamu_mu(self) -> bool { matches!(self, HesapTuru::Kamu) }
 }
 
+/// Bir hakedişte tek bir iş kaleminin yeşil defter (kümülatif yapılan) miktarı.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HakedisSatiri {
+    pub poz_no: String,
+    pub kumulatif_miktar: f64, // bu hakedişe kadar YAPILAN toplam (yeşil defter)
+}
+
+/// Bir hakediş (progress payment): numarası, dönemi, kümülatif imalat miktarları ve
+/// kesinti oranları. Sözleşme (keşif) kalemleri projeden gelir; hakediş yalnızca o
+/// pozların kümülatif yapılan miktarını + kesintileri tutar.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Hakedis {
+    pub no: u32,
+    pub tarih: String,
+    pub tur: String, // "İlk" | "Ara" | "Kesin"
+    #[serde(default)]
+    pub satirlar: Vec<HakedisSatiri>,
+    #[serde(default = "hakedis_damga_orani")]
+    pub damga_orani: f64, // binde (‰) — damga vergisi (tahakkuk üzerinden)
+    #[serde(default)]
+    pub teminat_orani: f64, // % — kesin teminat kesintisi
+    #[serde(default)]
+    pub sgk_orani: f64, // % — SGK kesintisi (varsa)
+    #[serde(default)]
+    pub avans_mahsup: f64, // TL — bu hakedişte mahsup edilecek avans
+    #[serde(default)]
+    pub fiyat_farki: f64, // TL — +/- fiyat farkı (Yİ-ÜFE; şimdilik elle)
+}
+
+impl Hakedis {
+    /// Verilen pozun bu hakedişteki kümülatif yapılan miktarı (yoksa 0).
+    pub fn kumulatif(&self, poz_no: &str) -> f64 {
+        self.satirlar.iter().find(|s| s.poz_no == poz_no).map(|s| s.kumulatif_miktar).unwrap_or(0.0)
+    }
+}
+
+fn hakedis_damga_orani() -> f64 { 9.48 } // binde 9.48 (hakediş damga vergisi)
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KayitliMetraj {
     pub ad: String,
@@ -213,6 +251,8 @@ pub struct KayitliMetraj {
     // MetrajApp::default içinde KAMU olarak başlar.
     #[serde(default = "varsayilan_hesap_turu")]
     pub hesap_turu: HesapTuru,
+    #[serde(default)]
+    pub hakedisler: Vec<Hakedis>,
 }
 
 fn varsayilan_kar_orani() -> f64 { 25.0 }
@@ -279,7 +319,7 @@ mod testler {
 
     #[test]
     fn gruplu_proje_toplami_gruplardan_hesaplanir() {
-        let m = KayitliMetraj { ad: "T".into(), kalemler: vec![], is_gruplari: ornek_agac(), tarih: "2026-01-01".into(), genel_gider_kar_orani: 25.0, kdv_orani: 20.0, hesap_turu: HesapTuru::Kamu };
+        let m = KayitliMetraj { ad: "T".into(), kalemler: vec![], is_gruplari: ornek_agac(), tarih: "2026-01-01".into(), genel_gider_kar_orani: 25.0, kdv_orani: 20.0, hesap_turu: HesapTuru::Kamu, hakedisler: vec![] };
         assert_eq!(m.toplam_tutar(), 175.0);
     }
 

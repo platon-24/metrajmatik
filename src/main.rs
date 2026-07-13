@@ -2,6 +2,7 @@ mod app;
 mod bicim;
 mod database;
 mod export;
+mod hakedis;
 mod is_grubu;
 mod maliyet;
 mod models;

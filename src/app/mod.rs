@@ -14,16 +14,17 @@ use std::path::PathBuf;
 use crate::bicim::{metni_kisalt, para_formatla};
 use crate::database::Veritabani;
 use crate::is_grubu::ilk_yaprak_grup_id;
-use crate::models::{Donem, HesapTuru, IsGrubu, Kitap, MetrajKalemi, Poz};
+use crate::models::{Donem, Hakedis, HesapTuru, IsGrubu, Kitap, MetrajKalemi, Poz};
 use crate::tema;
 
 mod analiz_ui;
 mod gorunum_diger;
 mod gorunum_metraj;
+mod hakedis_ui;
 mod islemler;
 
 #[derive(Debug, Clone, PartialEq)]
-enum Sekme { MetrajTablosu, Icmal, Pozlar, KitapYoneticisi, PdfYukle }
+enum Sekme { MetrajTablosu, Icmal, Hakedis, Pozlar, KitapYoneticisi, PdfYukle }
 
 /// Miktar popup'ında bir detay satırının düzenlenebilir (metin) hali.
 #[derive(Default, Clone)]
@@ -137,6 +138,10 @@ pub struct MetrajApp {
     hesap_turu: HesapTuru,
     genel_gider_kar_orani: f64,
     kdv_orani: f64,
+
+    // Hakediş
+    hakedisler: Vec<Hakedis>,
+    secili_hakedis: Option<usize>,
 
     // Geri al / yinele
     geri_al_yigini: Vec<Anlik>,
@@ -252,6 +257,10 @@ impl Default for MetrajApp {
             genel_gider_kar_orani: 0.0,
             kdv_orani: 20.0,
 
+            // Hakediş
+            hakedisler: vec![],
+            secili_hakedis: None,
+
             // Geri al / yinele
             geri_al_yigini: vec![],
             yinele_yigini: vec![],
@@ -336,8 +345,8 @@ impl eframe::App for MetrajApp {
                     ui.add_space(8.0);
 
                     // Sekme "pill"leri
-                    let sekmeler = [Sekme::MetrajTablosu, Sekme::Icmal, Sekme::Pozlar, Sekme::KitapYoneticisi, Sekme::PdfYukle];
-                    let isimler = ["📋 Metraj", "📊 İcmal", "🔎 Pozlar", "📚 Kitaplar", "📄 PDF Yükle"];
+                    let sekmeler = [Sekme::MetrajTablosu, Sekme::Icmal, Sekme::Hakedis, Sekme::Pozlar, Sekme::KitapYoneticisi, Sekme::PdfYukle];
+                    let isimler = ["📋 Metraj", "📊 İcmal", "🧾 Hakediş", "🔎 Pozlar", "📚 Kitaplar", "📄 PDF Yükle"];
                     for i in 0..sekmeler.len() {
                         let s = &sekmeler[i];
                         let aktif = self.aktif_sekme == *s;
@@ -444,6 +453,7 @@ impl eframe::App for MetrajApp {
             match self.aktif_sekme {
                 Sekme::MetrajTablosu => self.render_metraj_tablosu(ui),
                 Sekme::Icmal => self.render_icmal(ui),
+                Sekme::Hakedis => self.render_hakedis(ui),
                 Sekme::Pozlar => self.render_pozlar_tablosu(ui),
                 Sekme::KitapYoneticisi => self.render_kitap_yoneticisi(ui),
                 Sekme::PdfYukle => self.render_pdf_yukle(ui),

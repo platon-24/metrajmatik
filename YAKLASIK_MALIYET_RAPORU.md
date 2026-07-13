@@ -217,7 +217,7 @@ Gerçek metrajda satırın **imalatın cinsi** açıklaması, poz açıklamasın
 - [x] **Fiyat araştırması / piyasa rayici:** Poz formunda "Fiyat Araştırması" — boşlukla ayrılmış teklifler → `bicim::teklif_ortalamasi` → birim fiyat (piyasa rayici). Testli.
 
 ### P2 — "OSKA/AMP'yi göm" (yaşam döngüsü + bulut)
-- [ ] **Hakediş:** yeşil defter, ataşman, ara/kesin hakediş, kesintiler (SGK, damga, teminat, avans mahsubu), tahakkuk.
+- [~] **Hakediş — çekirdek TAMAM:** `models::Hakedis/HakedisSatiri` (`.mrj`'de saklanır) + `hakedis.rs` hesap (kümülatif → bu hakediş → kesintiler → net, testli) + **Hakediş sekmesi** (`app/hakedis_ui.rs`): çoklu hakediş, önceki kümülatifi devralma, poz bazında editlenebilir yeşil-defter miktarı, kesinti oranları (damga ‰, teminat %, SGK %, avans, fiyat farkı), canlı net ödeme icmali + **resmî Excel hakediş raporu** (imza blokları). **Kalan:** yeşil defter/ataşman ölçü kırılımı, fiyat farkı otomatik (Yİ-ÜFE — fiyat geçmişi hazır), KDV tevkifatı, kesin hesap.
 - [ ] **Fiyat farkı:** Yİ-ÜFE endeksleri, temel/güncel endeks, sabit ağırlık oranları (a, b₁…bₙ).
 - [ ] **Kesin hesap**, geçici/kesin kabul.
 - [ ] **İş programı / zaman planı** (bar-chart).
