@@ -615,12 +615,12 @@ impl MetrajApp {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Ayrıştırma Profili").color(tema::METIN_IKINCIL).size(12.0));
-                egui::ComboBox::from_id_salt("pdf_profil").selected_text(&self.import_profili).width(200.0).show_ui(ui, |ui| {
-                    for p in ["Otomatik", "Çevre ve Şehircilik", "Genel"] {
+                egui::ComboBox::from_id_salt("pdf_profil").selected_text(&self.import_profili).width(210.0).show_ui(ui, |ui| {
+                    for p in ["Otomatik", "Çevre ve Şehircilik", "Vakıflar / Restorasyon", "Karayolları (Ar-Ge)", "Genel"] {
                         if ui.selectable_label(self.import_profili == p, p).clicked() { self.import_profili = p.to_string(); }
                     }
                 });
-                ui.label(RichText::new("Otomatik: metne en uygun profil seçilir").color(tema::METIN_SOLUK).size(11.0));
+                ui.label(RichText::new("Otomatik: ÇŞB / Vakıflar / KGM arasından en uygun seçilir").color(tema::METIN_SOLUK).size(11.0));
             });
             ui.add_space(3.0);
             ui.label(RichText::new("Aynı kuruma her ay yeni PDF yükleyin: pozlar tekilleşir, fiyatlar döneme göre birikir.").color(tema::METIN_SOLUK).size(11.0));

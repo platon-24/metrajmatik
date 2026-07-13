@@ -274,6 +274,8 @@ impl MetrajApp {
             Ok(metin) => {
                 let profil = match self.import_profili.as_str() {
                     "Çevre ve Şehircilik" => AyristirmaProfili::csb(),
+                    "Vakıflar / Restorasyon" => AyristirmaProfili::vakiflar(),
+                    "Karayolları (Ar-Ge)" => AyristirmaProfili::kgm(),
                     "Genel" => AyristirmaProfili::genel(),
                     _ => profil_otomatik_sec(&metin),
                 };

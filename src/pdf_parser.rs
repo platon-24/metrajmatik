@@ -40,20 +40,39 @@ impl AyristirmaProfili {
         }
     }
 
-    /// Esnek genel profil: birden çok yaygın poz biçimini (opsiyonel harf öneki,
-    /// `XX.XXX`, `XX.XXX.XXX(X)`) kabul eder; az filtre. Bilinmeyen kurumlar için
-    /// başlangıç. Gerçek örnek PDF geldikçe kuruma özel profil eklenmeli.
-    pub fn genel() -> Self {
+    /// Vakıflar Genel Müdürlüğü / restorasyon: poz biçimi `01.V01` (harf içerir).
+    pub fn vakiflar() -> Self {
         AyristirmaProfili {
-            ad: "Genel".into(),
-            poz_deseni: r"^((?:[A-ZÇĞİÖŞÜ]{1,4}[\./])?\d{2}\.\d{3}(?:\.\d{3,4})?)\s*(.*)".into(),
-            kategori_anahtarlari: csb_kategorileri(),
-            atlama_anahtarlari: ["Poz No", "Fiyat", "Birim Fiyat"].iter().map(|s| s.to_string()).collect(),
+            ad: "Vakıflar / Restorasyon".into(),
+            poz_deseni: r"^(\d{2}\.[A-ZÇĞİÖŞÜ]\d{1,4}(?:\.\d{1,4})?)\s*(.*)".into(),
+            kategori_anahtarlari: Vec::new(),
+            atlama_anahtarlari: ["Poz No", "Sıra No", "Birim Fiyat", "Sayfa"].iter().map(|s| s.to_string()).collect(),
         }
     }
 
+    /// Karayolları Ar-Ge birim fiyat listesi: poz biçimi `JH-1`, `M.1.3` (harf kodu).
+    pub fn kgm() -> Self {
+        AyristirmaProfili {
+            ad: "Karayolları (Ar-Ge)".into(),
+            poz_deseni: r"^([A-ZÇĞİÖŞÜ]{1,3}[-.]\d+(?:[-./]\d+)*)\s+(.*)".into(),
+            kategori_anahtarlari: Vec::new(),
+            atlama_anahtarlari: ["Poz No", "Sayfa", "Birim Fiyat", "İÇİNDEKİLER"].iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    /// Esnek genel profil: tüm yaygın poz biçimlerini kabul eder (elle seçim için).
+    pub fn genel() -> Self {
+        AyristirmaProfili {
+            ad: "Genel".into(),
+            poz_deseni: r"^((?:\d{2}\.\d{3}\.\d{4})|(?:\d{2}\.[A-ZÇĞİÖŞÜ]\d{1,4}(?:\.\d{1,4})?)|(?:[A-ZÇĞİÖŞÜ]{1,3}[-.]\d+(?:[-./]\d+)*)|(?:\d{2}\.\d{3}))\s*(.*)".into(),
+            kategori_anahtarlari: csb_kategorileri(),
+            atlama_anahtarlari: ["Poz No", "İÇİNDEKİLER"].iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    /// Otomatik seçimde denenen profiller. (Genel elle seçilir.)
     pub fn hepsi() -> Vec<AyristirmaProfili> {
-        vec![AyristirmaProfili::csb(), AyristirmaProfili::genel()]
+        vec![AyristirmaProfili::csb(), AyristirmaProfili::vakiflar(), AyristirmaProfili::kgm()]
     }
 }
 
@@ -129,7 +148,7 @@ pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str, yil: u32, a
     let fiyat_re = Regex::new(r"([\d]{1,3}(?:\.[\d]{3})*(?:,\d{2}))").unwrap();
     // Birim tablolarda fiyatın hemen solundadır. Bu yüzden birimi satır sonundan
     // ayırmak, açıklamadaki "m" harflerini yanlış birim sanmaktan daha güvenlidir.
-    let birim_sonda_re = Regex::new(r"(?i)(?:^|\s)(1000\s*ad|1000\s*m\s*[²2]|100\s*m\s*[²2]|m\s*[³3]|m\s*[²2]|ton|kg|ad|mt|m|[³²])\s*(?:₺|tl)?\s*$").unwrap();
+    let birim_sonda_re = Regex::new(r"(?i)(?:^|\s)(1000\s*ad|1000\s*m\s*[²2]|100\s*m\s*[²2]|m\s*[³3]|m\s*[²2]|metre|adet|saat|ton|kg|km|sa|ad|mt|m|[³²])\s*(?:₺|tl)?\s*$").unwrap();
     let sayfa_no_re = Regex::new(r"^\s*\d+\s*$").unwrap();
 
     let mut pozlar: Vec<Poz> = Vec::new();
@@ -277,8 +296,10 @@ fn birim_normalize(s: &str) -> String {
         "1000ad" => "1000 Ad".to_string(),
         "ton" => "Ton".to_string(),
         "kg" => "Kg".to_string(),
-        "ad" => "Ad".to_string(),
-        "m" | "mt" => "m".to_string(),
+        "ad" | "adet" => "Ad".to_string(),
+        "m" | "mt" | "metre" => "m".to_string(),
+        "km" => "km".to_string(),
+        "sa" | "saat" => "saat".to_string(),
         _ => s.trim().to_string(),
     }
 }
@@ -387,6 +408,68 @@ mod testler {
                 assert_eq!(poz.birim, "100 m²");
                 assert_eq!(poz.fiyat, Some(811.55));
             }
+        }
+    }
+
+    #[test]
+    fn kgm_kodlu_pozlari_okur() {
+        // KGM Ar-Ge: "JH-1", "M.1.3" gibi harf kodları; ₺ önekli fiyat; km birimi.
+        let pozlar = pozlari_ayristir(
+            "JH-1  1/25000 Ölçekli Koridor Jeolojik Etüdü  km  ₺109.137,50",
+            1, "T", 2026, 1, &AyristirmaProfili::kgm(),
+        );
+        assert_eq!(pozlar.len(), 1);
+        assert_eq!(pozlar[0].poz_no, "JH-1");
+        assert_eq!(pozlar[0].birim, "km");
+        assert_eq!(pozlar[0].fiyat, Some(109137.50));
+    }
+
+    #[test]
+    fn vakiflar_v_kodlu_pozlari_okur() {
+        // Vakıflar/restorasyon: "V.0001" kodu (harf kodu → KGM/genel deseniyle okunur).
+        let pozlar = pozlari_ayristir(
+            "V.0001 İnce Kum Bedeli m³ 431,00",
+            1, "T", 2026, 1, &AyristirmaProfili::kgm(),
+        );
+        assert_eq!(pozlar.len(), 1);
+        assert_eq!(pozlar[0].poz_no, "V.0001");
+        assert_eq!(pozlar[0].birim, "m³");
+        assert_eq!(pozlar[0].fiyat, Some(431.0));
+    }
+
+    #[test]
+    fn saat_birimi_sa_kisaltmasindan_okunur() {
+        // "SA" (saat) kısaltması — Vakıflar/KGM işçilik pozlarında.
+        let pozlar = pozlari_ayristir("V.01 Kalemkar Usta SA 440,00", 1, "T", 2026, 1, &AyristirmaProfili::kgm());
+        assert_eq!(pozlar.len(), 1);
+        assert_eq!(pozlar[0].birim, "saat");
+        assert_eq!(pozlar[0].fiyat, Some(440.0));
+    }
+
+    /// Gerçek kurum PDF'leriyle uçtan uca doğrulama (örnekler `D:\metrajmatik\` altında).
+    /// Normal test koşusunda çalışmaz; elle: `cargo test gercek_kitaplar -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "gerçek örnek PDF gerektirir"]
+    fn gercek_kitaplar_otomatik_ayristirilir() {
+        let dizin = Path::new("..");
+        let beklenen: &[(&str, &str, usize)] = &[
+            ("CSB 2026-06-BF.pdf", "Çevre ve Şehircilik", 1500),
+            ("5-2026-yili-temmuz-ayi-altyapi-tesisleri-birim-fiyatlari-listesi.pdf", "Çevre ve Şehircilik", 2000),
+            ("9ff3658c-2b13-4705-a553-69e9d470abdc_2026-1_YILI_PTT_A.s._YAPI_DAiRE_BAsKANLIgI_oZEL_BiRiM_FiYATLARI.pdf", "Çevre ve Şehircilik", 200),
+            ("dsi_2026_yili_birim_fiyat_kitabi.pdf", "Çevre ve Şehircilik", 1500),
+            ("KGM.pdf", "Karayolları (Ar-Ge)", 500),
+            ("144790-0BA65348F5C79DC8802F577A9ADF32928D55A642.pdf", "Karayolları (Ar-Ge)", 1500),
+        ];
+        for (ad, beklenen_profil, en_az) in beklenen {
+            let yol = dizin.join(ad);
+            if !yol.exists() { eprintln!("ATLANDI (yok): {}", ad); continue; }
+            let metin = pdf_metin_cikar(&yol).expect("PDF metni");
+            let profil = profil_otomatik_sec(&metin);
+            let pozlar = pozlari_ayristir(&metin, 1, "T", 2026, 1, &profil);
+            let fiyatli = pozlar.iter().filter(|p| p.fiyat.is_some()).count();
+            eprintln!("{}: profil={} poz={} fiyatli={}", ad, profil.ad, pozlar.len(), fiyatli);
+            assert_eq!(&profil.ad, beklenen_profil, "{} için yanlış profil", ad);
+            assert!(fiyatli >= *en_az, "{}: {} fiyatlı poz (en az {} beklendi)", ad, fiyatli, en_az);
         }
     }
 
