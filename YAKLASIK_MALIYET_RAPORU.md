@@ -209,7 +209,7 @@ Gerçek metrajda satırın **imalatın cinsi** açıklaması, poz açıklamasın
 - [x] **Kurum/dönem modeli (v2):** kitap = **kurum**, poz = **kimlik**, fiyat = `poz_fiyatlari(yıl,ay)` indeksli. Arama en son fiyatı verir; Pozlar sekmesinde **dönem seçici** (eski fiyatları görme); **poz formunda dönem seçimi**; metraj/analiz/popup'larında dönem gösterimi. Otomatik **v1→v2 göç** (veri korunur). Bonus: fiyat geçmişi → P2 fiyat farkı altyapısı.
 
 ### P1 — Piyasa paritesi (OSKA/AMP ile aynı masada)
-- [ ] **Çok formatlı PDF/Excel içe aktarma (E3/E4):** kurum bazlı ayrıştırma profilleri (ÇŞB, KGM, DSİ, İLBANK, Kültür/Vakıflar). Regex'ler profil dosyasına taşınır.
+- [~] **Çok formatlı PDF ayrıştırma (E3/E4) — altyapı TAMAM:** ✅ `AyristirmaProfili` (poz deseni + kategori + atlama anahtarları), ✅ ÇŞB profili (davranış korundu + **yıl/ay kilidi kalktı** — artık tüm aylar), ✅ Genel esnek profil (çoklu poz biçimi), ✅ **otomatik profil seçimi** (en çok poz okuyan), ✅ PDF Yükle'de profil seçici. Poz satırları başlık filtrelerinden korunuyor. **Kalan:** kuruma özel profiller (KGM, DSİ, İLBANK, Kültür/Vakıflar) — gerçek örnek PDF geldikçe eklenecek (artık kod değil, veri işi).
 - [ ] **Nakliye/taşıma analizi (E11):** mesafe + formül bazlı taşıma bedeli.
 - [ ] **Para birimi doğruluğu (E7):** kuruş bazlı tamsayı ya da sabit ondalık; yuvarlama kuralı tek yerde.
 - [ ] **Pursantaj tablosu:** iş grubu/poz ağırlıkları (%).

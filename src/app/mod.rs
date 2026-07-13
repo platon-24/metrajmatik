@@ -82,6 +82,7 @@ pub struct MetrajApp {
     cift_tiklama_ekle: bool,
     pdf_durumu: String,
     pdf_yukleniyor: bool,
+    import_profili: String, // PDF ayrıştırma profili: "Otomatik" | "Çevre ve Şehircilik" | "Genel"
     aktif_sekme: Sekme,
     hata_mesaji: String,
     basarili_mesaj: String,
@@ -195,7 +196,7 @@ impl Default for MetrajApp {
             duzenlenen_kitap: None, duzenleme_adi: String::new(), silinecek_kitap: None,
             fiyat_guncelle_hedef: None,
             cift_tiklama_ekle: false,
-            pdf_durumu: String::new(), pdf_yukleniyor: false,
+            pdf_durumu: String::new(), pdf_yukleniyor: false, import_profili: "Otomatik".into(),
             aktif_sekme: Sekme::MetrajTablosu,
             hata_mesaji: String::new(), basarili_mesaj: String::new(),
             kategoriler: vec![], secili_kategori: "TÜMÜ".into(), kategori_pozlar: vec![],

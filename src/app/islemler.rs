@@ -10,7 +10,7 @@ use crate::bicim::krono_tarih;
 use crate::export::{metraj_excel_aktar, metraj_json_kaydet, metraj_json_yukle, AnalizFoyu};
 use crate::is_grubu::{grup_bul_mut, grup_bul_ref, grup_canli_toplam, ilk_yaprak_grup_id};
 use crate::models::{IsGrubu, KayitliMetraj, MetrajKalemi, Poz};
-use crate::pdf_parser::{pdf_metin_cikar, pozlari_ayristir};
+use crate::pdf_parser::{pdf_metin_cikar, pozlari_ayristir, profil_otomatik_sec, AyristirmaProfili};
 
 use super::{Anlik, MetrajApp};
 
@@ -272,8 +272,13 @@ impl MetrajApp {
         self.pdf_yukleniyor = true; self.pdf_durumu = format!("PDF okunuyor...");
         match pdf_metin_cikar(&pdf_yolu) {
             Ok(metin) => {
-                let pozlar = pozlari_ayristir(&metin, kitap.id, &kitap.ad, yil, ay);
-                self.pdf_durumu = format!("{} poz ayrıştırıldı.", pozlar.len());
+                let profil = match self.import_profili.as_str() {
+                    "Çevre ve Şehircilik" => AyristirmaProfili::csb(),
+                    "Genel" => AyristirmaProfili::genel(),
+                    _ => profil_otomatik_sec(&metin),
+                };
+                let pozlar = pozlari_ayristir(&metin, kitap.id, &kitap.ad, yil, ay, &profil);
+                self.pdf_durumu = format!("{} profiliyle {} poz ayrıştırıldı.", profil.ad, pozlar.len());
                 if let Some(ref db) = self.db { match db.pozlari_yukle(kitap.id, yil, ay, &pozlar) {
                     Ok(sayi) => { self.poz_sayisi = db.poz_sayisi().unwrap_or(0); self.basarili_mesaj = format!("✅ {} kurumuna {}/{} dönemi için {} poz yuklendi!", kitap.ad, ay, yil, sayi); self.pdf_durumu = format!("✅ {} poz yuklendi.", sayi); if let Ok(Some(yk)) = db.kitap_getir(kitap.id) { self.secili_kitap = Some(yk); } self.kitaplari_yenile(); self.pozlar_tablosu_yenile(); }
                     Err(e) => self.hata_mesaji = format!("{}", e),
