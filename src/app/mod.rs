@@ -77,8 +77,6 @@ pub struct MetrajApp {
     // Kitap düzenleme
     duzenlenen_kitap: Option<Kitap>,
     duzenleme_adi: String,
-    duzenleme_yil: u32,
-    duzenleme_ay: u32,
     fiyat_guncelle_hedef: Option<Kitap>,
     cift_tiklama_ekle: bool,
     pdf_durumu: String,
@@ -189,7 +187,7 @@ impl Default for MetrajApp {
             poz_arama_metni: String::new(), akilli_arama_metni: String::new(), arama_sonuclari: vec![], secili_poz: None,
             aciklama_arama_metni: String::new(), yeni_poz_no: String::new(),
             yeni_kitap_adi: String::new(), yeni_kitap_yil: 2026, yeni_kitap_ay: 5,
-            duzenlenen_kitap: None, duzenleme_adi: String::new(), duzenleme_yil: 2026, duzenleme_ay: 1,
+            duzenlenen_kitap: None, duzenleme_adi: String::new(),
             fiyat_guncelle_hedef: None,
             cift_tiklama_ekle: false,
             pdf_durumu: String::new(), pdf_yukleniyor: false,
@@ -261,36 +259,19 @@ impl eframe::App for MetrajApp {
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
-                    ui.label("Kitap Adı:");
-                    ui.add(TextEdit::singleline(&mut self.duzenleme_adi).desired_width(300.0));
-                    ui.horizontal(|ui| {
-                        ui.label("Yıl:");
-                        egui::ComboBox::from_id_salt("duz_yil").selected_text(format!("{}", self.duzenleme_yil)).width(70.0).show_ui(ui, |ui| {
-                            for y in [2024u32, 2025, 2026, 2027, 2028] {
-                                if ui.selectable_label(self.duzenleme_yil == y, format!("{}", y)).clicked() { self.duzenleme_yil = y; }
-                            }
-                        });
-                        ui.label("Ay:");
-                        egui::ComboBox::from_id_salt("duz_ay").selected_text(format!("{}", self.duzenleme_ay)).width(50.0).show_ui(ui, |ui| {
-                            for a in 1u32..=12 {
-                                if ui.selectable_label(self.duzenleme_ay == a, format!("{}", a)).clicked() { self.duzenleme_ay = a; }
-                            }
-                        });
-                    });
-                    ui.add_space(5.0);
-                    ui.label(RichText::new("⚠ Yıl/Ay değişirse tüm pozlardaki yıl/ay da güncellenir.").color(tema::UYARI).size(12.0));
-                    ui.add_space(5.0);
+                    ui.label("Kurum Adı:");
+                    ui.add(TextEdit::singleline(&mut self.duzenleme_adi).desired_width(320.0));
+                    ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         if tema::basari_buton(ui, "✓ Kaydet").clicked() {
                             if let Some(ref db) = self.db {
                                 let kitap_id = self.duzenlenen_kitap.as_ref().unwrap().id;
-                                let _ = db.kitap_guncelle(kitap_id, &self.duzenleme_adi, self.duzenleme_yil, self.duzenleme_ay);
+                                let _ = db.kitap_guncelle(kitap_id, &self.duzenleme_adi);
                                 self.basarili_mesaj = format!("'{}' güncellendi.", self.duzenleme_adi);
                                 self.duzenlenen_kitap = None;
                                 self.kitaplari_yenile();
-                                // Seçili kitabı da güncelle
                                 if let Some(ref mut sk) = self.secili_kitap {
-                                    if sk.id == kitap_id { sk.ad = self.duzenleme_adi.clone(); sk.yil = self.duzenleme_yil; sk.ay = self.duzenleme_ay; }
+                                    if sk.id == kitap_id { sk.ad = self.duzenleme_adi.clone(); }
                                 }
                             }
                         }

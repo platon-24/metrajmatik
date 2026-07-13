@@ -1,11 +1,93 @@
 use rusqlite::{params, Connection, Result};
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::bicim::krono_tarih;
-use crate::models::{AnalizGirdisi, Kitap, Poz};
+use crate::models::{AnalizGirdisi, Donem, Kitap, Poz};
 
 pub struct Veritabani {
     conn: Connection,
+}
+
+// v2 şema: kitap = KURUM (dönem yok), poz = KİMLİK (kurum içinde bir kez),
+// fiyat = (yıl/ay) indeksli ayrı tablo. Bir poz'un birden çok aylık fiyatı olur.
+const YENI_SEMA: &str = "
+    CREATE TABLE IF NOT EXISTS kitaplar (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ad TEXT NOT NULL UNIQUE,
+        tarih TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS pozlar (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kitap_id INTEGER NOT NULL,
+        poz_no TEXT NOT NULL,
+        tanim TEXT NOT NULL,
+        birim TEXT NOT NULL,
+        kategori TEXT NOT NULL DEFAULT 'DİĞER',
+        tur TEXT NOT NULL DEFAULT 'poz',
+        UNIQUE(kitap_id, poz_no),
+        FOREIGN KEY(kitap_id) REFERENCES kitaplar(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS poz_fiyatlari (
+        poz_id INTEGER NOT NULL,
+        yil INTEGER NOT NULL,
+        ay INTEGER NOT NULL,
+        fiyat REAL,
+        PRIMARY KEY(poz_id, yil, ay),
+        FOREIGN KEY(poz_id) REFERENCES pozlar(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS varsayilan_is_gruplari (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ad TEXT NOT NULL,
+        ust_grup_id INTEGER,
+        sira INTEGER NOT NULL,
+        FOREIGN KEY(ust_grup_id) REFERENCES varsayilan_is_gruplari(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS analiz_girdileri (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kitap_id INTEGER NOT NULL,
+        poz_no TEXT NOT NULL,
+        girdi_no TEXT NOT NULL,
+        tanim TEXT NOT NULL,
+        birim TEXT NOT NULL,
+        birim_fiyat REAL NOT NULL,
+        miktar REAL NOT NULL,
+        tur TEXT NOT NULL DEFAULT 'Malzeme',
+        sira INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_analiz_poz ON analiz_girdileri(kitap_id, poz_no);
+    CREATE INDEX IF NOT EXISTS idx_fiyat_poz ON poz_fiyatlari(poz_id);
+    CREATE VIRTUAL TABLE IF NOT EXISTS pozlar_fts USING fts5(
+        poz_no, tanim, birim, kategori, content='pozlar', content_rowid='id'
+    );
+    CREATE TRIGGER IF NOT EXISTS pozlar_ai AFTER INSERT ON pozlar BEGIN
+        INSERT INTO pozlar_fts(rowid, poz_no, tanim, birim, kategori)
+        VALUES (new.id, new.poz_no, new.tanim, new.birim, new.kategori);
+    END;
+    CREATE TRIGGER IF NOT EXISTS pozlar_ad AFTER DELETE ON pozlar BEGIN
+        INSERT INTO pozlar_fts(pozlar_fts, rowid, poz_no, tanim, birim, kategori)
+        VALUES('delete', old.id, old.poz_no, old.tanim, old.birim, old.kategori);
+    END;
+    CREATE TRIGGER IF NOT EXISTS pozlar_au AFTER UPDATE ON pozlar BEGIN
+        INSERT INTO pozlar_fts(pozlar_fts, rowid, poz_no, tanim, birim, kategori)
+        VALUES('delete', old.id, old.poz_no, old.tanim, old.birim, old.kategori);
+        INSERT INTO pozlar_fts(rowid, poz_no, tanim, birim, kategori)
+        VALUES (new.id, new.poz_no, new.tanim, new.birim, new.kategori);
+    END;
+";
+
+// Bir poz'u EN SON dönem fiyatıyla getiren temel SELECT (arama sonuçları için).
+const POZ_SECIM_BASE: &str = "SELECT p.poz_no, p.tanim, p.birim, f.fiyat, p.kategori, p.kitap_id, k.ad, f.yil, f.ay \
+     FROM pozlar p \
+     JOIN kitaplar k ON k.id = p.kitap_id \
+     JOIN poz_fiyatlari f ON f.poz_id = p.id \
+       AND f.yil * 100 + f.ay = (SELECT MAX(f2.yil * 100 + f2.ay) FROM poz_fiyatlari f2 WHERE f2.poz_id = p.id)";
+
+fn poz_secim_sql(kitap_id: Option<i64>) -> String {
+    match kitap_id {
+        Some(kid) => format!("{} WHERE p.kitap_id = {}", POZ_SECIM_BASE, kid),
+        None => format!("{} WHERE 1 = 1", POZ_SECIM_BASE),
+    }
 }
 
 impl Veritabani {
@@ -17,85 +99,21 @@ impl Veritabani {
     }
 
     fn tablolari_olustur(&self) -> Result<()> {
-        let eski_sema = self.conn.query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('kitaplar') WHERE name='yil'",
+        // v1 (kurum+dönem tek tabloda, pozlar.yil kolonu) tespit edilirse v2'ye göç.
+        // FK zorlaması bu noktada henüz KAPALI (varsayılan) — göç güvenli.
+        let v1 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('pozlar') WHERE name = 'yil'",
             [],
-            |row| row.get::<_, u32>(0),
-        ).unwrap_or(0);
+            |row| row.get::<_, i64>(0),
+        ).unwrap_or(0) > 0;
 
-        if eski_sema == 0 {
-            log::info!("Eski sema, migration yapiliyor...");
-            self.conn.execute_batch(
-                "DROP TABLE IF EXISTS pozlar_fts;
-                 DROP TABLE IF EXISTS pozlar;
-                 DROP TABLE IF EXISTS kitaplar;",
-            )?;
+        if v1 {
+            self.eski_semadan_goc()?;
         }
 
-        self.conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS kitaplar (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ad TEXT NOT NULL,
-                yil INTEGER NOT NULL DEFAULT 2026,
-                ay INTEGER NOT NULL DEFAULT 1,
-                tarih TEXT NOT NULL DEFAULT ''
-            );
-            CREATE TABLE IF NOT EXISTS pozlar (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                poz_no TEXT NOT NULL,
-                tanim TEXT NOT NULL,
-                birim TEXT NOT NULL,
-                fiyat REAL,
-                kategori TEXT NOT NULL,
-                kitap_id INTEGER NOT NULL,
-                kitap_adi TEXT NOT NULL DEFAULT '',
-                yil INTEGER NOT NULL DEFAULT 2026,
-                ay INTEGER NOT NULL DEFAULT 1,
-                UNIQUE(poz_no, kitap_id, yil, ay),
-                FOREIGN KEY(kitap_id) REFERENCES kitaplar(id) ON DELETE CASCADE
-            );
-            CREATE TABLE IF NOT EXISTS varsayilan_is_gruplari (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ad TEXT NOT NULL,
-                ust_grup_id INTEGER,
-                sira INTEGER NOT NULL,
-                FOREIGN KEY(ust_grup_id) REFERENCES varsayilan_is_gruplari(id) ON DELETE CASCADE
-            );
-            CREATE TABLE IF NOT EXISTS analiz_girdileri (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                kitap_id INTEGER NOT NULL,
-                poz_no TEXT NOT NULL,
-                girdi_no TEXT NOT NULL,
-                tanim TEXT NOT NULL,
-                birim TEXT NOT NULL,
-                birim_fiyat REAL NOT NULL,
-                miktar REAL NOT NULL,
-                tur TEXT NOT NULL DEFAULT 'Malzeme',
-                sira INTEGER NOT NULL DEFAULT 0,
-                FOREIGN KEY(kitap_id) REFERENCES kitaplar(id) ON DELETE CASCADE
-            );
-            CREATE INDEX IF NOT EXISTS idx_analiz_poz ON analiz_girdileri(kitap_id, poz_no);
-            CREATE VIRTUAL TABLE IF NOT EXISTS pozlar_fts USING fts5(
-                poz_no, tanim, birim, kategori, kitap_adi,
-                content='pozlar', content_rowid='id'
-            );
-            CREATE TRIGGER IF NOT EXISTS pozlar_ai AFTER INSERT ON pozlar BEGIN
-                INSERT INTO pozlar_fts(rowid, poz_no, tanim, birim, kategori, kitap_adi)
-                VALUES (new.id, new.poz_no, new.tanim, new.birim, new.kategori, new.kitap_adi);
-            END;
-            CREATE TRIGGER IF NOT EXISTS pozlar_ad AFTER DELETE ON pozlar BEGIN
-                INSERT INTO pozlar_fts(pozlar_fts, rowid, poz_no, tanim, birim, kategori, kitap_adi)
-                VALUES('delete', old.id, old.poz_no, old.tanim, old.birim, old.kategori, old.kitap_adi);
-            END;
-            CREATE TRIGGER IF NOT EXISTS pozlar_au AFTER UPDATE ON pozlar BEGIN
-                INSERT INTO pozlar_fts(pozlar_fts, rowid, poz_no, tanim, birim, kategori, kitap_adi)
-                VALUES('delete', old.id, old.poz_no, old.tanim, old.birim, old.kategori, old.kitap_adi);
-                INSERT INTO pozlar_fts(rowid, poz_no, tanim, birim, kategori, kitap_adi)
-                VALUES (new.id, new.poz_no, new.tanim, new.birim, new.kategori, new.kitap_adi);
-            END;",
-        )?;
+        self.conn.execute_batch(YENI_SEMA)?;
 
-        // Tohumlama (Seed)
+        // Tohumlama (yalnızca boşsa)
         let count = self.conn.query_row(
             "SELECT COUNT(*) FROM varsayilan_is_gruplari",
             [],
@@ -122,57 +140,113 @@ impl Veritabani {
         Ok(())
     }
 
-    pub fn kitap_ekle(&self, ad: &str, yil: u32, ay: u32) -> Result<i64> {
-        let tarih = krono_tarih();
-        self.conn.execute(
-            "INSERT INTO kitaplar (ad, yil, ay, tarih) VALUES (?1, ?2, ?3, ?4)",
-            params![ad, yil, ay, tarih],
+    /// v1 (kurum+dönem = ayrı kitap) verisini v2'ye (kurum + dönem-indeksli fiyat) taşır.
+    /// Kitaplar ada göre gruplanır; poz kimlikleri tekilleştirilir; her (yıl/ay) fiyatı
+    /// poz_fiyatlari'na aktarılır; özel pozlar ve analizler korunur (kitap_id yeniden eşlenir).
+    fn eski_semadan_goc(&self) -> Result<()> {
+        log::info!("v1→v2 şema göçü (kurum/dönem modeli) başlıyor...");
+        let tx = self.conn.unchecked_transaction()?;
+
+        // 1. Eski FTS/trigger'ları temizle, eski tabloları yeniden adlandır.
+        //    analiz_girdileri'ni FK'siz yeniden kur (kitaplar rename'i FK'yi bozmasın).
+        tx.execute_batch(
+            "DROP TABLE IF EXISTS pozlar_fts;
+             DROP TRIGGER IF EXISTS pozlar_ai;
+             DROP TRIGGER IF EXISTS pozlar_ad;
+             DROP TRIGGER IF EXISTS pozlar_au;
+             ALTER TABLE kitaplar RENAME TO kitaplar_eski_goc;
+             ALTER TABLE pozlar RENAME TO pozlar_eski_goc;
+             CREATE TABLE analiz_goc (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT, kitap_id INTEGER NOT NULL, poz_no TEXT NOT NULL,
+                 girdi_no TEXT NOT NULL, tanim TEXT NOT NULL, birim TEXT NOT NULL, birim_fiyat REAL NOT NULL,
+                 miktar REAL NOT NULL, tur TEXT NOT NULL DEFAULT 'Malzeme', sira INTEGER NOT NULL DEFAULT 0);
+             INSERT INTO analiz_goc SELECT id, kitap_id, poz_no, girdi_no, tanim, birim, birim_fiyat, miktar, tur, sira FROM analiz_girdileri;
+             DROP TABLE analiz_girdileri;
+             ALTER TABLE analiz_goc RENAME TO analiz_girdileri;",
         )?;
-        Ok(self.conn.last_insert_rowid())
+
+        // 2. Yeni şemayı kur.
+        tx.execute_batch(YENI_SEMA)?;
+
+        // 3. Kurumları (distinct ad) oluştur + eski→yeni kitap eşlemesi.
+        tx.execute("INSERT OR IGNORE INTO kitaplar (ad, tarih) SELECT DISTINCT ad, '' FROM kitaplar_eski_goc", [])?;
+        tx.execute(
+            "CREATE TEMP TABLE kitap_map AS
+             SELECT ek.id AS eski, k.id AS yeni FROM kitaplar_eski_goc ek JOIN kitaplar k ON k.ad = ek.ad", [],
+        )?;
+        let mut map: HashMap<i64, i64> = HashMap::new();
+        {
+            let mut s = tx.prepare("SELECT eski, yeni FROM kitap_map")?;
+            let rows = s.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
+            for row in rows { let (o, n) = row?; map.insert(o, n); }
+        }
+
+        // 4. Eski pozları oku; kimlikleri tekilleştir; fiyatları dönem tablosuna yaz.
+        let mut eski_pozlar: Vec<(String, String, String, Option<f64>, String, i64, u32, u32)> = Vec::new();
+        {
+            let mut s = tx.prepare("SELECT poz_no, tanim, birim, fiyat, kategori, kitap_id, yil, ay FROM pozlar_eski_goc")?;
+            let rows = s.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)))?;
+            for row in rows { if let Ok(t) = row { eski_pozlar.push(t); } }
+        }
+        for (poz_no, tanim, birim, fiyat, kategori, eski_kid, yil, ay) in eski_pozlar {
+            let kurum = match map.get(&eski_kid) { Some(k) => *k, None => continue };
+            tx.execute(
+                "INSERT OR IGNORE INTO pozlar (kitap_id, poz_no, tanim, birim, kategori, tur) VALUES (?1, ?2, ?3, ?4, ?5, 'poz')",
+                params![kurum, poz_no, tanim, birim, kategori],
+            )?;
+            let poz_id: i64 = tx.query_row("SELECT id FROM pozlar WHERE kitap_id = ?1 AND poz_no = ?2", params![kurum, poz_no], |r| r.get(0))?;
+            tx.execute("INSERT OR REPLACE INTO poz_fiyatlari (poz_id, yil, ay, fiyat) VALUES (?1, ?2, ?3, ?4)", params![poz_id, yil, ay, fiyat])?;
+        }
+
+        // 5. Analizlerin kitap_id'sini yeni kurum id'lerine eşle (çakışmasız, tek UPDATE).
+        tx.execute(
+            "UPDATE analiz_girdileri SET kitap_id = (SELECT yeni FROM kitap_map WHERE eski = analiz_girdileri.kitap_id)
+             WHERE kitap_id IN (SELECT eski FROM kitap_map)", [],
+        )?;
+
+        // 6. Eski tabloları düşür.
+        tx.execute_batch("DROP TABLE kitaplar_eski_goc; DROP TABLE pozlar_eski_goc; DROP TABLE kitap_map;")?;
+        tx.commit()?;
+        log::info!("Göç tamamlandı.");
+        Ok(())
     }
 
+    // ==================== KİTAP (KURUM) ====================
+    /// Kurum ekler (varsa mevcut id'yi döndürür).
+    pub fn kitap_ekle(&self, ad: &str) -> Result<i64> {
+        let tarih = krono_tarih();
+        self.conn.execute("INSERT OR IGNORE INTO kitaplar (ad, tarih) VALUES (?1, ?2)", params![ad, tarih])?;
+        self.conn.query_row("SELECT id FROM kitaplar WHERE ad = ?1", params![ad], |r| r.get(0))
+    }
+
+    /// Her kurum için: en son dönem (görüntü) ve toplam (tekil) poz sayısı.
     pub fn kitaplari_listele(&self) -> Result<Vec<Kitap>> {
         let mut stmt = self.conn.prepare(
-            "SELECT k.id, k.ad, k.yil, k.ay, COUNT(p.id), k.tarih
-             FROM kitaplar k LEFT JOIN pozlar p ON p.kitap_id = k.id AND p.yil = k.yil AND p.ay = k.ay
-             GROUP BY k.id ORDER BY k.yil DESC, k.ay DESC, k.id",
+            "SELECT k.id, k.ad,
+                COALESCE((SELECT f.yil FROM poz_fiyatlari f JOIN pozlar p ON p.id = f.poz_id
+                          WHERE p.kitap_id = k.id ORDER BY f.yil DESC, f.ay DESC LIMIT 1), 0),
+                COALESCE((SELECT f.ay FROM poz_fiyatlari f JOIN pozlar p ON p.id = f.poz_id
+                          WHERE p.kitap_id = k.id ORDER BY f.yil DESC, f.ay DESC LIMIT 1), 0),
+                (SELECT COUNT(*) FROM pozlar p WHERE p.kitap_id = k.id),
+                k.tarih
+             FROM kitaplar k ORDER BY k.ad",
         )?;
         let sonuc = stmt.query_map([], |row| {
-            Ok(Kitap {
-                id: row.get(0)?,
-                ad: row.get(1)?,
-                yil: row.get(2)?,
-                ay: row.get(3)?,
-                poz_sayisi: row.get(4)?,
-                tarih: row.get(5)?,
-            })
+            Ok(Kitap { id: row.get(0)?, ad: row.get(1)?, yil: row.get(2)?, ay: row.get(3)?, poz_sayisi: row.get(4)?, tarih: row.get(5)? })
         })?.filter_map(|k| k.ok()).collect();
         Ok(sonuc)
     }
 
-    pub fn kitap_sil(&self, kitap_id: i64) -> Result<()> {
-        self.conn.execute("DELETE FROM pozlar WHERE kitap_id = ?1", params![kitap_id])?;
-        self.conn.execute("DELETE FROM kitaplar WHERE id = ?1", params![kitap_id])?;
-        Ok(())
-    }
-
-    pub fn kitap_guncelle(&self, kitap_id: i64, ad: &str, yil: u32, ay: u32) -> Result<()> {
-        self.conn.execute(
-            "UPDATE kitaplar SET ad = ?1, yil = ?2, ay = ?3 WHERE id = ?4",
-            params![ad, yil, ay, kitap_id],
-        )?;
-        // Pozlardaki yıl/ay ve kitap adını da güncelle
-        self.conn.execute(
-            "UPDATE pozlar SET kitap_adi = ?1, yil = ?2, ay = ?3 WHERE kitap_id = ?4",
-            params![ad, yil, ay, kitap_id],
-        )?;
-        Ok(())
-    }
-
     pub fn kitap_getir(&self, kitap_id: i64) -> Result<Option<Kitap>> {
         let mut stmt = self.conn.prepare(
-            "SELECT k.id, k.ad, k.yil, k.ay, COUNT(p.id), k.tarih FROM kitaplar k
-             LEFT JOIN pozlar p ON p.kitap_id = k.id WHERE k.id = ?1 GROUP BY k.id",
+            "SELECT k.id, k.ad,
+                COALESCE((SELECT f.yil FROM poz_fiyatlari f JOIN pozlar p ON p.id = f.poz_id
+                          WHERE p.kitap_id = k.id ORDER BY f.yil DESC, f.ay DESC LIMIT 1), 0),
+                COALESCE((SELECT f.ay FROM poz_fiyatlari f JOIN pozlar p ON p.id = f.poz_id
+                          WHERE p.kitap_id = k.id ORDER BY f.yil DESC, f.ay DESC LIMIT 1), 0),
+                (SELECT COUNT(*) FROM pozlar p WHERE p.kitap_id = k.id),
+                k.tarih
+             FROM kitaplar k WHERE k.id = ?1",
         )?;
         let mut sonuc = stmt.query_map(params![kitap_id], |row| {
             Ok(Kitap { id: row.get(0)?, ad: row.get(1)?, yil: row.get(2)?, ay: row.get(3)?, poz_sayisi: row.get(4)?, tarih: row.get(5)? })
@@ -180,55 +254,107 @@ impl Veritabani {
         Ok(sonuc.next())
     }
 
-    pub fn pozlari_yukle(&self, kitap_id: i64, kitap: &Kitap, pozlar: &[Poz]) -> Result<usize> {
-        self.conn.execute("DELETE FROM pozlar WHERE kitap_id = ?1 AND yil = ?2 AND ay = ?3",
-            params![kitap_id, kitap.yil, kitap.ay])?;
-
+    /// Bir kurumun sahip olduğu dönemler (yıl/ay) ve her dönemdeki poz sayısı.
+    pub fn donemler(&self, kitap_id: i64) -> Result<Vec<Donem>> {
         let mut stmt = self.conn.prepare(
-            "INSERT INTO pozlar (poz_no, tanim, birim, fiyat, kategori, kitap_id, kitap_adi, yil, ay)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "SELECT f.yil, f.ay, COUNT(*) FROM poz_fiyatlari f JOIN pozlar p ON p.id = f.poz_id
+             WHERE p.kitap_id = ?1 GROUP BY f.yil, f.ay ORDER BY f.yil DESC, f.ay DESC",
         )?;
-        let mut eklenen = 0;
-        for poz in pozlar {
-            stmt.execute(params![poz.poz_no, poz.tanim, poz.birim, poz.fiyat, poz.kategori, kitap_id, kitap.ad, kitap.yil, kitap.ay])?;
-            eklenen += 1;
-        }
-        Ok(eklenen)
+        let rows = stmt.query_map(params![kitap_id], |row| {
+            Ok(Donem { yil: row.get(0)?, ay: row.get(1)?, poz_sayisi: row.get(2)? })
+        })?;
+        Ok(rows.filter_map(|d| d.ok()).collect())
     }
 
-    pub fn poz_ekle(&self, kitap: &Kitap, poz_no: &str, tanim: &str, birim: &str, fiyat: Option<f64>, kategori: &str) -> Result<()> {
+    pub fn kitap_sil(&self, kitap_id: i64) -> Result<()> {
+        // FK cascade pozlar+fiyatları siler; analiz'i (FK yok) elle sil.
+        self.conn.execute("DELETE FROM analiz_girdileri WHERE kitap_id = ?1", params![kitap_id])?;
+        self.conn.execute("DELETE FROM kitaplar WHERE id = ?1", params![kitap_id])?;
+        Ok(())
+    }
+
+    pub fn kitap_guncelle(&self, kitap_id: i64, ad: &str) -> Result<()> {
+        self.conn.execute("UPDATE kitaplar SET ad = ?1 WHERE id = ?2", params![ad, kitap_id])?;
+        Ok(())
+    }
+
+    /// Belirli bir dönemin fiyatlarını temizler (o dönemi tamamen kaldırmak için).
+    pub fn donem_sil(&self, kitap_id: i64, yil: u32, ay: u32) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO pozlar (poz_no, tanim, birim, fiyat, kategori, kitap_id, kitap_adi, yil, ay)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![poz_no, tanim, birim, fiyat, kategori, kitap.id, kitap.ad, kitap.yil, kitap.ay],
+            "DELETE FROM poz_fiyatlari WHERE yil = ?1 AND ay = ?2 AND poz_id IN (SELECT id FROM pozlar WHERE kitap_id = ?3)",
+            params![yil, ay, kitap_id],
+        )?;
+        // Artık hiç fiyatı kalmayan poz kimliklerini de temizle
+        self.conn.execute(
+            "DELETE FROM pozlar WHERE kitap_id = ?1 AND id NOT IN (SELECT DISTINCT poz_id FROM poz_fiyatlari)",
+            params![kitap_id],
         )?;
         Ok(())
     }
 
-    pub fn poz_guncelle(&self, kitap: &Kitap, eski_poz_no: &str, poz_no: &str, tanim: &str, birim: &str, fiyat: Option<f64>, kategori: &str) -> Result<()> {
-        self.conn.execute(
-            "UPDATE pozlar
-             SET poz_no = ?1, tanim = ?2, birim = ?3, fiyat = ?4, kategori = ?5, kitap_adi = ?6, yil = ?7, ay = ?8
-             WHERE kitap_id = ?9 AND poz_no = ?10",
-            params![poz_no, tanim, birim, fiyat, kategori, kitap.ad, kitap.yil, kitap.ay, kitap.id, eski_poz_no],
+    // ==================== POZ ====================
+    /// Bir kuruma, verilen dönem için PDF'ten çıkan pozları yükler. Poz kimliği
+    /// (kurum + poz_no) yoksa oluşturulur; o dönemin fiyatı yazılır (yeniden import
+    /// aynı dönemi değiştirir).
+    pub fn pozlari_yukle(&self, kitap_id: i64, yil: u32, ay: u32, pozlar: &[Poz]) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
+            "DELETE FROM poz_fiyatlari WHERE yil = ?1 AND ay = ?2 AND poz_id IN (SELECT id FROM pozlar WHERE kitap_id = ?3)",
+            params![yil, ay, kitap_id],
         )?;
+        let mut eklenen = 0usize;
+        for poz in pozlar {
+            tx.execute(
+                "INSERT OR IGNORE INTO pozlar (kitap_id, poz_no, tanim, birim, kategori, tur) VALUES (?1, ?2, ?3, ?4, ?5, 'poz')",
+                params![kitap_id, poz.poz_no, poz.tanim, poz.birim, poz.kategori],
+            )?;
+            let poz_id: i64 = tx.query_row("SELECT id FROM pozlar WHERE kitap_id = ?1 AND poz_no = ?2", params![kitap_id, poz.poz_no], |r| r.get(0))?;
+            tx.execute("INSERT OR REPLACE INTO poz_fiyatlari (poz_id, yil, ay, fiyat) VALUES (?1, ?2, ?3, ?4)", params![poz_id, yil, ay, poz.fiyat])?;
+            eklenen += 1;
+        }
+        tx.commit()?;
+        Ok(eklenen)
+    }
+
+    pub fn poz_ekle(&self, kitap_id: i64, yil: u32, ay: u32, poz_no: &str, tanim: &str, birim: &str, fiyat: Option<f64>, kategori: &str) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
+            "INSERT OR IGNORE INTO pozlar (kitap_id, poz_no, tanim, birim, kategori, tur) VALUES (?1, ?2, ?3, ?4, ?5, 'poz')",
+            params![kitap_id, poz_no, tanim, birim, kategori],
+        )?;
+        tx.execute(
+            "UPDATE pozlar SET tanim = ?1, birim = ?2, kategori = ?3 WHERE kitap_id = ?4 AND poz_no = ?5",
+            params![tanim, birim, kategori, kitap_id, poz_no],
+        )?;
+        let poz_id: i64 = tx.query_row("SELECT id FROM pozlar WHERE kitap_id = ?1 AND poz_no = ?2", params![kitap_id, poz_no], |r| r.get(0))?;
+        tx.execute("INSERT OR REPLACE INTO poz_fiyatlari (poz_id, yil, ay, fiyat) VALUES (?1, ?2, ?3, ?4)", params![poz_id, yil, ay, fiyat])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn poz_guncelle(&self, kitap_id: i64, yil: u32, ay: u32, eski_poz_no: &str, poz_no: &str, tanim: &str, birim: &str, fiyat: Option<f64>, kategori: &str) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
+            "UPDATE pozlar SET poz_no = ?1, tanim = ?2, birim = ?3, kategori = ?4 WHERE kitap_id = ?5 AND poz_no = ?6",
+            params![poz_no, tanim, birim, kategori, kitap_id, eski_poz_no],
+        )?;
+        let poz_id: i64 = tx.query_row("SELECT id FROM pozlar WHERE kitap_id = ?1 AND poz_no = ?2", params![kitap_id, poz_no], |r| r.get(0))?;
+        tx.execute("INSERT OR REPLACE INTO poz_fiyatlari (poz_id, yil, ay, fiyat) VALUES (?1, ?2, ?3, ?4)", params![poz_id, yil, ay, fiyat])?;
+        tx.commit()?;
         Ok(())
     }
 
     pub fn poz_sil(&self, kitap_id: i64, poz_no: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM pozlar WHERE kitap_id = ?1 AND poz_no = ?2",
-            params![kitap_id, poz_no],
-        )?;
+        // FK cascade fiyatları siler; analiz'i (FK yok) elle sil.
+        self.conn.execute("DELETE FROM analiz_girdileri WHERE kitap_id = ?1 AND poz_no = ?2", params![kitap_id, poz_no])?;
+        self.conn.execute("DELETE FROM pozlar WHERE kitap_id = ?1 AND poz_no = ?2", params![kitap_id, poz_no])?;
         Ok(())
     }
 
-    /// Yalnızca bir pozun birim fiyatını günceller (analiz sonucunu poza uygularken).
-    pub fn poz_fiyat_guncelle(&self, kitap_id: i64, poz_no: &str, fiyat: f64) -> Result<()> {
-        self.conn.execute(
-            "UPDATE pozlar SET fiyat = ?1 WHERE kitap_id = ?2 AND poz_no = ?3",
-            params![fiyat, kitap_id, poz_no],
-        )?;
+    /// Analiz sonucunu pozun BELİRLİ dönem fiyatı yapar (yoksa o dönemi ekler).
+    pub fn poz_fiyat_guncelle(&self, kitap_id: i64, poz_no: &str, yil: u32, ay: u32, fiyat: f64) -> Result<()> {
+        let poz_id: i64 = self.conn.query_row("SELECT id FROM pozlar WHERE kitap_id = ?1 AND poz_no = ?2", params![kitap_id, poz_no], |r| r.get(0))?;
+        self.conn.execute("INSERT OR REPLACE INTO poz_fiyatlari (poz_id, yil, ay, fiyat) VALUES (?1, ?2, ?3, ?4)", params![poz_id, yil, ay, fiyat])?;
         Ok(())
     }
 
@@ -268,29 +394,20 @@ impl Veritabani {
         Ok(())
     }
 
-    /// Bir kitapta analizi (girdisi) olan poz numaralarını döndürür (rozet için).
+    /// Bir kurumda analizi olan poz numaraları (rozet için).
     pub fn analizli_poz_nolari(&self, kitap_id: i64) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT poz_no FROM analiz_girdileri WHERE kitap_id = ?1",
-        )?;
+        let mut stmt = self.conn.prepare("SELECT DISTINCT poz_no FROM analiz_girdileri WHERE kitap_id = ?1")?;
         let rows = stmt.query_map(params![kitap_id], |r| r.get::<_, String>(0))?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
-    fn poz_secim_sql(&self, kitap_id: Option<i64>) -> String {
-        if let Some(kid) = kitap_id {
-            format!("SELECT poz_no, tanim, birim, fiyat, kategori, kitap_id, kitap_adi, yil, ay FROM pozlar WHERE kitap_id = {}", kid)
-        } else {
-            "SELECT poz_no, tanim, birim, fiyat, kategori, kitap_id, kitap_adi, yil, ay FROM pozlar WHERE 1 = 1".to_string()
-        }
-    }
-
+    // ==================== ARAMA (hep EN SON dönem fiyatı) ====================
     fn poz_map(row: &rusqlite::Row) -> rusqlite::Result<Poz> {
         Ok(Poz { poz_no: row.get(0)?, tanim: row.get(1)?, birim: row.get(2)?, fiyat: row.get(3)?, kategori: row.get(4)?, kitap_id: row.get(5)?, kitap_adi: row.get(6)?, yil: row.get(7)?, ay: row.get(8)? })
     }
 
     pub fn poz_no_ara(&self, poz_no: &str, kitap_id: Option<i64>) -> Result<Vec<Poz>> {
-        let sql = format!("{} AND poz_no LIKE ?1 ORDER BY poz_no LIMIT 50", self.poz_secim_sql(kitap_id));
+        let sql = format!("{} AND p.poz_no LIKE ?1 ORDER BY p.poz_no LIMIT 50", poz_secim_sql(kitap_id));
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![format!("{}%", poz_no)], Self::poz_map)?;
         Ok(rows.filter_map(|p| p.ok()).collect())
@@ -300,8 +417,11 @@ impl Veritabani {
         let terimler: Vec<String> = sorgu.split_whitespace().map(|t| format!("\"{}\"*", t.replace('"', ""))).collect();
         let kitap_filtre = if let Some(kid) = kitap_id { format!(" AND p.kitap_id = {}", kid) } else { String::new() };
         let sql = format!(
-            "SELECT p.poz_no, p.tanim, p.birim, p.fiyat, p.kategori, p.kitap_id, p.kitap_adi, p.yil, p.ay
-             FROM pozlar_fts f JOIN pozlar p ON f.rowid = p.id
+            "SELECT p.poz_no, p.tanim, p.birim, f.fiyat, p.kategori, p.kitap_id, k.ad, f.yil, f.ay
+             FROM pozlar_fts ft
+             JOIN pozlar p ON ft.rowid = p.id
+             JOIN kitaplar k ON k.id = p.kitap_id
+             JOIN poz_fiyatlari f ON f.poz_id = p.id AND f.yil * 100 + f.ay = (SELECT MAX(f2.yil * 100 + f2.ay) FROM poz_fiyatlari f2 WHERE f2.poz_id = p.id)
              WHERE pozlar_fts MATCH ?1 {} ORDER BY rank LIMIT 100", kitap_filtre);
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![terimler.join(" AND ")], Self::poz_map)?;
@@ -309,18 +429,14 @@ impl Veritabani {
     }
 
     pub fn poz_getir(&self, poz_no: &str, kitap_id: Option<i64>) -> Result<Option<Poz>> {
-        let sql = if let Some(kid) = kitap_id {
-            format!("{} AND poz_no = ?1 LIMIT 1", self.poz_secim_sql(Some(kid)))
-        } else {
-            format!("{} AND poz_no = ?1 LIMIT 1", self.poz_secim_sql(None))
-        };
+        let sql = format!("{} AND p.poz_no = ?1 LIMIT 1", poz_secim_sql(kitap_id));
         let mut stmt = self.conn.prepare(&sql)?;
         let mut rows = stmt.query_map(params![poz_no], Self::poz_map)?;
         Ok(rows.next().transpose()?)
     }
 
     pub fn tum_pozlar(&self, kitap_id: Option<i64>) -> Result<Vec<Poz>> {
-        let sql = format!("{} ORDER BY poz_no", self.poz_secim_sql(kitap_id));
+        let sql = format!("{} ORDER BY p.poz_no", poz_secim_sql(kitap_id));
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map([], Self::poz_map)?;
         Ok(rows.filter_map(|p| p.ok()).collect())
@@ -329,21 +445,17 @@ impl Veritabani {
     pub fn pozlari_listele(&self, kitap_id: i64, arama: &str) -> Result<Vec<Poz>> {
         let arama = arama.trim();
         if arama.is_empty() {
-            let mut stmt = self.conn.prepare(
-                "SELECT poz_no, tanim, birim, fiyat, kategori, kitap_id, kitap_adi, yil, ay
-                 FROM pozlar WHERE kitap_id = ?1 ORDER BY poz_no",
-            )?;
-            let rows = stmt.query_map(params![kitap_id], Self::poz_map)?;
+            let sql = format!("{} ORDER BY p.poz_no", poz_secim_sql(Some(kitap_id)));
+            let mut stmt = self.conn.prepare(&sql)?;
+            let rows = stmt.query_map([], Self::poz_map)?;
             return Ok(rows.filter_map(|p| p.ok()).collect());
         }
-
-        let mut stmt = self.conn.prepare(
-            "SELECT poz_no, tanim, birim, fiyat, kategori, kitap_id, kitap_adi, yil, ay
-             FROM pozlar
-             WHERE kitap_id = ?1 AND (poz_no LIKE ?2 OR tanim LIKE ?2 OR birim LIKE ?2 OR kategori LIKE ?2)
-             ORDER BY poz_no",
-        )?;
-        let rows = stmt.query_map(params![kitap_id, format!("%{}%", arama)], Self::poz_map)?;
+        let sql = format!(
+            "{} AND (p.poz_no LIKE ?1 OR p.tanim LIKE ?1 OR p.birim LIKE ?1 OR p.kategori LIKE ?1) ORDER BY p.poz_no",
+            poz_secim_sql(Some(kitap_id)),
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![format!("%{}%", arama)], Self::poz_map)?;
         Ok(rows.filter_map(|p| p.ok()).collect())
     }
 
@@ -356,6 +468,7 @@ impl Veritabani {
         Ok(rows.filter_map(|k| k.ok()).collect())
     }
 
+    /// Tekil poz kimliği sayısı.
     pub fn poz_sayisi(&self) -> Result<u32> {
         self.conn.query_row("SELECT COUNT(*) FROM pozlar", [], |row| row.get(0))
     }
@@ -400,50 +513,96 @@ impl Veritabani {
 mod testler {
     use super::Veritabani;
     use crate::models::AnalizGirdisi;
+    use rusqlite::Connection;
     use std::sync::atomic::{AtomicU32, Ordering};
 
     static SAYAC: AtomicU32 = AtomicU32::new(0);
 
-    fn gecici_db() -> (Veritabani, std::path::PathBuf) {
+    fn gecici_yol() -> std::path::PathBuf {
         let n = SAYAC.fetch_add(1, Ordering::SeqCst);
         let mut yol = std::env::temp_dir();
-        yol.push(format!("mm_test_{}_{}.db", std::process::id(), n));
+        yol.push(format!("mm_db_{}_{}.db", std::process::id(), n));
         let _ = std::fs::remove_file(&yol);
-        (Veritabani::ac(&yol).unwrap(), yol)
+        yol
     }
 
-    fn ornek_girdiler() -> Vec<AnalizGirdisi> {
-        vec![
-            AnalizGirdisi { girdi_no: "10.100.1001".into(), tanim: "Düz işçi".into(), birim: "saat".into(), birim_fiyat: 100.0, miktar: 2.0, tur: "İşçilik".into() },
-            AnalizGirdisi { girdi_no: "10.130.1001".into(), tanim: "Çimento".into(), birim: "kg".into(), birim_fiyat: 5.0, miktar: 50.0, tur: "Malzeme".into() },
-        ]
+    #[test]
+    fn en_son_donem_fiyati_gelir() {
+        let yol = gecici_yol();
+        let db = Veritabani::ac(&yol).unwrap();
+        let kid = db.kitap_ekle("ÇŞB").unwrap();
+        // Aynı poz, iki dönem
+        db.poz_ekle(kid, 2026, 5, "15.150.1001", "Beton", "m³", Some(800.0), "Beton").unwrap();
+        db.poz_ekle(kid, 2026, 6, "15.150.1001", "Beton", "m³", Some(900.0), "Beton").unwrap();
+        // Arama en son (6/2026) fiyatı vermeli
+        let p = db.poz_getir("15.150.1001", Some(kid)).unwrap().unwrap();
+        assert_eq!(p.fiyat, Some(900.0));
+        assert_eq!((p.yil, p.ay), (2026, 6));
+        // Tek kimlik (kurum içinde poz bir kez)
+        assert_eq!(db.poz_sayisi().unwrap(), 1);
+        // İki dönem görünür
+        let d = db.donemler(kid).unwrap();
+        assert_eq!(d.len(), 2);
+        assert_eq!((d[0].yil, d[0].ay), (2026, 6));
+        drop(db);
+        let _ = std::fs::remove_file(&yol);
     }
 
     #[test]
     fn analiz_kaydet_getir_ve_fiyat_uygula() {
-        let (db, yol) = gecici_db();
-        let kid = db.kitap_ekle("Test", 2026, 5).unwrap();
-        let kitap = db.kitap_getir(kid).unwrap().unwrap();
-        db.poz_ekle(&kitap, "15.100.1001", "Test poz", "m³", None, "Beton").unwrap();
-
-        // Kaydet + oku (round-trip, sıra korunur)
-        db.analiz_kaydet(kid, "15.100.1001", &ornek_girdiler()).unwrap();
-        let okunan = db.analiz_getir(kid, "15.100.1001").unwrap();
-        assert_eq!(okunan.len(), 2);
-        assert_eq!(okunan[0].girdi_no, "10.100.1001");
-        assert_eq!(okunan[1].miktar, 50.0);
-
-        // Analizli poz listesi (rozet)
+        let yol = gecici_yol();
+        let db = Veritabani::ac(&yol).unwrap();
+        let kid = db.kitap_ekle("Test").unwrap();
+        db.poz_ekle(kid, 2026, 5, "15.100.1001", "Test poz", "m³", None, "Beton").unwrap();
+        let girdiler = vec![
+            AnalizGirdisi { girdi_no: "10.100.1001".into(), tanim: "işçi".into(), birim: "saat".into(), birim_fiyat: 100.0, miktar: 2.0, tur: "İşçilik".into() },
+            AnalizGirdisi { girdi_no: "10.130".into(), tanim: "çimento".into(), birim: "kg".into(), birim_fiyat: 5.0, miktar: 50.0, tur: "Malzeme".into() },
+        ];
+        db.analiz_kaydet(kid, "15.100.1001", &girdiler).unwrap();
+        assert_eq!(db.analiz_getir(kid, "15.100.1001").unwrap().len(), 2);
         assert!(db.analizli_poz_nolari(kid).unwrap().contains(&"15.100.1001".to_string()));
-
-        // Sonucu poz fiyatı yap
-        db.poz_fiyat_guncelle(kid, "15.100.1001", 562.5).unwrap();
+        // Analiz sonucunu poz fiyatı yap (5/2026)
+        db.poz_fiyat_guncelle(kid, "15.100.1001", 2026, 5, 562.5).unwrap();
         assert_eq!(db.poz_getir("15.100.1001", Some(kid)).unwrap().unwrap().fiyat, Some(562.5));
+        drop(db);
+        let _ = std::fs::remove_file(&yol);
+    }
 
-        // Yeniden kaydet = değiştir (eski girdiler silinir)
-        db.analiz_kaydet(kid, "15.100.1001", &ornek_girdiler()[..1]).unwrap();
-        assert_eq!(db.analiz_getir(kid, "15.100.1001").unwrap().len(), 1);
-
+    #[test]
+    fn v1_semasindan_goc() {
+        let yol = gecici_yol();
+        // Elle v1 şema oluştur (kurum+dönem ayrı kitap, pozlar.yil)
+        {
+            let c = Connection::open(&yol).unwrap();
+            c.execute_batch(
+                "CREATE TABLE kitaplar (id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT NOT NULL, yil INTEGER, ay INTEGER, tarih TEXT DEFAULT '');
+                 CREATE TABLE pozlar (id INTEGER PRIMARY KEY AUTOINCREMENT, poz_no TEXT, tanim TEXT, birim TEXT, fiyat REAL, kategori TEXT, kitap_id INTEGER, kitap_adi TEXT, yil INTEGER, ay INTEGER);
+                 CREATE TABLE analiz_girdileri (id INTEGER PRIMARY KEY AUTOINCREMENT, kitap_id INTEGER, poz_no TEXT, girdi_no TEXT, tanim TEXT, birim TEXT, birim_fiyat REAL, miktar REAL, tur TEXT, sira INTEGER);",
+            ).unwrap();
+            // Aynı kurum (ÇŞB) iki dönem = iki eski kitap
+            c.execute("INSERT INTO kitaplar (id, ad, yil, ay) VALUES (1,'ÇŞB',2026,5)", []).unwrap();
+            c.execute("INSERT INTO kitaplar (id, ad, yil, ay) VALUES (2,'ÇŞB',2026,6)", []).unwrap();
+            c.execute("INSERT INTO pozlar (poz_no,tanim,birim,fiyat,kategori,kitap_id,kitap_adi,yil,ay) VALUES ('15.150.1001','Beton','m³',800.0,'Beton',1,'ÇŞB',2026,5)", []).unwrap();
+            c.execute("INSERT INTO pozlar (poz_no,tanim,birim,fiyat,kategori,kitap_id,kitap_adi,yil,ay) VALUES ('15.150.1001','Beton','m³',900.0,'Beton',2,'ÇŞB',2026,6)", []).unwrap();
+            // Özel poz (yalnız 6/2026) + analiz (eski kitap_id=2)
+            c.execute("INSERT INTO pozlar (poz_no,tanim,birim,fiyat,kategori,kitap_id,kitap_adi,yil,ay) VALUES ('OZ.1','Özel','ad',10.0,'Özel',2,'ÇŞB',2026,6)", []).unwrap();
+            c.execute("INSERT INTO analiz_girdileri (kitap_id,poz_no,girdi_no,tanim,birim,birim_fiyat,miktar,tur,sira) VALUES (2,'OZ.1','R1','rayic','ad',5.0,2.0,'Malzeme',0)", []).unwrap();
+        }
+        // Aç → göç tetiklenir
+        let db = Veritabani::ac(&yol).unwrap();
+        // Tek kurum, tek poz kimliği (Beton) + özel poz = 2 kimlik
+        let kitaplar = db.kitaplari_listele().unwrap();
+        assert_eq!(kitaplar.len(), 1);
+        let kid = kitaplar[0].id;
+        assert_eq!(kitaplar[0].ad, "ÇŞB");
+        assert_eq!(db.poz_sayisi().unwrap(), 2);
+        // Beton en son 6/2026 = 900
+        let beton = db.poz_getir("15.150.1001", Some(kid)).unwrap().unwrap();
+        assert_eq!(beton.fiyat, Some(900.0));
+        // İki dönem korunmuş
+        assert_eq!(db.donemler(kid).unwrap().len(), 2);
+        // Analiz remap edilmiş (yeni kurum id ile erişilebilir)
+        assert_eq!(db.analiz_getir(kid, "OZ.1").unwrap().len(), 1);
         drop(db);
         let _ = std::fs::remove_file(&yol);
     }

@@ -13,6 +13,8 @@ pub struct Poz {
     pub ay: u32,
 }
 
+/// Bir kurum (kitap). yil/ay artık kurumun EN SON dönemini (görüntü) taşır;
+/// dönemler ayrı bir kavramdır (bkz. [`Donem`]).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Kitap {
     pub id: i64,
@@ -21,6 +23,14 @@ pub struct Kitap {
     pub ay: u32,
     pub poz_sayisi: u32,
     pub tarih: String,
+}
+
+/// Bir kurumun sahip olduğu bir fiyat dönemi (yıl/ay) ve o dönemdeki poz sayısı.
+#[derive(Debug, Clone)]
+pub struct Donem {
+    pub yil: u32,
+    pub ay: u32,
+    pub poz_sayisi: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

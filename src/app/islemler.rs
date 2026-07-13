@@ -254,14 +254,16 @@ impl MetrajApp {
     // ==================== DOSYA ====================
     pub(crate) fn pdf_sec_ve_yukle(&mut self) { if let Some(y) = rfd::FileDialog::new().add_filter("PDF", &["pdf"]).pick_file() { self.pdf_yukle(y); } }
     pub(crate) fn pdf_yukle(&mut self, pdf_yolu: PathBuf) {
-        let kitap = match self.secili_kitap.clone() { Some(k) => k, None => { self.hata_mesaji = "Once hedef kitap secin!".into(); return; } };
+        let kitap = match self.secili_kitap.clone() { Some(k) => k, None => { self.hata_mesaji = "Once hedef kurum secin!".into(); return; } };
+        // Import dönemi: PDF Yükle ekranındaki yıl/ay seçimi.
+        let (yil, ay) = (self.yeni_kitap_yil, self.yeni_kitap_ay);
         self.pdf_yukleniyor = true; self.pdf_durumu = format!("PDF okunuyor...");
         match pdf_metin_cikar(&pdf_yolu) {
             Ok(metin) => {
-                let pozlar = pozlari_ayristir(&metin, kitap.id, &kitap.ad, kitap.yil, kitap.ay);
+                let pozlar = pozlari_ayristir(&metin, kitap.id, &kitap.ad, yil, ay);
                 self.pdf_durumu = format!("{} poz ayrıştırıldı.", pozlar.len());
-                if let Some(ref db) = self.db { match db.pozlari_yukle(kitap.id, &kitap, &pozlar) {
-                    Ok(sayi) => { self.poz_sayisi = db.poz_sayisi().unwrap_or(0); self.basarili_mesaj = format!("✅ {} ({}/{}) kitabina {} poz yuklendi!", kitap.ad, kitap.ay, kitap.yil, sayi); self.pdf_durumu = format!("✅ {} poz yuklendi.", sayi); if let Ok(Some(yk)) = db.kitap_getir(kitap.id) { self.secili_kitap = Some(yk); } self.kitaplari_yenile(); self.pozlar_tablosu_yenile(); }
+                if let Some(ref db) = self.db { match db.pozlari_yukle(kitap.id, yil, ay, &pozlar) {
+                    Ok(sayi) => { self.poz_sayisi = db.poz_sayisi().unwrap_or(0); self.basarili_mesaj = format!("✅ {} kurumuna {}/{} dönemi için {} poz yuklendi!", kitap.ad, ay, yil, sayi); self.pdf_durumu = format!("✅ {} poz yuklendi.", sayi); if let Ok(Some(yk)) = db.kitap_getir(kitap.id) { self.secili_kitap = Some(yk); } self.kitaplari_yenile(); self.pozlar_tablosu_yenile(); }
                     Err(e) => self.hata_mesaji = format!("{}", e),
                 }}
             }

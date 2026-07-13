@@ -184,7 +184,8 @@ impl MetrajApp {
                 if let Err(e) = db.analiz_kaydet(poz.kitap_id, &poz.poz_no, &girdiler) {
                     self.hata_mesaji = format!("Analiz kaydedilemedi: {}", e);
                 } else if poz_fiyati_yap {
-                    match db.poz_fiyat_guncelle(poz.kitap_id, &poz.poz_no, sonuc) {
+                    // Analiz sonucunu pozun en son dönemine (poz.yil/ay) yaz.
+                    match db.poz_fiyat_guncelle(poz.kitap_id, &poz.poz_no, poz.yil, poz.ay, sonuc) {
                         Ok(()) => self.basarili_mesaj = format!("{} analizi kaydedildi; birim fiyat {} TL yapıldı.", poz.poz_no, para_formatla(sonuc)),
                         Err(e) => self.hata_mesaji = format!("Fiyat güncellenemedi: {}", e),
                     }
