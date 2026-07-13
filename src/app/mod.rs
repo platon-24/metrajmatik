@@ -77,6 +77,7 @@ pub struct MetrajApp {
     // Kitap düzenleme
     duzenlenen_kitap: Option<Kitap>,
     duzenleme_adi: String,
+    silinecek_kitap: Option<Kitap>,
     fiyat_guncelle_hedef: Option<Kitap>,
     cift_tiklama_ekle: bool,
     pdf_durumu: String,
@@ -187,7 +188,7 @@ impl Default for MetrajApp {
             poz_arama_metni: String::new(), akilli_arama_metni: String::new(), arama_sonuclari: vec![], secili_poz: None,
             aciklama_arama_metni: String::new(), yeni_poz_no: String::new(),
             yeni_kitap_adi: String::new(), yeni_kitap_yil: 2026, yeni_kitap_ay: 5,
-            duzenlenen_kitap: None, duzenleme_adi: String::new(),
+            duzenlenen_kitap: None, duzenleme_adi: String::new(), silinecek_kitap: None,
             fiyat_guncelle_hedef: None,
             cift_tiklama_ekle: false,
             pdf_durumu: String::new(), pdf_yukleniyor: false,
@@ -284,6 +285,7 @@ impl eframe::App for MetrajApp {
 
         self.render_poz_form_popup(ctx);
         self.render_poz_sil_onay_popup(ctx);
+        self.render_kitap_sil_onay_popup(ctx);
 
         // Miktar detay popup'ı
         self.render_miktar_popup(ctx);

@@ -54,7 +54,7 @@ impl MetrajApp {
 
         let mut secilecek: Option<Kitap> = None;
         let mut duzenlenecek: Option<Kitap> = None;
-        let mut silinecek: Option<i64> = None;
+        let mut silinecek: Option<Kitap> = None;
         let mut silinecek_donem: Option<(i64, u32, u32)> = None;
         ScrollArea::vertical().show(ui, |ui| {
             for kitap in &kitaplar_snapshot {
@@ -73,7 +73,7 @@ impl MetrajApp {
                             }
                             tema::rozet(ui, &format!("{} poz", kitap.poz_sayisi), tema::METIN_IKINCIL);
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.add(egui::Button::new(RichText::new("🗑").color(tema::TEHLIKE)).fill(Color32::TRANSPARENT).stroke(egui::Stroke::new(1.0, tema::KENAR))).on_hover_text("Kurumu ve tüm dönemlerini sil").clicked() { silinecek = Some(kitap.id); }
+                                if ui.add(egui::Button::new(RichText::new("🗑").color(tema::TEHLIKE)).fill(Color32::TRANSPARENT).stroke(egui::Stroke::new(1.0, tema::KENAR))).on_hover_text("Kurumu ve tüm dönemlerini sil").clicked() { silinecek = Some(kitap.clone()); }
                                 if ui.button("✏ Ad").clicked() { duzenlenecek = Some(kitap.clone()); }
                             });
                         });
@@ -104,14 +104,9 @@ impl MetrajApp {
             self.duzenlenen_kitap = Some(k.clone());
             self.duzenleme_adi = k.ad;
         }
-        if let Some(id) = silinecek {
-            if let Some(ref db) = self.db {
-                if db.kitap_sil(id).is_ok() {
-                    if self.secili_kitap.as_ref().map(|k| k.id == id).unwrap_or(false) { self.secili_kitap = None; }
-                    self.basarili_mesaj = "Kurum silindi.".into();
-                    self.kitaplari_yenile();
-                }
-            }
+        // Kurum silme: doğrudan silme, onay ekranı iste (render_kitap_sil_onay_popup)
+        if let Some(k) = silinecek {
+            self.silinecek_kitap = Some(k);
         }
         if let Some((kid, y, a)) = silinecek_donem {
             if let Some(ref db) = self.db {
@@ -121,6 +116,49 @@ impl MetrajApp {
                     self.pozlar_tablosu_yenile();
                 }
             }
+        }
+    }
+
+    /// Kurum silme onay ekranı: kurum "tak diye" silinmez, önce onay istenir.
+    pub(crate) fn render_kitap_sil_onay_popup(&mut self, ctx: &egui::Context) {
+        let kitap = match self.silinecek_kitap.clone() {
+            Some(k) => k,
+            None => return,
+        };
+        let mut sil = false;
+        let mut iptal = false;
+        egui::Window::new("⚠ Kurumu Sil")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.label(RichText::new(format!("'{}' kurumu silinecek.", kitap.ad)).strong().size(14.0).color(tema::METIN));
+                ui.add_space(4.0);
+                ui.label(RichText::new(format!("⚠ Bu işlem kurumun TÜM dönemlerini, {} pozunu ve bağlı analizleri kalıcı olarak siler.", kitap.poz_sayisi)).color(tema::UYARI));
+                ui.label(RichText::new("Geri alınamaz. (Kaydedilmiş metrajlarınız etkilenmez — fiyatlar kalemlere kopyalanmıştır.)").color(tema::METIN_SOLUK).size(12.0));
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if tema::tehlike_buton(ui, "🗑 Evet, Sil").clicked() { sil = true; }
+                    if ui.button("Vazgeç").clicked() { iptal = true; }
+                });
+            });
+        if iptal {
+            self.silinecek_kitap = None;
+        }
+        if sil {
+            if let Some(ref db) = self.db {
+                match db.kitap_sil(kitap.id) {
+                    Ok(()) => {
+                        if self.secili_kitap.as_ref().map(|k| k.id == kitap.id).unwrap_or(false) { self.secili_kitap = None; }
+                        self.basarili_mesaj = format!("'{}' kurumu silindi.", kitap.ad);
+                        self.hata_mesaji.clear();
+                        self.kitaplari_yenile();
+                        self.pozlar_tablosu_yenile();
+                    }
+                    Err(e) => self.hata_mesaji = format!("{}", e),
+                }
+            }
+            self.silinecek_kitap = None;
         }
     }
 
