@@ -104,6 +104,7 @@ pub struct MetrajApp {
     poz_form_kategori: String,
     poz_form_yil: u32,
     poz_form_ay: u32,
+    poz_form_teklifler: String, // fiyat araştırması: boşlukla ayrılmış teklifler
     silinecek_poz: Option<Poz>,
     // Miktar detay popup
     miktar_popup_acik: bool,
@@ -120,6 +121,12 @@ pub struct MetrajApp {
     analiz_rayic_arama: String,
     analiz_rayic_sonuc: Vec<Poz>,
     analizli_pozlar: HashSet<String>, // Pozlar sekmesinde analizli poz rozeti için
+
+    // Nakliye popup (taşıma bedeli = birim fiyat × miktar × mesafe)
+    nakliye_popup_acik: bool,
+    nakliye_poz: Option<Poz>,
+    nakliye_miktar: String,
+    nakliye_mesafe: String,
 
     // Hiyerarşik İş Grupları alanları
     is_gruplari: Vec<crate::models::IsGrubu>,
@@ -212,6 +219,7 @@ impl Default for MetrajApp {
             poz_form_kategori: String::new(),
             poz_form_yil: 2026,
             poz_form_ay: 1,
+            poz_form_teklifler: String::new(),
             silinecek_poz: None,
             miktar_popup_acik: false,
             popup_kalem_indeks: None,
@@ -227,6 +235,11 @@ impl Default for MetrajApp {
             analiz_rayic_arama: String::new(),
             analiz_rayic_sonuc: vec![],
             analizli_pozlar: HashSet::new(),
+
+            nakliye_popup_acik: false,
+            nakliye_poz: None,
+            nakliye_miktar: String::new(),
+            nakliye_mesafe: String::new(),
 
             // Hiyerarşik İş Grupları
             is_gruplari: baslangic_gruplari,
@@ -300,6 +313,9 @@ impl eframe::App for MetrajApp {
 
         // Birim fiyat analizi popup'ı
         self.render_analiz_popup(ctx);
+
+        // Nakliye popup'ı
+        self.render_nakliye_popup(ctx);
 
         egui::TopBottomPanel::top("menu_bar")
             .frame(egui::Frame::default().fill(tema::ARKA_PLAN).inner_margin(egui::Margin::symmetric(14, 9)))

@@ -321,14 +321,61 @@ pub fn metraj_excel_aktar(metraj: &KayitliMetraj, analizler: &[AnalizFoyu], dosy
 
     // İkinci sayfa: detaylı Metraj Cetveli
     metraj_cetveli_sayfasi(&mut workbook, metraj)?;
-    // Üçüncü sayfa: Analiz Föyleri (varsa)
+    // Üçüncü sayfa: Pursantaj (iş grubu ağırlıkları)
+    pursantaj_sayfasi(&mut workbook, metraj)?;
+    // Dördüncü sayfa: Analiz Föyleri (varsa)
     analiz_foyleri_sayfasi(&mut workbook, analizler)?;
 
     workbook.save(dosya_yolu).map_err(|e| e.to_string())?;
     Ok(())
 }
 
-/// Üçüncü Excel sayfası: Birim Fiyat Analiz Föyleri. Her analizli poz için girdiler
+/// Pursantaj sayfası: her üst iş grubunun toplam maliyet içindeki ağırlığı (%) ve
+/// kümülatif yüzde — hakediş / iş programı planlaması için.
+fn pursantaj_sayfasi(workbook: &mut Workbook, metraj: &KayitliMetraj) -> Result<(), String> {
+    if metraj.is_gruplari.is_empty() { return Ok(()); }
+    let ara_toplam = metraj.toplam_tutar();
+    if ara_toplam <= 0.0 { return Ok(()); }
+    let ws = workbook.add_worksheet();
+    ws.set_name("Pursantaj").map_err(|e| e.to_string())?;
+
+    let baslik_format = Format::new().set_bold().set_font_size(14).set_font_color(Color::White).set_background_color(Color::RGB(0x2C3E50)).set_align(FormatAlign::Center);
+    let sutun_format = Format::new().set_bold().set_font_size(10).set_background_color(Color::RGB(0x34495E)).set_font_color(Color::White).set_border(FormatBorder::Thin).set_align(FormatAlign::Center);
+    let metin_format = Format::new().set_font_size(10).set_border(FormatBorder::Thin);
+    let sayi_format = Format::new().set_font_size(10).set_border(FormatBorder::Thin).set_num_format("#,##0.00");
+    let yuzde_format = Format::new().set_font_size(10).set_border(FormatBorder::Thin).set_num_format("0.00\"%\"");
+    let toplam_format = Format::new().set_bold().set_font_size(11).set_font_color(Color::White).set_background_color(Color::RGB(0x27AE60)).set_border(FormatBorder::Thin).set_num_format("#,##0.00");
+
+    ws.merge_range(0, 0, 0, 4, &format!("{} — PURSANTAJ (İş Grubu Ağırlıkları)", metraj.ad), &baslik_format).map_err(|e| e.to_string())?;
+    ws.set_row_height(0, 28).map_err(|e| e.to_string())?;
+    for (c, b) in ["Sıra", "İş Grubu", "Tutar (TL)", "Ağırlık %", "Kümülatif %"].iter().enumerate() {
+        ws.write_with_format(2, c as u16, *b, &sutun_format).map_err(|e| e.to_string())?;
+    }
+    for (i, w) in [8.0, 42.0, 18.0, 14.0, 14.0].iter().enumerate() {
+        ws.set_column_width(i as u16, *w).map_err(|e| e.to_string())?;
+    }
+
+    let mut satir = 3u32;
+    let mut kumulatif = 0.0;
+    for (idx, grup) in metraj.is_gruplari.iter().enumerate() {
+        let tutar = grup.toplam_tutar();
+        let yuzde = tutar / ara_toplam * 100.0;
+        kumulatif += yuzde;
+        ws.write_with_format(satir, 0, (idx + 1) as u32, &metin_format).map_err(|e| e.to_string())?;
+        ws.write_with_format(satir, 1, &grup.ad, &metin_format).map_err(|e| e.to_string())?;
+        ws.write_with_format(satir, 2, tutar, &sayi_format).map_err(|e| e.to_string())?;
+        ws.write_with_format(satir, 3, yuzde, &yuzde_format).map_err(|e| e.to_string())?;
+        ws.write_with_format(satir, 4, kumulatif, &yuzde_format).map_err(|e| e.to_string())?;
+        satir += 1;
+    }
+    ws.merge_range(satir, 0, satir, 1, "TOPLAM", &toplam_format).map_err(|e| e.to_string())?;
+    ws.write_with_format(satir, 2, ara_toplam, &toplam_format).map_err(|e| e.to_string())?;
+    ws.write_with_format(satir, 3, 100.0, &toplam_format).map_err(|e| e.to_string())?;
+    ws.write_with_format(satir, 4, "", &toplam_format).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Dördüncü Excel sayfası: Birim Fiyat Analiz Föyleri. Her analizli poz için girdiler
 /// (işçilik/malzeme/makine), ara toplam, genel gider + kâr ve sonuç birim fiyat.
 fn analiz_foyleri_sayfasi(workbook: &mut Workbook, analizler: &[AnalizFoyu]) -> Result<(), String> {
     if analizler.is_empty() {
@@ -473,6 +520,52 @@ fn metraj_cetveli_sayfasi(workbook: &mut Workbook, metraj: &KayitliMetraj) -> Re
     Ok(())
 }
 
+// ==================== CSV (Excel gidiş-geliş) ====================
+fn csv_temiz(s: &str) -> String {
+    s.replace(';', ",").replace(['\n', '\r'], " ")
+}
+
+/// Metrajı CSV'ye yazar. Türk Excel uyumu: `;` ayraç, virgül ondalık.
+/// Sütun sırası içe aktarımla uyumludur (Poz No, Miktar önce).
+pub fn metraj_csv_aktar(metraj: &KayitliMetraj, dosya_yolu: &Path) -> Result<(), String> {
+    let mut s = String::from("Poz No;Miktar;İmalat Cinsi;Açıklama;Birim;Birim Fiyat;Tutar\n");
+    for kalem in &metraj.kalemler {
+        s.push_str(&format!(
+            "{};{};{};{};{};{};{}\n",
+            csv_temiz(&kalem.poz_no),
+            format!("{:.3}", kalem.miktar).replace('.', ","),
+            csv_temiz(&kalem.imalat_cinsi),
+            csv_temiz(&kalem.tanim),
+            csv_temiz(&kalem.birim),
+            format!("{:.2}", kalem.birim_fiyat).replace('.', ","),
+            format!("{:.2}", kalem.tutar).replace('.', ","),
+        ));
+    }
+    std::fs::write(dosya_yolu, s).map_err(|e| format!("CSV yazılamadı: {}", e))
+}
+
+/// CSV'den (poz_no, miktar, imalat_cinsi) satırlarını okur. Beklenen sütunlar:
+/// `Poz No; Miktar; [İmalat Cinsi; …]`. İlk satır başlıksa atlanır; fazla sütun yok sayılır.
+pub fn metraj_csv_oku(dosya_yolu: &Path) -> Result<Vec<(String, f64, String)>, String> {
+    let icerik = std::fs::read_to_string(dosya_yolu).map_err(|e| format!("CSV okunamadı: {}", e))?;
+    let mut sonuc = Vec::new();
+    for satir in icerik.lines() {
+        let satir = satir.trim();
+        if satir.is_empty() { continue; }
+        let alanlar: Vec<&str> = satir.split(';').collect();
+        let poz_no = alanlar[0].trim().trim_matches('"').to_string();
+        if poz_no.is_empty() { continue; }
+        // Başlık / sayısal olmayan miktar satırını atla
+        let miktar = match alanlar.get(1).and_then(|a| crate::bicim::sayi_oku(a)) {
+            Some(m) => m,
+            None => continue,
+        };
+        let imalat = alanlar.get(2).map(|a| a.trim().trim_matches('"').to_string()).unwrap_or_default();
+        sonuc.push((poz_no, miktar, imalat));
+    }
+    Ok(sonuc)
+}
+
 /// Metrajı JSON dosyasına kaydeder
 pub fn metraj_json_kaydet(metraj: &KayitliMetraj, dosya_yolu: &Path) -> Result<(), String> {
     let json = serde_json::to_string_pretty(metraj).map_err(|e| e.to_string())?;
@@ -593,6 +686,18 @@ mod testler {
         assert_eq!(okunan.kalemler.len(), 1);
         assert_eq!(okunan.kalemler[0].imalat_cinsi, "Zemin kat perde duvarları");
         assert_eq!(okunan.kalemler[0].detaylar[1].cikan, true);
+        let _ = std::fs::remove_file(&yol);
+    }
+
+    #[test]
+    fn csv_yaz_oku_roundtrip() {
+        let yol = gecici_yol("csv");
+        metraj_csv_aktar(&ornek_metraj(), &yol).expect("CSV yazılmalı");
+        let okunan = metraj_csv_oku(&yol).expect("CSV okunmalı");
+        assert_eq!(okunan.len(), 1, "başlık atlanmalı, 1 kalem okunmalı");
+        assert_eq!(okunan[0].0, "15.150.1001");
+        assert_eq!(okunan[0].1, 27.0);
+        assert_eq!(okunan[0].2, "Zemin kat perde duvarları");
         let _ = std::fs::remove_file(&yol);
     }
 }

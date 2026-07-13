@@ -60,6 +60,12 @@ pub fn para_formatla(deger: f64) -> String {
     format!("{}{},{}", isaret, gruplu, kurus)
 }
 
+/// Parayı kuruşa (2 ondalık) yuvarlar — TEK yuvarlama kuralı. Tüm tutar/kâr/KDV
+/// hesapları buradan geçer ki f64 kayması (drift) birikmesin ve denetimde tutsun.
+pub fn kurus_yuvarla(deger: f64) -> f64 {
+    (deger * 100.0).round() / 100.0
+}
+
 /// Kullanıcı girdisini ("1.234,56" veya "1234.56") f64'e çevirir (boşsa None).
 pub fn sayi_oku(metin: &str) -> Option<f64> {
     let mut temiz = metin.trim().replace(' ', "");
@@ -70,6 +76,16 @@ pub fn sayi_oku(metin: &str) -> Option<f64> {
         return None;
     }
     temiz.parse::<f64>().ok()
+}
+
+/// Fiyat araştırması: boşluk / `;` / satır ile ayrılmış tekliflerin ortalaması.
+/// Virgül ondalık ayırıcı olduğundan virgülle BÖLÜNMEZ ("1.200,50 1350,00").
+pub fn teklif_ortalamasi(metin: &str) -> Option<f64> {
+    let sayilar: Vec<f64> = metin.split([' ', ';', '\t', '\n', '\r']).filter_map(sayi_oku).collect();
+    if sayilar.is_empty() {
+        return None;
+    }
+    Some(kurus_yuvarla(sayilar.iter().sum::<f64>() / sayilar.len() as f64))
 }
 
 #[cfg(test)]
@@ -88,6 +104,22 @@ mod testler {
         assert_eq!(sayi_oku("1.234,56"), Some(1234.56));
         assert_eq!(sayi_oku("1234.56"), Some(1234.56));
         assert_eq!(sayi_oku("  "), None);
+    }
+
+    #[test]
+    fn kurus_yuvarlama_driftu_giderir() {
+        assert_eq!(kurus_yuvarla(0.1 + 0.2), 0.3); // 0.30000000000000004 → 0.30
+        assert_eq!(kurus_yuvarla(2.348), 2.35);
+        assert_eq!(kurus_yuvarla(2.344), 2.34);
+        assert_eq!(kurus_yuvarla(842.5), 842.5);
+    }
+
+    #[test]
+    fn teklif_ortalamasi_virguldeki_ondaligi_korur() {
+        // 3 teklif ortalaması; virgül ondalık ayırıcı → bölme yok
+        assert_eq!(teklif_ortalamasi("1200,00 1350,00 1180,00"), Some(1243.33));
+        assert_eq!(teklif_ortalamasi("100;200;300"), Some(200.0));
+        assert_eq!(teklif_ortalamasi(""), None);
     }
 
     #[test]

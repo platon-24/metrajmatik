@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::bicim::krono_tarih;
-use crate::export::{metraj_excel_aktar, metraj_json_kaydet, metraj_json_yukle, AnalizFoyu};
+use crate::export::{metraj_csv_aktar, metraj_csv_oku, metraj_excel_aktar, metraj_json_kaydet, metraj_json_yukle, AnalizFoyu};
 use crate::is_grubu::{grup_bul_mut, grup_bul_ref, grup_canli_toplam, ilk_yaprak_grup_id};
 use crate::models::{IsGrubu, KayitliMetraj, MetrajKalemi, Poz};
 use crate::pdf_parser::{pdf_metin_cikar, pozlari_ayristir, profil_otomatik_sec, AyristirmaProfili};
@@ -260,6 +260,23 @@ impl MetrajApp {
         self.basarili_mesaj = format!("{} eklendi.", poz.poz_no);
         self.hata_mesaji.clear();
     }
+    /// Nakliye kalemi ekler: taşıma pozu, miktar = tonaj/hacim × mesafe.
+    pub(crate) fn nakliye_kalem_ekle(&mut self, poz: &Poz, miktar: f64, mesafe: f64) {
+        if !self.is_gruplari.is_empty() && self.secili_grup_id.is_none() {
+            self.hata_mesaji = "Önce soldaki ağaçtan bir iş grubu seçin.".into();
+            return;
+        }
+        self.anlik_goruntu_al();
+        let mut kalem = MetrajKalemi::yeni(poz, miktar);
+        kalem.imalat_cinsi = format!("Nakliye — {:.0} km", mesafe);
+        self.metraj_kalemleri.push(kalem);
+        self.metraj_kalemleri.sort_by(|a, b| a.poz_no.cmp(&b.poz_no));
+        self.aktif_grubu_senkronize();
+        self.degisiklik_var = true;
+        self.hata_mesaji.clear();
+        self.basarili_mesaj = format!("Nakliye eklendi: {} ({:.2} taşıma miktarı).", poz.poz_no, miktar);
+    }
+
     pub(crate) fn kategorileri_yukle(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(k) = db.kategoriler(kid) { self.kategoriler = k; } } }
     pub(crate) fn kategori_filtrele(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(t) = db.tum_pozlar(kid) { self.kategori_pozlar = t.into_iter().filter(|p| p.kategori == self.secili_kategori).collect(); } } }
 
@@ -410,6 +427,56 @@ impl MetrajApp {
                 Err(e) => self.hata_mesaji = format!("{}", e),
             }
         }
+    }
+
+    /// Metrajı CSV'ye aktarır (Excel'de açılabilir).
+    pub(crate) fn metraj_csv_diyalog(&mut self) {
+        let m = self.proje_olustur();
+        if let Some(d) = rfd::FileDialog::new().add_filter("CSV", &["csv"]).set_file_name(&format!("{}.csv", self.metraj_adi)).save_file() {
+            match metraj_csv_aktar(&m, &d) {
+                Ok(()) => self.basarili_mesaj = format!("CSV: {}", d.display()),
+                Err(e) => self.hata_mesaji = e,
+            }
+        }
+    }
+
+    /// CSV'den (poz_no; miktar; [imalat]) aktif gruba kalem ekler. Pozlar seçili
+    /// kurumdan (yoksa tüm kitaplardan) çözülür.
+    pub(crate) fn metraj_csv_ice_aktar_diyalog(&mut self) {
+        let dosya = match rfd::FileDialog::new().add_filter("CSV", &["csv"]).pick_file() { Some(d) => d, None => return };
+        let satirlar = match metraj_csv_oku(&dosya) { Ok(s) => s, Err(e) => { self.hata_mesaji = e; return; } };
+        if !self.is_gruplari.is_empty() && self.secili_grup_id.is_none() {
+            self.hata_mesaji = "Önce soldaki ağaçtan bir iş grubu seçin.".into();
+            return;
+        }
+        self.anlik_goruntu_al();
+        let kid = self.secili_kitap.as_ref().map(|k| k.id);
+        let mut eklenen = 0;
+        let mut bulunamayan: Vec<String> = Vec::new();
+        if let Some(ref db) = self.db {
+            for (poz_no, miktar, imalat) in satirlar {
+                if self.metraj_kalemleri.iter().any(|k| k.poz_no == poz_no) { continue; }
+                match db.poz_getir(&poz_no, kid) {
+                    Ok(Some(poz)) => {
+                        let mut kalem = MetrajKalemi::yeni(&poz, miktar);
+                        kalem.imalat_cinsi = imalat;
+                        self.metraj_kalemleri.push(kalem);
+                        eklenen += 1;
+                    }
+                    _ => bulunamayan.push(poz_no),
+                }
+            }
+        }
+        self.metraj_kalemleri.sort_by(|a, b| a.poz_no.cmp(&b.poz_no));
+        self.aktif_grubu_senkronize();
+        self.degisiklik_var = true;
+        self.hata_mesaji.clear();
+        self.basarili_mesaj = if bulunamayan.is_empty() {
+            format!("CSV'den {} kalem eklendi.", eklenen)
+        } else {
+            let ornek: Vec<String> = bulunamayan.iter().take(5).cloned().collect();
+            format!("CSV'den {} kalem eklendi. {} poz bulunamadı: {}", eklenen, bulunamayan.len(), ornek.join(", "))
+        };
     }
 
     pub(crate) fn fiyatlari_guncelle(&mut self) {

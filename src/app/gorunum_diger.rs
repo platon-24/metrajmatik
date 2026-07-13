@@ -5,7 +5,7 @@ use eframe::egui;
 use egui::{Color32, RichText, ScrollArea, TextEdit, Ui, Vec2};
 use std::path::PathBuf;
 
-use crate::bicim::{metni_kisalt, para_formatla};
+use crate::bicim::{metni_kisalt, para_formatla, teklif_ortalamasi};
 use crate::is_grubu::grup_canli_toplam;
 use crate::maliyet::MaliyetOzeti;
 use crate::models::{Donem, HesapTuru, Kitap, Poz};
@@ -282,6 +282,7 @@ impl MetrajApp {
         self.poz_form_tanim.clear();
         self.poz_form_birim.clear();
         self.poz_form_fiyat.clear();
+        self.poz_form_teklifler.clear();
         self.poz_form_kategori = "Özel Poz".into();
         // Yeni pozun dönemi varsayılan olarak kurumun en son dönemi (yoksa 2026/1)
         let (y, a) = self.secili_kitap.as_ref().map(|k| if k.yil > 0 { (k.yil, k.ay) } else { (2026, 1) }).unwrap_or((2026, 1));
@@ -298,6 +299,7 @@ impl MetrajApp {
         self.poz_form_birim = poz.birim;
         self.poz_form_fiyat = poz.fiyat.map(para_formatla).unwrap_or_default();
         self.poz_form_kategori = poz.kategori;
+        self.poz_form_teklifler.clear();
         // Düzenlenen pozun görüntülenen dönemi
         self.poz_form_yil = poz.yil;
         self.poz_form_ay = poz.ay;
@@ -392,6 +394,15 @@ impl MetrajApp {
                     ui.add(TextEdit::singleline(&mut self.poz_form_birim).desired_width(80.0));
                     ui.label(RichText::new("B.Fiyat").color(tema::METIN_IKINCIL).size(12.0));
                     ui.add(TextEdit::singleline(&mut self.poz_form_fiyat).hint_text("boş olabilir").desired_width(120.0));
+                });
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Fiyat Araştırması").color(tema::METIN_IKINCIL).size(12.0));
+                    ui.add(TextEdit::singleline(&mut self.poz_form_teklifler).hint_text("teklifler: 1200,00 1350,00 1180,00").desired_width(240.0));
+                    if ui.button("Ort. → B.Fiyat").on_hover_text("Tekliflerin ortalamasını birim fiyat yap (piyasa rayici)").clicked() {
+                        if let Some(ort) = teklif_ortalamasi(&self.poz_form_teklifler) {
+                            self.poz_form_fiyat = format!("{:.2}", ort).replace('.', ",");
+                        }
+                    }
                 });
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Kategori").color(tema::METIN_IKINCIL).size(12.0));

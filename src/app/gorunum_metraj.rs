@@ -205,6 +205,7 @@ impl MetrajApp {
         }
 
         let mut secili_poz_ekle = false;
+        let mut nakliye_ac = false;
         if let Some(poz) = self.secili_poz.clone() {
             ui.add_space(6.0);
             tema::kart(ui, |ui| {
@@ -223,13 +224,21 @@ impl MetrajApp {
                 });
                 ui.label(RichText::new(&poz.tanim).size(12.0).color(tema::METIN_IKINCIL));
                 ui.add_space(6.0);
-                if tema::birincil_buton(ui, "＋ Metraja Ekle").clicked() {
-                    secili_poz_ekle = true;
-                }
+                ui.horizontal(|ui| {
+                    if tema::birincil_buton(ui, "＋ Metraja Ekle").clicked() {
+                        secili_poz_ekle = true;
+                    }
+                    if ui.button("🚚 Nakliye").on_hover_text("Taşıma bedeli hesapla: birim fiyat × miktar × mesafe").clicked() {
+                        nakliye_ac = true;
+                    }
+                });
             });
         }
         if secili_poz_ekle {
             self.kalem_ekle();
+        }
+        if nakliye_ac {
+            self.nakliye_popup_ac();
         }
     }
 
@@ -256,6 +265,8 @@ impl MetrajApp {
                     self.basarili_mesaj = "Metraj özeti panoya kopyalandı.".into();
                 }
                 if ui.button("📊 Excel").clicked() { self.metraj_excel_diyalog(); }
+                if ui.button("📤 CSV").on_hover_text("Metrajı CSV olarak dışa aktar (Excel'de açılır)").clicked() { self.metraj_csv_diyalog(); }
+                if ui.button("📥 CSV Al").on_hover_text("CSV'den poz + miktar içe aktar").clicked() { self.metraj_csv_ice_aktar_diyalog(); }
                 if tema::basari_buton(ui, "💾 Kaydet").clicked() { self.metraj_kaydet(); }
                 if ui.button("📂 Aç").clicked() { self.metraj_yukle_diyalog(); }
             });
@@ -497,6 +508,68 @@ impl MetrajApp {
                     }
                 });
             });
+    }
+
+    pub(crate) fn nakliye_popup_ac(&mut self) {
+        if let Some(poz) = self.secili_poz.clone() {
+            self.nakliye_poz = Some(poz);
+            self.nakliye_miktar.clear();
+            self.nakliye_mesafe.clear();
+            self.nakliye_popup_acik = true;
+        }
+    }
+
+    pub(crate) fn render_nakliye_popup(&mut self, ctx: &egui::Context) {
+        if !self.nakliye_popup_acik { return; }
+        let poz = match self.nakliye_poz.clone() {
+            Some(p) => p,
+            None => { self.nakliye_popup_acik = false; return; }
+        };
+        let birim_fiyat = poz.fiyat.unwrap_or(0.0);
+        let mut ekle = false;
+        let mut kapat = false;
+        egui::Window::new("🚚 Nakliye Hesabı")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(&poz.poz_no).monospace().strong().size(15.0));
+                    ui.label(RichText::new(metni_kisalt(&poz.tanim, 50)).size(13.0).color(tema::METIN_IKINCIL)).on_hover_text(&poz.tanim);
+                });
+                ui.label(RichText::new(format!("Taşıma birim fiyatı: {} TL / {}·km", para_formatla(birim_fiyat), poz.birim)).size(12.0).color(tema::BASARI));
+                ui.label(RichText::new("Taşıma bedeli = birim fiyat × miktar × mesafe").size(11.0).color(tema::METIN_SOLUK));
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Miktar").color(tema::METIN_IKINCIL).size(12.0));
+                    ui.add(TextEdit::singleline(&mut self.nakliye_miktar).hint_text("120 (ton/m³)").desired_width(100.0));
+                    ui.label(RichText::new("×  Mesafe (km)").color(tema::METIN_IKINCIL).size(12.0));
+                    ui.add(TextEdit::singleline(&mut self.nakliye_mesafe).hint_text("25").desired_width(80.0));
+                });
+                let m = sayi_oku(&self.nakliye_miktar).unwrap_or(0.0);
+                let km = sayi_oku(&self.nakliye_mesafe).unwrap_or(0.0);
+                let tasima_miktari = m * km;
+                let bedel = birim_fiyat * tasima_miktari;
+                ui.add_space(4.0);
+                ui.label(RichText::new(format!("Taşıma miktarı: {:.2} × {:.2} = {:.2}", m, km, tasima_miktari)).size(12.0).color(tema::METIN_IKINCIL));
+                ui.label(RichText::new(format!("Nakliye bedeli ≈ {} TL", para_formatla(bedel))).size(15.0).strong().color(tema::BASARI));
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if tema::basari_buton(ui, "＋ Metraja Ekle").clicked() { ekle = true; }
+                    if ui.button("❌ İptal").clicked() { kapat = true; }
+                });
+            });
+        if ekle {
+            let m = sayi_oku(&self.nakliye_miktar).unwrap_or(0.0);
+            let km = sayi_oku(&self.nakliye_mesafe).unwrap_or(0.0);
+            if m > 0.0 && km > 0.0 {
+                self.nakliye_kalem_ekle(&poz, m * km, km);
+                self.nakliye_popup_acik = false;
+            } else {
+                self.hata_mesaji = "Miktar ve mesafe (km) girin.".into();
+            }
+        }
+        if kapat { self.nakliye_popup_acik = false; }
     }
 
     pub(crate) fn render_metraj_ozetleri(&self, ui: &mut Ui) {

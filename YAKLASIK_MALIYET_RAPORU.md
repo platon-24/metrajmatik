@@ -208,13 +208,13 @@ Gerçek metrajda satırın **imalatın cinsi** açıklaması, poz açıklamasın
 - [x] **Veri konumu (E8):** DB/autosave `%APPDATA%\Metrajmatik\`; eski veriyi güvenli göç (WAL dahil).
 - [x] **Kurum/dönem modeli (v2):** kitap = **kurum**, poz = **kimlik**, fiyat = `poz_fiyatlari(yıl,ay)` indeksli. Arama en son fiyatı verir; Pozlar sekmesinde **dönem seçici** (eski fiyatları görme); **poz formunda dönem seçimi**; metraj/analiz/popup'larında dönem gösterimi. Otomatik **v1→v2 göç** (veri korunur). Bonus: fiyat geçmişi → P2 fiyat farkı altyapısı.
 
-### P1 — Piyasa paritesi (OSKA/AMP ile aynı masada)
+### P1 — Piyasa paritesi (OSKA/AMP ile aynı masada) — ✅ **TAMAMLANDI**
 - [x] **Çok formatlı PDF ayrıştırma (E3/E4) — 6 kurum doğrulandı:** `AyristirmaProfili` mimarisi + **otomatik profil seçimi** + PDF Yükle'de seçici. Gerçek örnek PDF'lerle test edildi (`gercek_kitaplar_otomatik_ayristirilir`, `#[ignore]`): **ÇŞB profili** → ÇŞB (1852), Altyapı Tesisleri (2961), PTT (284), DSİ (1893); **KGM profili** → KGM Ar-Ge (846), Vakıflar/Restorasyon (2145). Toplam **~10.000 poz** otomatik, fiyat + **birim** ile. Birim sözlüğü genişletildi (km, saat, metre, adet) + **yapışık-birim son çaresi** (DSİ "bedelimetre" → "metre"): DSİ birim kapsaması ~0 → **1719/1976 (%87)**, ÇŞB'de sıfır regresyon. Kuruma özel yeni profiller örnek geldikçe eklenir.
-- [ ] **Nakliye/taşıma analizi (E11):** mesafe + formül bazlı taşıma bedeli.
-- [ ] **Para birimi doğruluğu (E7):** kuruş bazlı tamsayı ya da sabit ondalık; yuvarlama kuralı tek yerde.
-- [ ] **Pursantaj tablosu:** iş grubu/poz ağırlıkları (%).
-- [ ] **Excel gidiş-geliş:** metrajı Excel'den içe aktar (şablonla).
-- [ ] **Fiyat araştırması / piyasa rayici** kaydı (3 teklif ortalaması vb.).
+- [x] **Nakliye/taşıma analizi (E11):** Seçili poz üzerinden "🚚 Nakliye Hesabı" popup'ı — taşıma bedeli = birim fiyat × miktar × mesafe(km); metraja "Nakliye — N km" imalat cinsiyle eklenir. (Sabit formül katsayısı hardcode edilmedi; oran taşıma pozundan gelir.)
+- [x] **Para birimi doğruluğu (E7):** `bicim::kurus_yuvarla` — TEK yuvarlama kuralı; tutar, kâr, KDV, analiz sonucu hep kuruşa yuvarlanır → f64 drift'i birikmez. Testli.
+- [x] **Pursantaj tablosu:** Excel'de "Pursantaj" sayfası — iş grubu ağırlıkları (%) + kümülatif %. (İcmal ekranında grup oranları zaten canlı.)
+- [x] **Excel gidiş-geliş (CSV):** Metraj CSV dışa aktarma + **CSV içe aktarma** (poz_no; miktar; imalat → aktif gruba, pozlar DB'den çözülür). Türk Excel uyumu (; ayraç, virgül ondalık). Round-trip testli. *(Gerçek .xlsx okuma isterse `calamine` eklenir.)*
+- [x] **Fiyat araştırması / piyasa rayici:** Poz formunda "Fiyat Araştırması" — boşlukla ayrılmış teklifler → `bicim::teklif_ortalamasi` → birim fiyat (piyasa rayici). Testli.
 
 ### P2 — "OSKA/AMP'yi göm" (yaşam döngüsü + bulut)
 - [ ] **Hakediş:** yeşil defter, ataşman, ara/kesin hakediş, kesintiler (SGK, damga, teminat, avans mahsubu), tahakkuk.

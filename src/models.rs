@@ -114,7 +114,7 @@ impl MetrajKalemi {
     }
 
     pub fn tutar_guncelle(&mut self) {
-        self.tutar = self.birim_fiyat * self.miktar;
+        self.tutar = crate::bicim::kurus_yuvarla(self.birim_fiyat * self.miktar);
     }
 }
 
@@ -142,7 +142,7 @@ pub fn analiz_ara_toplam(girdiler: &[AnalizGirdisi]) -> f64 {
 /// Kamu yaklaşık maliyetinde %25'in uygulandığı yer BURASIDIR (hazır kurum birim
 /// fiyatları değil — onlar bu oranı zaten içerir). Bkz. [[mevzuat]] / rapor H1.
 pub fn analiz_birim_fiyat(girdiler: &[AnalizGirdisi], kar_orani: f64) -> f64 {
-    analiz_ara_toplam(girdiler) * (1.0 + kar_orani / 100.0)
+    crate::bicim::kurus_yuvarla(analiz_ara_toplam(girdiler) * (1.0 + kar_orani / 100.0))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
