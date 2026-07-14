@@ -247,6 +247,12 @@ Gerçek metrajda satırın **imalatın cinsi** açıklaması, poz açıklamasın
 
 Kritik prensip: **metraj bir kez girilir**, her yerde (icmal, teklif cetveli, hakediş, pursantaj) yeniden kullanılır. Tek gerçek kaynak.
 
+**Workflow uygulanma durumu (Tem 2026 — sırayla yürünüyor):**
+1. ✅ **PROJE KUR** — `models::ProjeBilgi` + 📁 Proje sekmesi (`app/proje_ui.rs`): idare adı, işin adı, İKN, iş yeri, iş türü, yüklenici, sözleşme + Kamu/Özel kipi + özet panosu. Künye resmî Excel başlıklarına (yaklaşık maliyet / hakediş / iş programı) akıyor.
+2. ✅ KİTAP/VERİ (.mvp veri paketi + dönem modeli) · 3. ✅ İŞ AĞACI (şablon gruplar) · 4. ✅ METRAJ · 5. ✅ FİYATLANDIR (analiz) · 6. ✅ İCMAL · 8. ✅ ÇIKTI (Excel) · 10. ✅ HAKEDİŞ (P2)
+7. ⚠️ GÜNCELLE — toplu fiyat güncelleme var; dönem/endeks toplu güncelleme cilası kaldı.
+9. ❌ **İHALE** — birim fiyat teklif cetveli + teklif mektubu + geçici teminat (sıradaki iş).
+
 ---
 
 ## 7. UI/UX Fikirleri (egui'ye uygun, somut)

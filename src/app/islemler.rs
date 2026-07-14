@@ -398,6 +398,7 @@ impl MetrajApp {
             hesap_turu: self.hesap_turu,
             hakedisler: self.hakedisler.clone(),
             is_programi: self.is_programi.clone(),
+            proje_bilgi: self.proje_bilgi.clone(),
         }
     }
     pub(crate) fn metraj_kaydet(&mut self) {
@@ -418,12 +419,13 @@ impl MetrajApp {
     pub(crate) fn metraj_dosyadan_yukle(&mut self, d: &Path, dosya_olarak: bool) {
         match metraj_json_yukle(d) {
             Ok(m) => {
-                let KayitliMetraj { ad, kalemler, is_gruplari, genel_gider_kar_orani, kdv_orani, hesap_turu, hakedisler, is_programi, .. } = m;
+                let KayitliMetraj { ad, kalemler, is_gruplari, genel_gider_kar_orani, kdv_orani, hesap_turu, hakedisler, is_programi, proje_bilgi, .. } = m;
                 self.hesap_turu = hesap_turu;
                 self.genel_gider_kar_orani = genel_gider_kar_orani;
                 self.kdv_orani = kdv_orani;
                 self.hakedisler = hakedisler;
                 self.is_programi = is_programi;
+                self.proje_bilgi = proje_bilgi;
                 self.secili_hakedis = None;
                 self.geri_al_yigini.clear();
                 self.yinele_yigini.clear();

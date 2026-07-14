@@ -2,7 +2,7 @@ use rust_xlsxwriter::*;
 use std::path::Path;
 
 use crate::maliyet::MaliyetOzeti;
-use crate::models::{AnalizGirdisi, Hakedis, IsProgrami, KayitliMetraj, MetrajKalemi, VeriPaketi};
+use crate::models::{AnalizGirdisi, Hakedis, IsProgrami, KayitliMetraj, MetrajKalemi, ProjeBilgi, VeriPaketi};
 
 /// Ay numarasını (1-12) Türkçe ay adına çevirir.
 pub fn ay_adi(ay: u32) -> &'static str {
@@ -103,28 +103,50 @@ pub fn metraj_excel_aktar(metraj: &KayitliMetraj, analizler: &[AnalizFoyu], dosy
         .set_border(FormatBorder::Thin)
         .set_text_wrap();
 
-    // Başlık bloğu
+    // Başlık bloğu — üst başlıkta işin adı (yoksa proje adı) kullanılır
+    let ust_baslik = if metraj.proje_bilgi.is_adi.trim().is_empty() { metraj.ad.clone() } else { metraj.proje_bilgi.is_adi.clone() };
     worksheet
-        .merge_range(0, 0, 0, 6, &format!("{} — YAKLAŞIK MALİYET HESAP CETVELİ", metraj.ad), &baslik_format)
+        .merge_range(0, 0, 0, 6, &format!("{} — YAKLAŞIK MALİYET HESAP CETVELİ", ust_baslik), &baslik_format)
         .map_err(|e| e.to_string())?;
     worksheet.set_row_height(0, 30).map_err(|e| e.to_string())?;
 
+    // Proje künyesi (dolu ise): idare, İKN, iş yeri, tür, yüklenici/sözleşme
+    let mut ust = 1u32;
+    let pb = &metraj.proje_bilgi;
+    if pb.dolu_mu() {
+        worksheet.merge_range(ust, 0, ust, 3, &format!("İdarenin Adı: {}", pb.idare_adi), &metin_format).map_err(|e| e.to_string())?;
+        worksheet.merge_range(ust, 4, ust, 6, &format!("İşin Yeri: {}", pb.is_yeri), &metin_format).map_err(|e| e.to_string())?;
+        ust += 1;
+        worksheet.merge_range(ust, 0, ust, 3, &format!("İhale Kayıt No: {}", pb.ihale_kayit_no), &metin_format).map_err(|e| e.to_string())?;
+        worksheet.merge_range(ust, 4, ust, 6, &format!("İşin Türü: {}", pb.is_turu), &metin_format).map_err(|e| e.to_string())?;
+        ust += 1;
+        if !pb.yuklenici.trim().is_empty() || !pb.sozlesme_no.trim().is_empty() || !pb.sozlesme_tarihi.trim().is_empty() {
+            let sozlesme = format!("Sözleşme: {} {}", pb.sozlesme_no, pb.sozlesme_tarihi);
+            worksheet.merge_range(ust, 0, ust, 3, &format!("Yüklenici: {}", pb.yuklenici), &metin_format).map_err(|e| e.to_string())?;
+            worksheet.merge_range(ust, 4, ust, 6, sozlesme.trim(), &metin_format).map_err(|e| e.to_string())?;
+            ust += 1;
+        }
+    }
+
     let hesap_turu_metni = if metraj.hesap_turu.kamu_mu() { "Kamu (KDV Hariç)" } else { "Özel (KDV Dahil)" };
     worksheet
-        .merge_range(1, 0, 1, 6, &format!("Tarih: {}        Hesap Türü: {}", metraj.tarih, hesap_turu_metni), &metin_format)
+        .merge_range(ust, 0, ust, 6, &format!("Tarih: {}        Hesap Türü: {}", metraj.tarih, hesap_turu_metni), &metin_format)
         .map_err(|e| e.to_string())?;
+    ust += 1;
     worksheet
-        .merge_range(2, 0, 2, 6, "⚠ GİZLİDİR — İhale onay belgesine esas yaklaşık maliyettir; isteklilere açıklanmaz.", &gizli_format)
+        .merge_range(ust, 0, ust, 6, "⚠ GİZLİDİR — İhale onay belgesine esas yaklaşık maliyettir; isteklilere açıklanmaz.", &gizli_format)
         .map_err(|e| e.to_string())?;
+    ust += 1;
 
-    // Sütun başlıkları - 3. satır
-    worksheet.write_with_format(3, 0, "Sıra No", &sutun_format).map_err(|e| e.to_string())?;
-    worksheet.write_with_format(3, 1, "Poz No", &sutun_format).map_err(|e| e.to_string())?;
-    worksheet.write_with_format(3, 2, "Açıklama", &sutun_format).map_err(|e| e.to_string())?;
-    worksheet.write_with_format(3, 3, "Birim", &sutun_format).map_err(|e| e.to_string())?;
-    worksheet.write_with_format(3, 4, "Birim Fiyat (TL)", &sutun_format).map_err(|e| e.to_string())?;
-    worksheet.write_with_format(3, 5, "Miktar", &sutun_format).map_err(|e| e.to_string())?;
-    worksheet.write_with_format(3, 6, "Tutar (TL)", &sutun_format).map_err(|e| e.to_string())?;
+    // Sütun başlıkları (künyeye göre kayan satır)
+    let baslik_satir = ust;
+    worksheet.write_with_format(baslik_satir, 0, "Sıra No", &sutun_format).map_err(|e| e.to_string())?;
+    worksheet.write_with_format(baslik_satir, 1, "Poz No", &sutun_format).map_err(|e| e.to_string())?;
+    worksheet.write_with_format(baslik_satir, 2, "Açıklama", &sutun_format).map_err(|e| e.to_string())?;
+    worksheet.write_with_format(baslik_satir, 3, "Birim", &sutun_format).map_err(|e| e.to_string())?;
+    worksheet.write_with_format(baslik_satir, 4, "Birim Fiyat (TL)", &sutun_format).map_err(|e| e.to_string())?;
+    worksheet.write_with_format(baslik_satir, 5, "Miktar", &sutun_format).map_err(|e| e.to_string())?;
+    worksheet.write_with_format(baslik_satir, 6, "Tutar (TL)", &sutun_format).map_err(|e| e.to_string())?;
 
     worksheet.set_column_width(0, 8).map_err(|e| e.to_string())?;
     worksheet.set_column_width(1, 14).map_err(|e| e.to_string())?;
@@ -134,7 +156,7 @@ pub fn metraj_excel_aktar(metraj: &KayitliMetraj, analizler: &[AnalizFoyu], dosy
     worksheet.set_column_width(5, 12).map_err(|e| e.to_string())?;
     worksheet.set_column_width(6, 15).map_err(|e| e.to_string())?;
 
-    let mut satir = 4u32;
+    let mut satir = baslik_satir + 1;
 
     fn grup_yaz(
         worksheet: &mut Worksheet,
@@ -578,7 +600,7 @@ pub fn metraj_csv_oku(dosya_yolu: &Path) -> Result<Vec<(String, f64, String)>, S
 // ==================== HAKEDİŞ RAPORU ====================
 /// Bir hakedişi resmî hakediş raporu olarak Excel'e aktarır: poz bazında kümülatif /
 /// bu hakediş miktar ve tutarları + kesintiler + net ödeme.
-pub fn hakedis_excel_aktar(proje_adi: &str, kesif: &[MetrajKalemi], hakedis: &Hakedis, onceki: Option<&Hakedis>, dosya_yolu: &Path) -> Result<(), String> {
+pub fn hakedis_excel_aktar(proje_adi: &str, pb: &ProjeBilgi, kesif: &[MetrajKalemi], hakedis: &Hakedis, onceki: Option<&Hakedis>, dosya_yolu: &Path) -> Result<(), String> {
     let hesaplar = crate::hakedis::poz_hesaplari(kesif, hakedis, onceki);
     let ic = crate::hakedis::icmal(&hesaplar, hakedis);
 
@@ -596,19 +618,35 @@ pub fn hakedis_excel_aktar(proje_adi: &str, kesif: &[MetrajKalemi], hakedis: &Ha
     let icmal_format = Format::new().set_bold().set_font_size(10).set_background_color(Color::RGB(0xF2F4F4)).set_border(FormatBorder::Thin).set_num_format("#,##0.00");
     let net_format = Format::new().set_bold().set_font_size(12).set_font_color(Color::White).set_background_color(Color::RGB(0x27AE60)).set_border(FormatBorder::Thin).set_num_format("#,##0.00");
 
-    ws.merge_range(0, 0, 0, 10, &format!("{} — {}. HAKEDİŞ ({})", proje_adi, hakedis.no, hakedis.tur), &baslik_format).map_err(|e| e.to_string())?;
+    let ust_baslik = if pb.is_adi.trim().is_empty() { proje_adi.to_string() } else { pb.is_adi.clone() };
+    ws.merge_range(0, 0, 0, 10, &format!("{} — {}. HAKEDİŞ ({})", ust_baslik, hakedis.no, hakedis.tur), &baslik_format).map_err(|e| e.to_string())?;
     ws.set_row_height(0, 28).map_err(|e| e.to_string())?;
-    ws.merge_range(1, 0, 1, 10, &format!("Tarih: {}", hakedis.tarih), &meta_format).map_err(|e| e.to_string())?;
+
+    let mut ust = 1u32;
+    if pb.dolu_mu() {
+        ws.merge_range(ust, 0, ust, 5, &format!("İdarenin Adı: {}", pb.idare_adi), &meta_format).map_err(|e| e.to_string())?;
+        ws.merge_range(ust, 6, ust, 10, &format!("İhale Kayıt No: {}", pb.ihale_kayit_no), &meta_format).map_err(|e| e.to_string())?;
+        ust += 1;
+        if !pb.yuklenici.trim().is_empty() || !pb.sozlesme_no.trim().is_empty() {
+            let sozlesme = format!("Sözleşme: {} {}", pb.sozlesme_no, pb.sozlesme_tarihi);
+            ws.merge_range(ust, 0, ust, 5, &format!("Yüklenici: {}", pb.yuklenici), &meta_format).map_err(|e| e.to_string())?;
+            ws.merge_range(ust, 6, ust, 10, sozlesme.trim(), &meta_format).map_err(|e| e.to_string())?;
+            ust += 1;
+        }
+    }
+    ws.merge_range(ust, 0, ust, 10, &format!("Tarih: {}", hakedis.tarih), &meta_format).map_err(|e| e.to_string())?;
+    ust += 1;
 
     let basliklar = ["Sıra", "Poz No", "Açıklama", "Birim", "B.Fiyat", "Sözleşme Mik.", "Önceki Küm.", "Bu Küm.", "Bu Hakediş Mik.", "Bu Hakediş Tutar", "Sözleşme Farkı"];
+    let baslik_satir = ust;
     for (c, b) in basliklar.iter().enumerate() {
-        ws.write_with_format(3, c as u16, *b, &sutun_format).map_err(|e| e.to_string())?;
+        ws.write_with_format(baslik_satir, c as u16, *b, &sutun_format).map_err(|e| e.to_string())?;
     }
     for (i, w) in [6.0, 14.0, 38.0, 8.0, 12.0, 12.0, 12.0, 12.0, 13.0, 15.0, 13.0].iter().enumerate() {
         ws.set_column_width(i as u16, *w).map_err(|e| e.to_string())?;
     }
 
-    let mut satir = 4u32;
+    let mut satir = baslik_satir + 1;
     for (idx, h) in hesaplar.iter().enumerate() {
         ws.write_with_format(satir, 0, (idx + 1) as u32, &metin_format).map_err(|e| e.to_string())?;
         ws.write_with_format(satir, 1, &h.poz_no, &metin_format).map_err(|e| e.to_string())?;
@@ -666,7 +704,7 @@ pub fn hakedis_excel_aktar(proje_adi: &str, kesif: &[MetrajKalemi], hakedis: &Ha
 }
 
 /// Pursantajlı iş programını Excel'e aktarır: aylık dağılım + kümülatif ilerleme (S) eğrisi.
-pub fn is_programi_excel_aktar(proje_adi: &str, toplam_bedel: f64, prog: &IsProgrami, dosya_yolu: &Path) -> Result<(), String> {
+pub fn is_programi_excel_aktar(proje_adi: &str, pb: &ProjeBilgi, toplam_bedel: f64, prog: &IsProgrami, dosya_yolu: &Path) -> Result<(), String> {
     let mut workbook = Workbook::new();
     let ws = workbook.add_worksheet();
     ws.set_name("İş Programı").map_err(|e| e.to_string())?;
@@ -680,9 +718,13 @@ pub fn is_programi_excel_aktar(proje_adi: &str, toplam_bedel: f64, prog: &IsProg
     let toplam_format = Format::new().set_bold().set_font_size(11).set_background_color(Color::RGB(0xD5F5E3)).set_border(FormatBorder::Thin).set_num_format("#,##0.00");
     let toplam_yuzde = Format::new().set_bold().set_font_size(11).set_background_color(Color::RGB(0xD5F5E3)).set_border(FormatBorder::Thin).set_num_format("0.00\"%\"");
 
-    ws.merge_range(0, 0, 0, 5, &format!("{} — İŞ PROGRAMI (Pursantaj Cetveli)", proje_adi), &baslik_format).map_err(|e| e.to_string())?;
+    let ust_baslik = if pb.is_adi.trim().is_empty() { proje_adi.to_string() } else { pb.is_adi.clone() };
+    ws.merge_range(0, 0, 0, 5, &format!("{} — İŞ PROGRAMI (Pursantaj Cetveli)", ust_baslik), &baslik_format).map_err(|e| e.to_string())?;
     ws.set_row_height(0, 28).map_err(|e| e.to_string())?;
     ws.merge_range(1, 0, 1, 5, &format!("Sözleşme Bedeli: {:.2} TL   |   Süre: {} ay   |   Başlangıç: {} {}", toplam_bedel, prog.sure_ay, ay_adi(prog.baslangic_ay), prog.baslangic_yil), &meta_format).map_err(|e| e.to_string())?;
+    if pb.dolu_mu() {
+        ws.merge_range(2, 0, 2, 5, &format!("İdarenin Adı: {}   |   İhale Kayıt No: {}", pb.idare_adi, pb.ihale_kayit_no), &meta_format).map_err(|e| e.to_string())?;
+    }
 
     let basliklar = ["Ay", "Dönem", "Pursantaj (%)", "Aylık Tutar (TL)", "Kümülatif (%)", "Kümülatif Tutar (TL)"];
     for (c, b) in basliklar.iter().enumerate() {
@@ -816,6 +858,7 @@ mod testler {
             hesap_turu: HesapTuru::Kamu,
             hakedisler: vec![],
             is_programi: crate::models::IsProgrami::default(),
+            proje_bilgi: crate::models::ProjeBilgi::default(),
         }
     }
 
@@ -843,6 +886,27 @@ mod testler {
     }
 
     #[test]
+    fn excel_proje_kunyesi_ile_hatasiz_uretilir() {
+        // Künye dolu iken başlık satırları kayar (baslik_satir dinamik) — hata vermemeli.
+        let yol = gecici_yol("xlsx");
+        let mut m = ornek_metraj();
+        m.proje_bilgi = crate::models::ProjeBilgi {
+            idare_adi: "Test Belediyesi".into(),
+            is_adi: "24 Derslikli Okul".into(),
+            is_yeri: "Ankara".into(),
+            ihale_kayit_no: "2026/123456".into(),
+            is_turu: "Yapım".into(),
+            yuklenici: "Örnek İnş. Ltd.".into(),
+            sozlesme_no: "S-2026-1".into(),
+            sozlesme_tarihi: "01.02.2026".into(),
+        };
+        assert!(m.proje_bilgi.dolu_mu());
+        metraj_excel_aktar(&m, &[], &yol).expect("Künyeli Excel üretilmeli");
+        assert!(std::fs::metadata(&yol).unwrap().len() > 0, "Excel boş olmamalı");
+        let _ = std::fs::remove_file(&yol);
+    }
+
+    #[test]
     fn json_kaydet_yukle_roundtrip() {
         let yol = gecici_yol("mrj");
         let m = ornek_metraj();
@@ -864,7 +928,7 @@ mod testler {
         let mut h = Hakedis::yeni(1, "İlk", "2026-07-12".into());
         h.satirlar = vec![HakedisSatiri { poz_no: "15.150.1001".into(), kumulatif_miktar: 10.0, detaylar: vec![] }];
         h.teminat_orani = 5.0;
-        hakedis_excel_aktar("Test Projesi", &kesif, &h, None, &yol).expect("hakediş Excel üretilmeli");
+        hakedis_excel_aktar("Test Projesi", &crate::models::ProjeBilgi::default(), &kesif, &h, None, &yol).expect("hakediş Excel üretilmeli");
         assert!(std::fs::metadata(&yol).unwrap().len() > 0, "Excel boş olmamalı");
         let _ = std::fs::remove_file(&yol);
     }

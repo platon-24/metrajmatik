@@ -168,8 +168,9 @@ impl MetrajApp {
         let toplam_bedel = self.toplam_tutar();
         let prog = self.is_programi.clone();
         let proje_adi = self.metraj_adi.clone();
+        let pb = self.proje_bilgi.clone();
         if let Some(d) = rfd::FileDialog::new().add_filter("Excel", &["xlsx"]).set_file_name(&format!("{} - Is Programi.xlsx", self.metraj_adi)).save_file() {
-            match crate::export::is_programi_excel_aktar(&proje_adi, toplam_bedel, &prog, &d) {
+            match crate::export::is_programi_excel_aktar(&proje_adi, &pb, toplam_bedel, &prog, &d) {
                 Ok(()) => self.basarili_mesaj = format!("İş programı Excel: {}", d.display()),
                 Err(e) => self.hata_mesaji = e,
             }

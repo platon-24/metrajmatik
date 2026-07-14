@@ -307,6 +307,45 @@ pub struct KayitliMetraj {
     pub hakedisler: Vec<Hakedis>,
     #[serde(default)]
     pub is_programi: IsProgrami,
+    #[serde(default)]
+    pub proje_bilgi: ProjeBilgi,
+}
+
+/// Resmî çıktıların (yaklaşık maliyet cetveli, hakediş, teklif) başlığında yer alan
+/// idari proje künyesi. Kamu ihale dokümanlarının standart üst bilgi alanları.
+/// Tüm alanlar serde-default (eski `.mrj` dosyaları boş künye ile açılır).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProjeBilgi {
+    #[serde(default)]
+    pub idare_adi: String, // İdarenin (işveren) adı
+    #[serde(default)]
+    pub is_adi: String, // İşin adı
+    #[serde(default)]
+    pub is_yeri: String, // İşin yeri (il/ilçe)
+    #[serde(default)]
+    pub ihale_kayit_no: String, // İhale Kayıt Numarası (İKN)
+    #[serde(default)]
+    pub is_turu: String, // Yapım / Hizmet / Mal
+    #[serde(default)]
+    pub yuklenici: String, // Yüklenici (hakediş/teklif aşamasında)
+    #[serde(default)]
+    pub sozlesme_no: String, // Sözleşme no
+    #[serde(default)]
+    pub sozlesme_tarihi: String, // Sözleşme tarihi
+}
+
+impl ProjeBilgi {
+    /// Künyede en az bir alan doldurulmuş mu?
+    pub fn dolu_mu(&self) -> bool {
+        !(self.idare_adi.is_empty()
+            && self.is_adi.is_empty()
+            && self.is_yeri.is_empty()
+            && self.ihale_kayit_no.is_empty()
+            && self.is_turu.is_empty()
+            && self.yuklenici.is_empty()
+            && self.sozlesme_no.is_empty()
+            && self.sozlesme_tarihi.is_empty())
+    }
 }
 
 fn varsayilan_kar_orani() -> f64 { 25.0 }
@@ -421,7 +460,7 @@ mod testler {
 
     #[test]
     fn gruplu_proje_toplami_gruplardan_hesaplanir() {
-        let m = KayitliMetraj { ad: "T".into(), kalemler: vec![], is_gruplari: ornek_agac(), tarih: "2026-01-01".into(), genel_gider_kar_orani: 25.0, kdv_orani: 20.0, hesap_turu: HesapTuru::Kamu, hakedisler: vec![], is_programi: IsProgrami::default() };
+        let m = KayitliMetraj { ad: "T".into(), kalemler: vec![], is_gruplari: ornek_agac(), tarih: "2026-01-01".into(), genel_gider_kar_orani: 25.0, kdv_orani: 20.0, hesap_turu: HesapTuru::Kamu, hakedisler: vec![], is_programi: IsProgrami::default(), proje_bilgi: ProjeBilgi::default() };
         assert_eq!(m.toplam_tutar(), 175.0);
     }
 

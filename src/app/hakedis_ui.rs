@@ -251,8 +251,9 @@ impl MetrajApp {
         let guncel = self.hakedisler[idx].clone();
         let onceki = if idx > 0 { Some(self.hakedisler[idx - 1].clone()) } else { None };
         let proje_adi = self.metraj_adi.clone();
+        let pb = self.proje_bilgi.clone();
         if let Some(d) = rfd::FileDialog::new().add_filter("Excel", &["xlsx"]).set_file_name(&format!("{} - Hakedis {}.xlsx", self.metraj_adi, guncel.no)).save_file() {
-            match crate::export::hakedis_excel_aktar(&proje_adi, &kesif, &guncel, onceki.as_ref(), &d) {
+            match crate::export::hakedis_excel_aktar(&proje_adi, &pb, &kesif, &guncel, onceki.as_ref(), &d) {
                 Ok(()) => self.basarili_mesaj = format!("Hakediş Excel: {}", d.display()),
                 Err(e) => self.hata_mesaji = e,
             }
