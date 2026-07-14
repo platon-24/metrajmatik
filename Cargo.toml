@@ -2,6 +2,9 @@
 name = "metrajmatik"
 version = "0.1.0"
 edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "Türk kamu ihale mevzuatına uygun yaklaşık maliyet, metraj ve hakediş programı"
+authors = ["Enes Aydoğan <enesaydogann@gmail.com>"]
 
 [dependencies]
 eframe = "0.31"

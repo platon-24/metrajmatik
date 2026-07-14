@@ -1,3 +1,12 @@
+// Metrajmatik — yaklaşık maliyet, metraj ve hakediş programı
+// Copyright (C) 2026 Enes Aydoğan
+//
+// Bu program özgür yazılımdır: GNU Affero Genel Kamu Lisansı'nın 3. sürümü
+// (veya tercihinize göre daha sonraki bir sürümü) koşulları altında yeniden
+// dağıtabilir ve/veya değiştirebilirsiniz. Ayrıntılar için depo kökündeki
+// LICENSE dosyasına bakın. HİÇBİR GARANTİSİ YOKTUR.
+// <https://www.gnu.org/licenses/agpl-3.0.html>
+
 mod app;
 mod bicim;
 mod database;

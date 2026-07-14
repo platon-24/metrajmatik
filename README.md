@@ -9,6 +9,7 @@
 ![SQLite](https://img.shields.io/badge/SQLite-FTS5-003B57?logo=sqlite&logoColor=white)
 ![Testler](https://img.shields.io/badge/testler-46%20passing-2ea043)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)
+![Lisans](https://img.shields.io/badge/lisans-AGPL--3.0-blue)
 ![Durum](https://img.shields.io/badge/durum-aktif%20geliştirme-f5a623)
 
 *Türk kamu ihale mevzuatına birebir uyumlu, tek dosyada çalışan masaüstü keşif/metraj/hakediş platformu.*
@@ -152,7 +153,19 @@ Ayrıntılı strateji ve mevzuat notları için: [`YAKLASIK_MALIYET_RAPORU.md`](
 
 ## 📜 Lisans
 
-Özel / ticari proje — **tüm hakları saklıdır.** (Lisans koşulları netleştirilecek.)
+**GNU Affero General Public License v3.0 (AGPL-3.0-or-later)** — bkz. [`LICENSE`](LICENSE).
+
+Bir *amme hizmeti* niyetiyle: **özgür ve bedava.** Herkes kullanabilir, inceleyebilir, değiştirebilir ve dağıtabilir. Tek koşul **copyleft**tir: bu koddan türetilmiş her sürüm — ağ üzerinden sunulan bir servis olsa dahi — **aynı AGPL lisansıyla, kaynak koduyla birlikte** açık kalmak zorundadır. Yani kimse alıp kapalı-ticari bir ürüne çeviremez; özgür kalır.
+
+```
+Copyright (C) 2026 Enes Aydoğan
+
+Bu program özgür yazılımdır: Free Software Foundation tarafından yayımlanan
+GNU Affero Genel Kamu Lisansı'nın 3. sürümü (veya tercihinize göre daha
+sonraki bir sürümü) koşulları altında yeniden dağıtabilir ve/veya
+değiştirebilirsiniz. Bu program faydalı olması umuduyla dağıtılır; ancak
+HİÇBİR GARANTİSİ YOKTUR. Ayrıntılar için LICENSE dosyasına bakın.
+```
 
 <div align="center">
 <sub>Türk inşaat sektörü için ❤️ ve 🦀 ile yapıldı.</sub>
