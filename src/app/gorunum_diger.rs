@@ -19,6 +19,9 @@ impl MetrajApp {
         tema::bolum_basligi(ui, "📚", "Kurum / Fiyat Kitabı Yöneticisi");
         ui.add_space(6.0);
 
+        let mut ice_aktar = false;
+        let mut disa_aktar: Option<i64> = None;
+
         // Yeni kurum ekleme (yalnız ad — dönem yok; fiyatlar PDF Yükle'den yüklenir)
         tema::kart(ui, |ui| {
             ui.horizontal(|ui| {
@@ -34,10 +37,30 @@ impl MetrajApp {
                         }
                     } else { self.hata_mesaji = "Veritabanı açık değil!".into(); }
                 }
+                if ui.button("📦 Paket İçe Aktar").on_hover_text(".mvp veri paketinden kurum + tüm dönem fiyatlarını içe al").clicked() { ice_aktar = true; }
             });
             ui.add_space(2.0);
-            ui.label(RichText::new("Kurum bir kez eklenir; aynı kurumun aylık fiyatları (dönemleri) altına birikir.").color(tema::METIN_SOLUK).size(11.0));
+            ui.label(RichText::new("Kurum bir kez eklenir; aynı kurumun aylık fiyatları (dönemleri) altına birikir. Veri paketi (.mvp) ile kurumları paylaşabilirsiniz.").color(tema::METIN_SOLUK).size(11.0));
         });
+        if ice_aktar { self.kurum_ice_aktar_diyalog(); }
+
+        ui.add_space(8.0);
+
+        // Yedekleme (yerel dosya → kullanıcının kendi bulut klasörüne konabilir)
+        let mut yedekle = false;
+        let mut geri_yukle = false;
+        tema::kart(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("💾 Yedekleme").strong().size(13.0).color(tema::METIN));
+                ui.add_space(8.0);
+                if ui.button("⬆ Yedek Al").on_hover_text("Tüm fiyat kitaplarını tek dosyaya kaydeder").clicked() { yedekle = true; }
+                if ui.button("⬇ Yedeği Geri Yükle").on_hover_text("Bir yedek dosyasını geri yükler (mevcut fiyat kitaplarının üzerine yazar)").clicked() { geri_yukle = true; }
+            });
+            ui.add_space(2.0);
+            ui.label(RichText::new("Yedeği OneDrive / Google Drive gibi bir bulut klasörüne koyarsanız otomatik buluta yedeklenir. Gerçek çok kullanıcılı bulut senkronizasyonu ayrı bir sunucu altyapısı gerektirir (yol haritasında).").color(tema::METIN_SOLUK).size(11.0));
+        });
+        if yedekle { self.veritabani_yedekle_diyalog(); }
+        if geri_yukle { self.veritabani_geri_yukle_diyalog(); }
 
         ui.add_space(10.0);
         ui.label(RichText::new("Kurumlar").strong().size(14.0).color(tema::METIN)); ui.add_space(6.0);
@@ -74,6 +97,7 @@ impl MetrajApp {
                             tema::rozet(ui, &format!("{} poz", kitap.poz_sayisi), tema::METIN_IKINCIL);
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if ui.add(egui::Button::new(RichText::new("🗑").color(tema::TEHLIKE)).fill(Color32::TRANSPARENT).stroke(egui::Stroke::new(1.0, tema::KENAR))).on_hover_text("Kurumu ve tüm dönemlerini sil").clicked() { silinecek = Some(kitap.clone()); }
+                                if ui.button("📦").on_hover_text("Veri paketi (.mvp) olarak dışa aktar").clicked() { disa_aktar = Some(kitap.id); }
                                 if ui.button("✏ Ad").clicked() { duzenlenecek = Some(kitap.clone()); }
                             });
                         });
@@ -117,6 +141,7 @@ impl MetrajApp {
                 }
             }
         }
+        if let Some(id) = disa_aktar { self.kurum_disa_aktar_diyalog(id); }
     }
 
     /// Kurum silme onay ekranı: kurum "tak diye" silinmez, önce onay istenir.

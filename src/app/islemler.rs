@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::bicim::krono_tarih;
-use crate::export::{metraj_csv_aktar, metraj_csv_oku, metraj_excel_aktar, metraj_json_kaydet, metraj_json_yukle, AnalizFoyu};
+use crate::export::{metraj_csv_aktar, metraj_csv_oku, metraj_excel_aktar, metraj_json_kaydet, metraj_json_yukle, veri_paketi_kaydet, veri_paketi_yukle, AnalizFoyu};
 use crate::is_grubu::{grup_bul_mut, grup_bul_ref, grup_canli_toplam, ilk_yaprak_grup_id};
 use crate::models::{IsGrubu, KayitliMetraj, MetrajKalemi, Poz};
 use crate::pdf_parser::{pdf_metin_cikar, pozlari_ayristir, profil_otomatik_sec, AyristirmaProfili};
@@ -277,6 +277,84 @@ impl MetrajApp {
         self.basarili_mesaj = format!("Nakliye eklendi: {} ({:.2} taşıma miktarı).", poz.poz_no, miktar);
     }
 
+    /// Bir kurumu taşınabilir veri paketine (.mvp) aktarır.
+    pub(crate) fn kurum_disa_aktar_diyalog(&mut self, kitap_id: i64) {
+        let paket = match self.db.as_ref().map(|db| db.kurum_disa_aktar(kitap_id)) {
+            Some(Ok(p)) => p,
+            Some(Err(e)) => { self.hata_mesaji = format!("{}", e); return; }
+            None => return,
+        };
+        if let Some(d) = rfd::FileDialog::new().add_filter("Metrajmatik Veri Paketi", &["mvp"]).set_file_name(&format!("{}.mvp", paket.kurum)).save_file() {
+            match veri_paketi_kaydet(&paket, &d) {
+                Ok(()) => self.basarili_mesaj = format!("Veri paketi: {} ({} poz)", d.display(), paket.pozlar.len()),
+                Err(e) => self.hata_mesaji = e,
+            }
+        }
+    }
+
+    /// Bir veri paketini (.mvp) içe alır: kurumu + poz + dönem fiyatlarını ekler.
+    pub(crate) fn kurum_ice_aktar_diyalog(&mut self) {
+        let dosya = match rfd::FileDialog::new().add_filter("Veri Paketi", &["mvp", "json"]).pick_file() { Some(d) => d, None => return };
+        let paket = match veri_paketi_yukle(&dosya) { Ok(p) => p, Err(e) => { self.hata_mesaji = e; return; } };
+        let sonuc = self.db.as_ref().map(|db| db.kurum_ice_aktar(&paket));
+        match sonuc {
+            Some(Ok((_, n))) => self.basarili_mesaj = format!("'{}' paketi içe alındı ({} poz).", paket.kurum, n),
+            Some(Err(e)) => { self.hata_mesaji = format!("{}", e); return; }
+            None => return,
+        }
+        self.poz_sayisi = self.db.as_ref().and_then(|db| db.poz_sayisi().ok()).unwrap_or(self.poz_sayisi);
+        self.kitaplari_yenile();
+    }
+
+    /// Tüm fiyat kitabı veritabanını tek dosyaya yedekler. Kullanıcı bu dosyayı
+    /// kendi bulut klasörüne (OneDrive/Drive) koyarak "bulut yedek" elde eder.
+    pub(crate) fn veritabani_yedekle_diyalog(&mut self) {
+        let db = match self.db.as_ref() { Some(d) => d, None => { self.hata_mesaji = "Veritabanı açık değil!".into(); return; } };
+        let damga: String = krono_tarih().chars().map(|c| if c.is_ascii_digit() { c } else { '-' }).collect();
+        let varsayilan = format!("metrajmatik_yedek_{}.db", damga);
+        if let Some(d) = rfd::FileDialog::new().add_filter("Metrajmatik Yedek", &["db"]).set_file_name(&varsayilan).save_file() {
+            match db.yedekle(&d) {
+                Ok(()) => self.basarili_mesaj = format!("Yedek alındı: {} — bu dosyayı bulut klasörünüze (OneDrive/Drive) kopyalayarak yedekleyebilirsiniz.", d.display()),
+                Err(e) => self.hata_mesaji = format!("Yedek alınamadı: {}", e),
+            }
+        }
+    }
+
+    /// Bir yedek dosyasını (.db) geri yükler: canlı bağlantıyı kapatır, dosyayı
+    /// mevcut veritabanının üzerine yazar ve yeniden açar. Fiyat kitaplarını değiştirir
+    /// (projeler .mrj dosyalarında ayrı tutulur, etkilenmez).
+    pub(crate) fn veritabani_geri_yukle_diyalog(&mut self) {
+        let kaynak = match rfd::FileDialog::new().add_filter("Metrajmatik Yedek", &["db"]).pick_file() { Some(d) => d, None => return };
+        // Bozuk dosyayı üzerine yazmamak için önce geçerliliğini doğrula.
+        if let Err(e) = crate::database::Veritabani::ac(&kaynak) {
+            self.hata_mesaji = format!("Yedek dosyası geçersiz: {}", e);
+            return;
+        }
+        let hedef = super::veri_yolu("metrajmatik_veriler.db");
+        // Canlı bağlantıyı kapat.
+        self.db = None;
+        // WAL/SHM yan dosyalarını temizle (üzerine yazılan dosyayla tutarsız kalmasın).
+        let hedef_metin = hedef.to_string_lossy().to_string();
+        for ek in ["-wal", "-shm"] {
+            let _ = std::fs::remove_file(PathBuf::from(format!("{}{}", hedef_metin, ek)));
+        }
+        if let Err(e) = std::fs::copy(&kaynak, &hedef) {
+            self.hata_mesaji = format!("Geri yükleme başarısız: {}", e);
+            self.db = crate::database::Veritabani::ac(&hedef).ok();
+            return;
+        }
+        match crate::database::Veritabani::ac(&hedef) {
+            Ok(vt) => {
+                self.poz_sayisi = vt.poz_sayisi().unwrap_or(0);
+                self.db = Some(vt);
+                self.secili_kitap = None;
+                self.kitaplari_yenile();
+                self.basarili_mesaj = "Yedek geri yüklendi. Fiyat kitapları güncellendi.".into();
+            }
+            Err(e) => self.hata_mesaji = format!("Geri yüklendi ama veritabanı açılamadı: {}", e),
+        }
+    }
+
     pub(crate) fn kategorileri_yukle(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(k) = db.kategoriler(kid) { self.kategoriler = k; } } }
     pub(crate) fn kategori_filtrele(&mut self) { if let Some(ref db) = self.db { let kid = self.secili_kitap.as_ref().map(|k| k.id); if let Ok(t) = db.tum_pozlar(kid) { self.kategori_pozlar = t.into_iter().filter(|p| p.kategori == self.secili_kategori).collect(); } } }
 
@@ -319,6 +397,7 @@ impl MetrajApp {
             kdv_orani: self.kdv_orani,
             hesap_turu: self.hesap_turu,
             hakedisler: self.hakedisler.clone(),
+            is_programi: self.is_programi.clone(),
         }
     }
     pub(crate) fn metraj_kaydet(&mut self) {
@@ -339,11 +418,12 @@ impl MetrajApp {
     pub(crate) fn metraj_dosyadan_yukle(&mut self, d: &Path, dosya_olarak: bool) {
         match metraj_json_yukle(d) {
             Ok(m) => {
-                let KayitliMetraj { ad, kalemler, is_gruplari, genel_gider_kar_orani, kdv_orani, hesap_turu, hakedisler, .. } = m;
+                let KayitliMetraj { ad, kalemler, is_gruplari, genel_gider_kar_orani, kdv_orani, hesap_turu, hakedisler, is_programi, .. } = m;
                 self.hesap_turu = hesap_turu;
                 self.genel_gider_kar_orani = genel_gider_kar_orani;
                 self.kdv_orani = kdv_orani;
                 self.hakedisler = hakedisler;
+                self.is_programi = is_programi;
                 self.secili_hakedis = None;
                 self.geri_al_yigini.clear();
                 self.yinele_yigini.clear();

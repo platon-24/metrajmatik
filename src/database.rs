@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::bicim::krono_tarih;
-use crate::models::{AnalizGirdisi, Donem, Kitap, Poz};
+use crate::models::{AnalizGirdisi, Donem, Kitap, PaketPoz, Poz, VeriPaketi};
 
 pub struct Veritabani {
     conn: Connection,
@@ -394,6 +394,44 @@ impl Veritabani {
         Ok(())
     }
 
+    // ==================== VERİ PAKETİ ====================
+    /// Bir kurumun tüm pozlarını + dönem fiyatlarını taşınabilir pakete çıkarır.
+    pub fn kurum_disa_aktar(&self, kitap_id: i64) -> Result<VeriPaketi> {
+        let kurum: String = self.conn.query_row("SELECT ad FROM kitaplar WHERE id = ?1", params![kitap_id], |r| r.get(0))?;
+        let mut stmt = self.conn.prepare("SELECT id, poz_no, tanim, birim, kategori FROM pozlar WHERE kitap_id = ?1 ORDER BY poz_no")?;
+        let ham: Vec<(i64, String, String, String, String)> = stmt
+            .query_map(params![kitap_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+            .filter_map(|x| x.ok()).collect();
+        let mut pozlar = Vec::with_capacity(ham.len());
+        for (pid, poz_no, tanim, birim, kategori) in ham {
+            let mut fs = self.conn.prepare("SELECT yil, ay, fiyat FROM poz_fiyatlari WHERE poz_id = ?1 ORDER BY yil, ay")?;
+            let fiyatlar: Vec<(u32, u32, Option<f64>)> = fs
+                .query_map(params![pid], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .filter_map(|x| x.ok()).collect();
+            pozlar.push(PaketPoz { poz_no, tanim, birim, kategori, fiyatlar });
+        }
+        Ok(VeriPaketi { kurum, pozlar })
+    }
+
+    /// Veri paketini içe alır: kurumu (yoksa) oluşturur, poz + dönem fiyatlarını ekler.
+    pub fn kurum_ice_aktar(&self, paket: &VeriPaketi) -> Result<(i64, usize)> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("INSERT OR IGNORE INTO kitaplar (ad, tarih) VALUES (?1, ?2)", params![paket.kurum, krono_tarih()])?;
+        let kitap_id: i64 = tx.query_row("SELECT id FROM kitaplar WHERE ad = ?1", params![paket.kurum], |r| r.get(0))?;
+        for p in &paket.pozlar {
+            tx.execute(
+                "INSERT OR IGNORE INTO pozlar (kitap_id, poz_no, tanim, birim, kategori, tur) VALUES (?1, ?2, ?3, ?4, ?5, 'poz')",
+                params![kitap_id, p.poz_no, p.tanim, p.birim, p.kategori],
+            )?;
+            let poz_id: i64 = tx.query_row("SELECT id FROM pozlar WHERE kitap_id = ?1 AND poz_no = ?2", params![kitap_id, p.poz_no], |r| r.get(0))?;
+            for (yil, ay, fiyat) in &p.fiyatlar {
+                tx.execute("INSERT OR REPLACE INTO poz_fiyatlari (poz_id, yil, ay, fiyat) VALUES (?1, ?2, ?3, ?4)", params![poz_id, yil, ay, fiyat])?;
+            }
+        }
+        tx.commit()?;
+        Ok((kitap_id, paket.pozlar.len()))
+    }
+
     /// Bir kurumda analizi olan poz numaraları (rozet için).
     pub fn analizli_poz_nolari(&self, kitap_id: i64) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare("SELECT DISTINCT poz_no FROM analiz_girdileri WHERE kitap_id = ?1")?;
@@ -426,6 +464,18 @@ impl Veritabani {
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![terimler.join(" AND ")], Self::poz_map)?;
         Ok(rows.filter_map(|p| p.ok()).collect())
+    }
+
+    /// Tüm veritabanını (kurumlar + pozlar + fiyatlar + analizler) tek temiz dosyaya
+    /// yedekler. `VACUUM INTO` WAL'ı birleştirip bütünlüklü tek dosya üretir; hedef
+    /// dosya varsa önce silinir (VACUUM INTO mevcut dosyaya yazmaz).
+    pub fn yedekle(&self, hedef: &Path) -> Result<()> {
+        if hedef.exists() {
+            std::fs::remove_file(hedef)
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e.to_string()))))?;
+        }
+        let yol = hedef.to_string_lossy().replace('\'', "''");
+        self.conn.execute_batch(&format!("VACUUM INTO '{}'", yol))
     }
 
     pub fn poz_getir(&self, poz_no: &str, kitap_id: Option<i64>) -> Result<Option<Poz>> {
@@ -594,6 +644,56 @@ mod testler {
         assert_eq!(db.poz_getir("15.100.1001", Some(kid)).unwrap().unwrap().fiyat, Some(562.5));
         drop(db);
         let _ = std::fs::remove_file(&yol);
+    }
+
+    #[test]
+    fn veri_paketi_disa_ice_roundtrip() {
+        let yol = gecici_yol();
+        let db = Veritabani::ac(&yol).unwrap();
+        let kid = db.kitap_ekle("ÇŞB").unwrap();
+        db.poz_ekle(kid, 2026, 5, "15.150.1001", "Beton", "m³", Some(800.0), "Beton").unwrap();
+        db.poz_ekle(kid, 2026, 6, "15.150.1001", "Beton", "m³", Some(900.0), "Beton").unwrap();
+        let paket = db.kurum_disa_aktar(kid).unwrap();
+        assert_eq!(paket.kurum, "ÇŞB");
+        assert_eq!(paket.pozlar.len(), 1);
+        assert_eq!(paket.pozlar[0].fiyatlar.len(), 2);
+
+        let yol2 = gecici_yol();
+        let db2 = Veritabani::ac(&yol2).unwrap();
+        let (yeni_kid, n) = db2.kurum_ice_aktar(&paket).unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(db2.poz_getir("15.150.1001", Some(yeni_kid)).unwrap().unwrap().fiyat, Some(900.0));
+        assert_eq!(db2.donemler(yeni_kid).unwrap().len(), 2);
+        drop(db);
+        drop(db2);
+        let _ = std::fs::remove_file(&yol);
+        let _ = std::fs::remove_file(&yol2);
+    }
+
+    #[test]
+    fn yedek_al_ve_gecerli_dosya_uretir() {
+        let yol = gecici_yol();
+        let db = Veritabani::ac(&yol).unwrap();
+        let kid = db.kitap_ekle("ÇŞB").unwrap();
+        db.poz_ekle(kid, 2026, 6, "15.150.1001", "Beton", "m³", Some(900.0), "Beton").unwrap();
+
+        let yedek = gecici_yol();
+        db.yedekle(&yedek).unwrap();
+        assert!(yedek.exists());
+        // Var olan hedefin üzerine de yazabilmeli (önce siler)
+        db.yedekle(&yedek).unwrap();
+
+        // Yedek açılıp aynı veriyi vermeli
+        let db2 = Veritabani::ac(&yedek).unwrap();
+        assert_eq!(db2.poz_sayisi().unwrap(), 1);
+        let kitaplar = db2.kitaplari_listele().unwrap();
+        assert_eq!(kitaplar.len(), 1);
+        assert_eq!(kitaplar[0].ad, "ÇŞB");
+
+        drop(db);
+        drop(db2);
+        let _ = std::fs::remove_file(&yol);
+        let _ = std::fs::remove_file(&yedek);
     }
 
     #[test]

@@ -659,7 +659,7 @@ fn opt_str(o: Option<f64>) -> String {
 
 // Bir popup satırının boyutlarından (işaretli) miktarı hesaplar; hiç boyut yoksa None.
 // `cikan` işaretliyse sonuç negatiftir (metrajdan düşülür).
-fn satir_miktar(s: &PopupDetaySatiri) -> Option<f64> {
+pub(crate) fn satir_miktar(s: &PopupDetaySatiri) -> Option<f64> {
     let a = sayi_oku(&s.adet);
     let e = sayi_oku(&s.en);
     let b = sayi_oku(&s.boy);
@@ -671,7 +671,7 @@ fn satir_miktar(s: &PopupDetaySatiri) -> Option<f64> {
     Some(if s.cikan { -m.abs() } else { m })
 }
 
-fn satir_to_detay(s: &PopupDetaySatiri) -> Option<MiktarDetay> {
+pub(crate) fn satir_to_detay(s: &PopupDetaySatiri) -> Option<MiktarDetay> {
     let m = satir_miktar(s)?;
     Some(MiktarDetay {
         aciklama: s.aciklama.clone(),
@@ -684,7 +684,7 @@ fn satir_to_detay(s: &PopupDetaySatiri) -> Option<MiktarDetay> {
     })
 }
 
-fn detay_to_satir(d: &MiktarDetay) -> PopupDetaySatiri {
+pub(crate) fn detay_to_satir(d: &MiktarDetay) -> PopupDetaySatiri {
     if d.boyutlu_mu() {
         PopupDetaySatiri {
             aciklama: d.aciklama.clone(),

@@ -14,17 +14,18 @@ use std::path::PathBuf;
 use crate::bicim::{metni_kisalt, para_formatla};
 use crate::database::Veritabani;
 use crate::is_grubu::ilk_yaprak_grup_id;
-use crate::models::{Donem, Hakedis, HesapTuru, IsGrubu, Kitap, MetrajKalemi, Poz};
+use crate::models::{Donem, Hakedis, HesapTuru, IsGrubu, IsProgrami, Kitap, MetrajKalemi, Poz};
 use crate::tema;
 
 mod analiz_ui;
 mod gorunum_diger;
 mod gorunum_metraj;
 mod hakedis_ui;
+mod is_programi_ui;
 mod islemler;
 
 #[derive(Debug, Clone, PartialEq)]
-enum Sekme { MetrajTablosu, Icmal, Hakedis, Pozlar, KitapYoneticisi, PdfYukle }
+enum Sekme { MetrajTablosu, Icmal, Hakedis, IsProgrami, Pozlar, KitapYoneticisi, PdfYukle }
 
 /// Miktar popup'ında bir detay satırının düzenlenebilir (metin) hali.
 #[derive(Default, Clone)]
@@ -142,6 +143,11 @@ pub struct MetrajApp {
     // Hakediş
     hakedisler: Vec<Hakedis>,
     secili_hakedis: Option<usize>,
+    hakedis_detay_acik: bool,        // yeşil defter ölçü kırılımı popup'ı
+    hakedis_detay_satir: Option<usize>, // seçili hakedişte hangi satır
+
+    // İş programı (pursantajlı zaman planı)
+    is_programi: IsProgrami,
 
     // Geri al / yinele
     geri_al_yigini: Vec<Anlik>,
@@ -260,6 +266,11 @@ impl Default for MetrajApp {
             // Hakediş
             hakedisler: vec![],
             secili_hakedis: None,
+            hakedis_detay_acik: false,
+            hakedis_detay_satir: None,
+
+            // İş programı
+            is_programi: IsProgrami::default(),
 
             // Geri al / yinele
             geri_al_yigini: vec![],
@@ -326,6 +337,9 @@ impl eframe::App for MetrajApp {
         // Nakliye popup'ı
         self.render_nakliye_popup(ctx);
 
+        // Hakediş yeşil defter kırılımı popup'ı
+        self.render_hakedis_detay_popup(ctx);
+
         egui::TopBottomPanel::top("menu_bar")
             .frame(egui::Frame::default().fill(tema::ARKA_PLAN).inner_margin(egui::Margin::symmetric(14, 9)))
             .show(ctx, |ui| {
@@ -345,8 +359,8 @@ impl eframe::App for MetrajApp {
                     ui.add_space(8.0);
 
                     // Sekme "pill"leri
-                    let sekmeler = [Sekme::MetrajTablosu, Sekme::Icmal, Sekme::Hakedis, Sekme::Pozlar, Sekme::KitapYoneticisi, Sekme::PdfYukle];
-                    let isimler = ["📋 Metraj", "📊 İcmal", "🧾 Hakediş", "🔎 Pozlar", "📚 Kitaplar", "📄 PDF Yükle"];
+                    let sekmeler = [Sekme::MetrajTablosu, Sekme::Icmal, Sekme::Hakedis, Sekme::IsProgrami, Sekme::Pozlar, Sekme::KitapYoneticisi, Sekme::PdfYukle];
+                    let isimler = ["📋 Metraj", "📊 İcmal", "🧾 Hakediş", "📅 İş Programı", "🔎 Pozlar", "📚 Kitaplar", "📄 PDF Yükle"];
                     for i in 0..sekmeler.len() {
                         let s = &sekmeler[i];
                         let aktif = self.aktif_sekme == *s;
@@ -454,6 +468,7 @@ impl eframe::App for MetrajApp {
                 Sekme::MetrajTablosu => self.render_metraj_tablosu(ui),
                 Sekme::Icmal => self.render_icmal(ui),
                 Sekme::Hakedis => self.render_hakedis(ui),
+                Sekme::IsProgrami => self.render_is_programi(ui),
                 Sekme::Pozlar => self.render_pozlar_tablosu(ui),
                 Sekme::KitapYoneticisi => self.render_kitap_yoneticisi(ui),
                 Sekme::PdfYukle => self.render_pdf_yukle(ui),

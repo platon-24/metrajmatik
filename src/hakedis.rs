@@ -32,6 +32,8 @@ pub struct HakedisIcmal {
     pub avans_mahsup: f64,
     pub kesinti_toplam: f64,
     pub net_odeme: f64,
+    pub kdv: f64,      // tahakkuk × KDV oranı (bilgi)
+    pub tevkifat: f64, // KDV × tevkifat oranı (bilgi)
 }
 
 /// Keşif kalemleri + hakediş + önceki hakediş → poz bazında satır hesapları.
@@ -60,17 +62,25 @@ pub fn icmal(hesaplar: &[HakedisPozHesap], hakedis: &Hakedis) -> HakedisIcmal {
     let kumulatif_brut = kurus_yuvarla(hesaplar.iter().map(|h| h.kumulatif_tutar).sum());
     let bu_hakedis_brut = kurus_yuvarla(hesaplar.iter().map(|h| h.bu_hakedis_tutar).sum());
     let onceki_brut = kurus_yuvarla(kumulatif_brut - bu_hakedis_brut);
-    let tahakkuk = kurus_yuvarla(bu_hakedis_brut + hakedis.fiyat_farki);
+    // Fiyat farkı: Yİ-ÜFE otomatik (F = An × B × (güncel/temel − 1)) ya da elle.
+    let fiyat_farki = if hakedis.ff_uygula && hakedis.ff_temel_endeks > 0.0 {
+        kurus_yuvarla(bu_hakedis_brut * hakedis.ff_b * (hakedis.ff_guncel_endeks / hakedis.ff_temel_endeks - 1.0))
+    } else {
+        hakedis.fiyat_farki
+    };
+    let tahakkuk = kurus_yuvarla(bu_hakedis_brut + fiyat_farki);
     let damga = kurus_yuvarla(tahakkuk * hakedis.damga_orani / 1000.0);
     let teminat = kurus_yuvarla(bu_hakedis_brut * hakedis.teminat_orani / 100.0);
     let sgk = kurus_yuvarla(bu_hakedis_brut * hakedis.sgk_orani / 100.0);
     let avans_mahsup = kurus_yuvarla(hakedis.avans_mahsup);
     let kesinti_toplam = kurus_yuvarla(damga + teminat + sgk + avans_mahsup);
     let net_odeme = kurus_yuvarla(tahakkuk - kesinti_toplam);
+    let kdv = kurus_yuvarla(tahakkuk * hakedis.kdv_orani / 100.0);
+    let tevkifat = kurus_yuvarla(kdv * hakedis.tevkifat_orani);
     HakedisIcmal {
         kumulatif_brut, onceki_brut, bu_hakedis_brut,
-        fiyat_farki: hakedis.fiyat_farki, tahakkuk,
-        damga, teminat, sgk, avans_mahsup, kesinti_toplam, net_odeme,
+        fiyat_farki, tahakkuk,
+        damga, teminat, sgk, avans_mahsup, kesinti_toplam, net_odeme, kdv, tevkifat,
     }
 }
 
@@ -87,11 +97,9 @@ mod testler {
         }
     }
     fn hakedis(no: u32, kumler: &[(&str, f64)]) -> Hakedis {
-        Hakedis {
-            no, tarih: "2026-01-01".into(), tur: "Ara".into(),
-            satirlar: kumler.iter().map(|(p, m)| HakedisSatiri { poz_no: p.to_string(), kumulatif_miktar: *m }).collect(),
-            damga_orani: 9.48, teminat_orani: 0.0, sgk_orani: 0.0, avans_mahsup: 0.0, fiyat_farki: 0.0,
-        }
+        let mut h = Hakedis::yeni(no, "Ara", "2026-01-01".into());
+        h.satirlar = kumler.iter().map(|(p, m)| HakedisSatiri { poz_no: p.to_string(), kumulatif_miktar: *m, detaylar: vec![] }).collect();
+        h
     }
 
     #[test]
@@ -122,5 +130,19 @@ mod testler {
         assert_eq!(ic.teminat, 500.0);
         assert_eq!(ic.kesinti_toplam, 1594.80); // 94.80 + 500 + 1000
         assert_eq!(ic.net_odeme, 8405.20); // 10000 - 1594.80
+    }
+
+    #[test]
+    fn fiyat_farki_yi_ufe_otomatik() {
+        let kesif = vec![kalem("A", 1000.0, 100.0)];
+        let mut h = hakedis(1, &[("A", 10.0)]); // bu hakediş brüt = 10.000
+        h.ff_uygula = true;
+        h.ff_b = 0.90;
+        h.ff_temel_endeks = 100.0;
+        h.ff_guncel_endeks = 120.0;
+        // F = 10000 × 0.90 × (120/100 − 1) = 1800
+        let ic = icmal(&poz_hesaplari(&kesif, &h, None), &h);
+        assert_eq!(ic.fiyat_farki, 1800.0);
+        assert_eq!(ic.tahakkuk, 11800.0);
     }
 }

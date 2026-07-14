@@ -216,13 +216,15 @@ Gerçek metrajda satırın **imalatın cinsi** açıklaması, poz açıklamasın
 - [x] **Excel gidiş-geliş (CSV):** Metraj CSV dışa aktarma + **CSV içe aktarma** (poz_no; miktar; imalat → aktif gruba, pozlar DB'den çözülür). Türk Excel uyumu (; ayraç, virgül ondalık). Round-trip testli. *(Gerçek .xlsx okuma isterse `calamine` eklenir.)*
 - [x] **Fiyat araştırması / piyasa rayici:** Poz formunda "Fiyat Araştırması" — boşlukla ayrılmış teklifler → `bicim::teklif_ortalamasi` → birim fiyat (piyasa rayici). Testli.
 
-### P2 — "OSKA/AMP'yi göm" (yaşam döngüsü + bulut)
-- [~] **Hakediş — çekirdek TAMAM:** `models::Hakedis/HakedisSatiri` (`.mrj`'de saklanır) + `hakedis.rs` hesap (kümülatif → bu hakediş → kesintiler → net, testli) + **Hakediş sekmesi** (`app/hakedis_ui.rs`): çoklu hakediş, önceki kümülatifi devralma, poz bazında editlenebilir yeşil-defter miktarı, kesinti oranları (damga ‰, teminat %, SGK %, avans, fiyat farkı), canlı net ödeme icmali + **resmî Excel hakediş raporu** (imza blokları). **Kalan:** yeşil defter/ataşman ölçü kırılımı, fiyat farkı otomatik (Yİ-ÜFE — fiyat geçmişi hazır), KDV tevkifatı, kesin hesap.
-- [ ] **Fiyat farkı:** Yİ-ÜFE endeksleri, temel/güncel endeks, sabit ağırlık oranları (a, b₁…bₙ).
-- [ ] **Kesin hesap**, geçici/kesin kabul.
-- [ ] **İş programı / zaman planı** (bar-chart).
-- [ ] **Bulut yedek + paylaşım + çok kullanıcı** (asıl farklılaşma).
-- [ ] **Güncel veri paketleri** (Bölüm 10).
+### P2 — "OSKA/AMP'yi göm" (yaşam döngüsü + bulut) — **TAMAMLANDI**
+- [x] **Hakediş — TAM:** `models::Hakedis/HakedisSatiri` (`.mrj`'de saklanır) + `hakedis.rs` hesap (kümülatif → bu hakediş → kesintiler → net, testli) + **Hakediş sekmesi** (`app/hakedis_ui.rs`): çoklu hakediş, önceki kümülatifi devralma, poz bazında editlenebilir yeşil-defter miktarı, **yeşil defter ölçü kırılımı popup'ı** (📐 boyut satırları; metraj popup'ıyla aynı motor), kesinti oranları (damga ‰9.48, teminat %, SGK %, avans), canlı net ödeme icmali + **resmî Excel hakediş raporu** (Sözleşme Farkı sütunu + imza blokları).
+- [x] **Fiyat farkı (Yİ-ÜFE):** temel/güncel endeks + sabit ağırlık oranı b (varsayılan 0.90); `F = bu_hakediş_brüt × b × (güncel/temel − 1)`. Otomatik (endeksten) veya manuel giriş. Fiyat geçmişi (v2 dönem modeli) altyapısı üzerine.
+- [x] **KDV tevkifatı:** tahakkuk × KDV% → tevkifat oranı (2/10, 3/10…) ile kamu alıcı payı. İcmalde ve Excel'de gösterilir.
+- [x] **Kesin hesap:** sözleşme bedeli vs gerçekleşen (kümülatif brüt) → sözleşme farkı (+ fazla / − eksik imalat) hem UI icmalinde hem Excel'de.
+- [x] **İş programı / zaman planı:** `models::IsProgrami` (`.mrj`'de saklanır) + **İş Programı sekmesi** (`app/is_programi_ui.rs`): başlangıç/süre, pursantaj dağılımı (eşit dağıt veya elle), aylık + kümülatif tutar tablosu, **ilerleme (S) eğrisi grafiği** (aylık çubuk + kümülatif eğri, painter ile) + **Excel pursantaj cetveli**. Toplam %100 kontrolü.
+- [x] **Veri paketleri (.mvp):** `models::VeriPaketi/PaketPoz` + `database::kurum_disa_aktar/kurum_ice_aktar` (kurum + tüm dönem fiyatları) + `export::veri_paketi_kaydet/yukle` (JSON) + Kitaplar sekmesinde 📦 dışa/içe aktar. Kurum fiyat kitaplarının paylaşımı/satışının teknik temeli (roundtrip testli).
+- [x] **Yedekleme (bulut temeli):** `database::yedekle` (`VACUUM INTO` ile tek temiz dosya) + Kitaplar sekmesinde **Yedek Al / Geri Yükle**. Yedek, kullanıcının kendi bulut klasörüne (OneDrive/Drive) konarak "bulut yedek" sağlar (testli).
+- [ ] **Gerçek çok kullanıcılı bulut senkronizasyonu** — sunucu altyapısı gerektirir (kimlik doğrulama, çakışma çözümü, depolama). Masaüstü uygulamasının kapsamı dışında; ayrı bir servis olarak yol haritasında. Yerel yedek + `.mvp`/`.mrj` dosya paylaşımı bugünkü pratik ikamesidir.
 
 ---
 

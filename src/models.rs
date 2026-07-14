@@ -197,15 +197,27 @@ impl HesapTuru {
 }
 
 /// Bir hakedişte tek bir iş kaleminin yeşil defter (kümülatif yapılan) miktarı.
+/// `detaylar` doluysa kümülatif miktar onların toplamıdır (ataşman/ölçü kırılımı).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HakedisSatiri {
     pub poz_no: String,
     pub kumulatif_miktar: f64, // bu hakedişe kadar YAPILAN toplam (yeşil defter)
+    #[serde(default)]
+    pub detaylar: Vec<MiktarDetay>, // yeşil defter / ataşman ölçü kırılımı
 }
 
-/// Bir hakediş (progress payment): numarası, dönemi, kümülatif imalat miktarları ve
-/// kesinti oranları. Sözleşme (keşif) kalemleri projeden gelir; hakediş yalnızca o
-/// pozların kümülatif yapılan miktarını + kesintileri tutar.
+impl HakedisSatiri {
+    /// Ölçü kırılımı (detaylar) varsa kümülatif miktarı onlardan tazeler.
+    pub fn detaylardan_tazele(&mut self) {
+        if !self.detaylar.is_empty() {
+            for d in self.detaylar.iter_mut() { d.miktar = d.hesaplanan_miktar(); }
+            self.kumulatif_miktar = self.detaylar.iter().map(|d| d.miktar).sum();
+        }
+    }
+}
+
+/// Bir hakediş (progress payment): kümülatif imalat miktarları + kesintiler +
+/// fiyat farkı (Yİ-ÜFE) + KDV/tevkifat. Sözleşme (keşif) kalemleri projeden gelir.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hakedis {
     pub no: u32,
@@ -214,25 +226,65 @@ pub struct Hakedis {
     #[serde(default)]
     pub satirlar: Vec<HakedisSatiri>,
     #[serde(default = "hakedis_damga_orani")]
-    pub damga_orani: f64, // binde (‰) — damga vergisi (tahakkuk üzerinden)
+    pub damga_orani: f64, // binde (‰) — damga vergisi
     #[serde(default)]
     pub teminat_orani: f64, // % — kesin teminat kesintisi
     #[serde(default)]
-    pub sgk_orani: f64, // % — SGK kesintisi (varsa)
+    pub sgk_orani: f64, // % — SGK
     #[serde(default)]
-    pub avans_mahsup: f64, // TL — bu hakedişte mahsup edilecek avans
+    pub avans_mahsup: f64, // TL — avans mahsubu
     #[serde(default)]
-    pub fiyat_farki: f64, // TL — +/- fiyat farkı (Yİ-ÜFE; şimdilik elle)
+    pub fiyat_farki: f64, // TL — elle fiyat farkı (ff_uygula=false ise kullanılır)
+    // Fiyat farkı (Yİ-ÜFE, otomatik): F = An × B × (güncel/temel − 1)
+    #[serde(default)]
+    pub ff_uygula: bool,
+    #[serde(default = "hakedis_ff_b")]
+    pub ff_b: f64, // B katsayısı (genelde 0,90)
+    #[serde(default)]
+    pub ff_temel_endeks: f64, // Po — ihale/teklif ayı Yİ-ÜFE
+    #[serde(default)]
+    pub ff_guncel_endeks: f64, // Pn — uygulama ayı Yİ-ÜFE
+    // KDV / tevkifat (bilgi amaçlı)
+    #[serde(default = "varsayilan_kdv_orani")]
+    pub kdv_orani: f64,
+    #[serde(default)]
+    pub tevkifat_orani: f64, // 0,4 = 4/10 tevkifat
 }
 
 impl Hakedis {
+    pub fn yeni(no: u32, tur: &str, tarih: String) -> Self {
+        Hakedis {
+            no, tarih, tur: tur.to_string(), satirlar: Vec::new(),
+            damga_orani: 9.48, teminat_orani: 0.0, sgk_orani: 0.0, avans_mahsup: 0.0,
+            fiyat_farki: 0.0, ff_uygula: false, ff_b: 0.90, ff_temel_endeks: 0.0, ff_guncel_endeks: 0.0,
+            kdv_orani: 20.0, tevkifat_orani: 0.0,
+        }
+    }
     /// Verilen pozun bu hakedişteki kümülatif yapılan miktarı (yoksa 0).
     pub fn kumulatif(&self, poz_no: &str) -> f64 {
         self.satirlar.iter().find(|s| s.poz_no == poz_no).map(|s| s.kumulatif_miktar).unwrap_or(0.0)
     }
 }
 
-fn hakedis_damga_orani() -> f64 { 9.48 } // binde 9.48 (hakediş damga vergisi)
+fn hakedis_damga_orani() -> f64 { 9.48 }
+fn hakedis_ff_b() -> f64 { 0.90 }
+
+/// Taşınabilir veri paketi: bir kurumun tüm pozları + dönem fiyatları (.mvp dosyası).
+/// Kurum kitaplarını paylaşmak/dağıtmak için (veri paketi iş modeli).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaketPoz {
+    pub poz_no: String,
+    pub tanim: String,
+    pub birim: String,
+    pub kategori: String,
+    pub fiyatlar: Vec<(u32, u32, Option<f64>)>, // (yıl, ay, fiyat)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VeriPaketi {
+    pub kurum: String,
+    pub pozlar: Vec<PaketPoz>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KayitliMetraj {
@@ -253,6 +305,8 @@ pub struct KayitliMetraj {
     pub hesap_turu: HesapTuru,
     #[serde(default)]
     pub hakedisler: Vec<Hakedis>,
+    #[serde(default)]
+    pub is_programi: IsProgrami,
 }
 
 fn varsayilan_kar_orani() -> f64 { 25.0 }
@@ -266,6 +320,54 @@ impl KayitliMetraj {
         } else {
             self.kalemler.iter().map(|k| k.tutar).sum()
         }
+    }
+}
+
+/// Pursantajlı iş programı: sözleşme süresini aylara böler ve her aya bir
+/// ilerleme yüzdesi (pursantaj) atar. Toplam bedel × aylık % = o ayın imalat
+/// tutarı; kümülatif toplam ise ilerleme (S) eğrisini verir. OSKA/AMP'de
+/// "iş programı / pursantaj cetveli" olarak bilinen çıktının temelidir.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IsProgrami {
+    pub baslangic_yil: u32,
+    pub baslangic_ay: u32,
+    pub sure_ay: u32,
+    /// Her ayın yüzdesi (toplamı 100 olmalı). Boşsa eşit dağıtılır.
+    #[serde(default)]
+    pub dagilim: Vec<f64>,
+}
+
+impl Default for IsProgrami {
+    fn default() -> Self {
+        Self { baslangic_yil: 2026, baslangic_ay: 1, sure_ay: 6, dagilim: Vec::new() }
+    }
+}
+
+impl IsProgrami {
+    /// Süreyi eşit yüzdelere böler (kullanıcı sonradan elle düzenleyebilir).
+    pub fn esit_dagit(&mut self) {
+        let n = self.sure_ay.max(1) as usize;
+        self.dagilim = vec![100.0 / n as f64; n];
+    }
+
+    /// Dağılım uzunluğu süre ile uyumlu değilse eşit dağıtıma döner.
+    pub fn normalize(&mut self) {
+        let n = self.sure_ay.max(1) as usize;
+        if self.dagilim.len() != n {
+            self.esit_dagit();
+        }
+    }
+
+    pub fn toplam_yuzde(&self) -> f64 {
+        self.dagilim.iter().sum()
+    }
+
+    /// i. ayın (0 tabanlı) takvim yıl/ay etiketi.
+    pub fn ay_etiketi(&self, i: usize) -> (u32, u32) {
+        let toplam = (self.baslangic_ay.max(1) as usize - 1) + i;
+        let yil = self.baslangic_yil + (toplam / 12) as u32;
+        let ay = (toplam % 12) as u32 + 1;
+        (yil, ay)
     }
 }
 
@@ -319,8 +421,32 @@ mod testler {
 
     #[test]
     fn gruplu_proje_toplami_gruplardan_hesaplanir() {
-        let m = KayitliMetraj { ad: "T".into(), kalemler: vec![], is_gruplari: ornek_agac(), tarih: "2026-01-01".into(), genel_gider_kar_orani: 25.0, kdv_orani: 20.0, hesap_turu: HesapTuru::Kamu, hakedisler: vec![] };
+        let m = KayitliMetraj { ad: "T".into(), kalemler: vec![], is_gruplari: ornek_agac(), tarih: "2026-01-01".into(), genel_gider_kar_orani: 25.0, kdv_orani: 20.0, hesap_turu: HesapTuru::Kamu, hakedisler: vec![], is_programi: IsProgrami::default() };
         assert_eq!(m.toplam_tutar(), 175.0);
+    }
+
+    #[test]
+    fn is_programi_esit_dagitir_ve_takvim_hesaplar() {
+        let mut p = IsProgrami { baslangic_yil: 2026, baslangic_ay: 11, sure_ay: 4, dagilim: vec![] };
+        p.normalize(); // boş dağılımı eşitler
+        assert_eq!(p.dagilim.len(), 4);
+        assert!((p.toplam_yuzde() - 100.0).abs() < 1e-9);
+        // Kasım 2026'dan başlayıp yıl atlar: Kas, Ara, Oca(2027), Şub(2027)
+        assert_eq!(p.ay_etiketi(0), (2026, 11));
+        assert_eq!(p.ay_etiketi(1), (2026, 12));
+        assert_eq!(p.ay_etiketi(2), (2027, 1));
+        assert_eq!(p.ay_etiketi(3), (2027, 2));
+    }
+
+    #[test]
+    fn is_programi_sure_degisince_yeniden_esitlenir() {
+        let mut p = IsProgrami::default();
+        p.esit_dagit(); // 6 ay
+        p.dagilim[0] = 90.0; // elle boz
+        p.sure_ay = 3;
+        p.normalize(); // uzunluk uyumsuz → eşitle
+        assert_eq!(p.dagilim.len(), 3);
+        assert!((p.dagilim[0] - 100.0 / 3.0).abs() < 1e-9);
     }
 
     #[test]
