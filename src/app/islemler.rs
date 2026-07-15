@@ -755,7 +755,23 @@ impl MetrajApp {
                 .save_file()
         };
         let Some(hedef) = hedef else { return };
-        match metraj_json_kaydet(&m, &hedef) {
+        self.metraj_hedefe_kaydet(&m, hedef);
+    }
+
+    pub(crate) fn metraj_farkli_kaydet(&mut self) {
+        let m = self.proje_olustur();
+        let Some(hedef) = rfd::FileDialog::new()
+            .add_filter("Metrajmatik Projesi", &["mrj"])
+            .set_file_name(format!("{}.mrj", self.metraj_adi))
+            .save_file()
+        else {
+            return;
+        };
+        self.metraj_hedefe_kaydet(&m, hedef);
+    }
+
+    fn metraj_hedefe_kaydet(&mut self, proje: &KayitliMetraj, hedef: PathBuf) {
+        match metraj_json_kaydet(proje, &hedef) {
             Ok(()) => {
                 self.mevcut_dosya_yolu = Some(hedef.clone());
                 self.degisiklik_var = false;

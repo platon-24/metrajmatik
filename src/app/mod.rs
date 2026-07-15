@@ -654,7 +654,11 @@ impl eframe::App for MetrajApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.kapanis_onayi = true;
         }
-        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::S)) {
+        if ctx.input(|i| i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::S)) {
+            self.metraj_farkli_kaydet();
+        } else if ctx
+            .input(|i| i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::S))
+        {
             self.metraj_kaydet();
         }
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::O)) {
@@ -799,8 +803,27 @@ impl eframe::App for MetrajApp {
                         });
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if tema::birincil_buton(ui, "Kaydet").clicked() {
+                        if tema::ikincil_ikonlu_buton(
+                            ui,
+                            tema::ikon::FARKLI_KAYDET,
+                            "Farklı Kaydet",
+                        )
+                        .on_hover_text("Projeyi yeni bir dosyaya kaydet (Ctrl+Shift+S)")
+                        .clicked()
+                        {
+                            self.metraj_farkli_kaydet();
+                        }
+                        if tema::birincil_ikonlu_buton(ui, tema::ikon::KAYDET, "Kaydet")
+                            .on_hover_text("Projeyi kaydet (Ctrl+S)")
+                            .clicked()
+                        {
                             self.metraj_kaydet();
+                        }
+                        if tema::ikincil_ikonlu_buton(ui, tema::ikon::PROJE_AC, "Proje Aç")
+                            .on_hover_text("Kayıtlı bir projeyi aç (Ctrl+O)")
+                            .clicked()
+                        {
+                            self.metraj_yukle_diyalog();
                         }
                         if genis_pencere {
                             ui.vertical(|ui| {

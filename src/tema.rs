@@ -62,6 +62,9 @@ pub mod ikon {
     pub const ONAY: &str = "\u{E73E}";
     pub const UYARI: &str = "\u{E7BA}";
     pub const KAPAT: &str = "\u{E711}";
+    pub const PROJE_AC: &str = "\u{E8E5}";
+    pub const KAYDET: &str = "\u{E74E}";
+    pub const FARKLI_KAYDET: &str = "\u{E792}";
 }
 
 pub fn ikon_fontu() -> FontFamily {
@@ -255,6 +258,15 @@ pub fn birincil_ikonlu_buton(ui: &mut Ui, ikon: &str, metin: &str) -> Response {
 
 pub fn ikincil_buton(ui: &mut Ui, metin: &str) -> Response {
     egui::Button::new(RichText::new(metin).color(METIN).strong())
+        .fill(YUZEY_3)
+        .stroke(Stroke::new(1.0, KENAR))
+        .min_size(egui::vec2(0.0, 32.0))
+        .corner_radius(CornerRadius::same(KOSE_KUCUK))
+        .ui(ui)
+}
+
+pub fn ikincil_ikonlu_buton(ui: &mut Ui, ikon: &str, metin: &str) -> Response {
+    egui::Button::new(ikonlu_metin(ikon, metin))
         .fill(YUZEY_3)
         .stroke(Stroke::new(1.0, KENAR))
         .min_size(egui::vec2(0.0, 32.0))
