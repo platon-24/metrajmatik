@@ -56,6 +56,9 @@ pub mod ikon {
     pub const METRAJ_TABLOSU: &str = "\u{F0E3}";
     pub const AKTAR: &str = "\u{EDE1}";
     pub const LOGO: &str = "\u{F0B4}";
+    pub const EKLE: &str = "\u{E710}";
+    pub const SIL: &str = "\u{E74D}";
+    pub const YENI_HAKEDIS: &str = "\u{E82E}";
 }
 
 pub fn ikon_fontu() -> FontFamily {
@@ -262,6 +265,19 @@ pub fn basari_buton(ui: &mut Ui, metin: &str) -> Response {
 
 pub fn tehlike_buton(ui: &mut Ui, metin: &str) -> Response {
     renkli_buton(ui, metin, TEHLIKE, Color32::WHITE)
+}
+
+pub fn tehlike_ikon_butonu(ui: &mut Ui, ikon: &str) -> Response {
+    egui::Button::new(
+        RichText::new(ikon)
+            .font(FontId::new(13.0, ikon_fontu()))
+            .color(TEHLIKE),
+    )
+    .fill(TEHLIKE_KOYU)
+    .stroke(Stroke::new(1.0, TEHLIKE))
+    .min_size(egui::vec2(26.0, 26.0))
+    .corner_radius(CornerRadius::same(KOSE_KUCUK))
+    .ui(ui)
 }
 
 pub fn bildirim_seridi(ui: &mut Ui, metin: &str, zemin: Color32, kenar: Color32, yazi: Color32) {

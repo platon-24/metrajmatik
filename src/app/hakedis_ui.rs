@@ -426,7 +426,9 @@ impl MetrajApp {
                         secilecek = Some(i);
                     }
                 }
-                if tema::birincil_buton(ui, "＋ Yeni Hakediş").clicked() {
+                if tema::birincil_ikonlu_buton(ui, tema::ikon::YENI_HAKEDIS, "Yeni Hakediş")
+                    .clicked()
+                {
                     yeni = true;
                 }
                 if self.secili_hakedis.is_some() {
@@ -466,7 +468,7 @@ impl MetrajApp {
             _ => {
                 ui.add_space(8.0);
                 ui.label(
-                    RichText::new("Bir hakediş seçin veya '＋ Yeni Hakediş' ile oluşturun.")
+                    RichText::new("Bir hakediş seçin veya 'Yeni Hakediş' ile oluşturun.")
                         .color(tema::METIN_SOLUK),
                 );
                 return;

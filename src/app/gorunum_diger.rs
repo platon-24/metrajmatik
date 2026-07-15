@@ -31,7 +31,7 @@ impl MetrajApp {
             ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new("Kurum Adı").color(tema::METIN_IKINCIL).size(12.0));
                 ui.add(TextEdit::singleline(&mut self.yeni_kitap_adi).hint_text("örn: Çevre ve Şehircilik Bakanlığı").desired_width(320.0));
-                if tema::birincil_buton(ui, "＋ Kurum Ekle").clicked() {
+                if tema::birincil_ikonlu_buton(ui, tema::ikon::EKLE, "Kurum Ekle").clicked() {
                     let ad = self.yeni_kitap_adi.trim().to_string();
                     if ad.is_empty() { self.hata_mesaji = "Kurum adı girin.".into(); }
                     else if let Some(ref db) = self.db {
@@ -205,14 +205,7 @@ impl MetrajApp {
                                         &format!("{}/{} · {} poz", d.ay, d.yil, d.poz_sayisi),
                                         tema::VURGU_HOVER,
                                     );
-                                    if ui
-                                        .add(
-                                            egui::Button::new(
-                                                RichText::new("✕").color(tema::TEHLIKE).size(10.0),
-                                            )
-                                            .fill(Color32::TRANSPARENT)
-                                            .stroke(egui::Stroke::NONE),
-                                        )
+                                    if tema::tehlike_ikon_butonu(ui, tema::ikon::SIL)
                                         .on_hover_text(
                                             "Bu dönemi sil (PDF'ten yeniden yüklenebilir)",
                                         )
