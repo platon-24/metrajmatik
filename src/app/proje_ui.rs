@@ -210,14 +210,20 @@ impl MetrajApp {
                         .size(12.5),
                 );
                 if ui
-                    .selectable_label(self.hesap_turu == HesapTuru::Kamu, "🏛 Kamu (KDV hariç)")
+                    .selectable_label(
+                        self.hesap_turu == HesapTuru::Kamu,
+                        tema::ikonlu_metin(tema::ikon::KAMU, "Kamu (KDV hariç)"),
+                    )
                     .clicked()
                 {
                     self.hesap_turu = HesapTuru::Kamu;
                     self.degisiklik_var = true;
                 }
                 if ui
-                    .selectable_label(self.hesap_turu == HesapTuru::Ozel, "🏢 Özel (KDV dahil)")
+                    .selectable_label(
+                        self.hesap_turu == HesapTuru::Ozel,
+                        tema::ikonlu_metin(tema::ikon::OZEL, "Özel (KDV dahil)"),
+                    )
                     .clicked()
                 {
                     self.hesap_turu = HesapTuru::Ozel;

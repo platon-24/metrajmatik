@@ -760,9 +760,8 @@ impl eframe::App for MetrajApp {
                         .inner_margin(egui::Margin::symmetric(11, 8))
                         .show(ui, |ui| {
                             ui.label(
-                                RichText::new("M")
-                                    .size(19.0)
-                                    .strong()
+                                RichText::new(tema::ikon::LOGO)
+                                    .font(egui::FontId::new(23.0, tema::ikon_fontu()))
                                     .color(tema::ARKA_PLAN),
                             );
                         });

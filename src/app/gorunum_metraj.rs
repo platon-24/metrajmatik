@@ -328,7 +328,7 @@ impl MetrajApp {
             );
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if tema::birincil_buton(ui, "＋ Ana Grup").clicked() {
+                if tema::birincil_ikonlu_buton(ui, tema::ikon::ANA_GRUP, "Ana Grup").clicked() {
                     let ad = self.yeni_grup_adi.trim().to_string();
                     if ad.is_empty() {
                         self.hata_mesaji = "Grup adı boş olamaz.".into();
@@ -340,7 +340,10 @@ impl MetrajApp {
                         self.hata_mesaji.clear();
                     }
                 }
-                if ui.button("＋ Alt Grup").clicked() {
+                if ui
+                    .button(tema::ikonlu_metin(tema::ikon::ALT_GRUP, "Alt Grup"))
+                    .clicked()
+                {
                     let ad = self.yeni_grup_adi.trim().to_string();
                     match (self.secili_grup_id.clone(), ad.is_empty()) {
                         (None, _) => self.hata_mesaji = "Önce bir üst grup seçin.".into(),
@@ -689,13 +692,11 @@ impl MetrajApp {
 
         // Başlık ve bağlam
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("📋").size(17.0));
-            ui.label(
-                RichText::new("Metraj Tablosu")
-                    .size(16.0)
-                    .strong()
-                    .color(tema::METIN),
-            );
+            ui.label(tema::ikonlu_metin_boyut(
+                tema::ikon::METRAJ_TABLOSU,
+                "Metraj Tablosu",
+                16.0,
+            ));
             match &aktif_grup_adi {
                 Some(ad) => tema::rozet(ui, &format!("▸ {}", ad), tema::VURGU_HOVER),
                 None if !self.is_gruplari.is_empty() => {
@@ -716,7 +717,7 @@ impl MetrajApp {
             if ui.button("📊 Excel").clicked() {
                 self.metraj_excel_diyalog();
             }
-            ui.menu_button("⇅ Aktar", |ui| {
+            ui.menu_button(tema::ikonlu_metin(tema::ikon::AKTAR, "Aktar"), |ui| {
                 if ui.button("📤 CSV dışa aktar").clicked() {
                     self.metraj_csv_diyalog();
                     ui.close_menu();

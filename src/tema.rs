@@ -2,9 +2,10 @@
 //! Renk, ritim, tipografi ve tekrar kullanılan arayüz bileşenleri burada tutulur.
 
 use eframe::egui;
+use egui::text::{LayoutJob, TextFormat};
 use egui::{
     Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Margin, Response,
-    RichText, Stroke, TextStyle, Ui, Widget,
+    RichText, Stroke, TextStyle, Ui, Widget, WidgetText,
 };
 use std::sync::Arc;
 
@@ -48,10 +49,44 @@ pub mod ikon {
     pub const KITAPLAR: &str = "\u{E8F1}";
     pub const PDF_AKTAR: &str = "\u{E898}";
     pub const KILIT: &str = "\u{E72E}";
+    pub const KAMU: &str = "\u{E825}";
+    pub const OZEL: &str = "\u{EC06}";
+    pub const ANA_GRUP: &str = "\u{E8F4}";
+    pub const ALT_GRUP: &str = "\u{ED41}";
+    pub const METRAJ_TABLOSU: &str = "\u{F0E3}";
+    pub const AKTAR: &str = "\u{EDE1}";
+    pub const LOGO: &str = "\u{F0B4}";
 }
 
 pub fn ikon_fontu() -> FontFamily {
     FontFamily::Name(IKON_FONTU.into())
+}
+
+pub fn ikonlu_metin(ikon: &str, metin: &str) -> WidgetText {
+    ikonlu_metin_boyut(ikon, metin, 13.0)
+}
+
+pub fn ikonlu_metin_boyut(ikon: &str, metin: &str, boyut: f32) -> WidgetText {
+    let mut duzen = LayoutJob::default();
+    duzen.append(
+        ikon,
+        0.0,
+        TextFormat {
+            font_id: FontId::new(boyut + 1.5, ikon_fontu()),
+            color: Color32::PLACEHOLDER,
+            ..Default::default()
+        },
+    );
+    duzen.append(
+        metin,
+        5.0,
+        TextFormat {
+            font_id: FontId::proportional(boyut),
+            color: Color32::PLACEHOLDER,
+            ..Default::default()
+        },
+    );
+    duzen.into()
 }
 
 pub fn uygula(ctx: &egui::Context) {
@@ -189,6 +224,14 @@ fn renkli_buton(ui: &mut Ui, metin: &str, zemin: Color32, yazi: Color32) -> Resp
 
 pub fn birincil_buton(ui: &mut Ui, metin: &str) -> Response {
     renkli_buton(ui, metin, VURGU, Color32::WHITE)
+}
+
+pub fn birincil_ikonlu_buton(ui: &mut Ui, ikon: &str, metin: &str) -> Response {
+    egui::Button::new(ikonlu_metin(ikon, metin))
+        .fill(VURGU)
+        .min_size(egui::vec2(0.0, 32.0))
+        .corner_radius(CornerRadius::same(KOSE_KUCUK))
+        .ui(ui)
 }
 
 pub fn ikincil_buton(ui: &mut Ui, metin: &str) -> Response {
