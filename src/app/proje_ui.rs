@@ -6,7 +6,7 @@ use eframe::egui;
 use egui::{RichText, TextEdit, Ui};
 
 use crate::bicim::para_formatla;
-use crate::models::HesapTuru;
+use crate::models::{HesapTuru, ProjeAsamasi};
 use crate::tema;
 
 use super::{MetrajApp, MetrajPaneli, Sekme};
@@ -27,6 +27,7 @@ fn kunye_alan(ui: &mut Ui, etiket: &str, deger: &mut String, ipucu: &str) -> boo
 
 impl MetrajApp {
     pub(crate) fn render_proje(&mut self, ui: &mut Ui) {
+        ui.set_max_width(1260.0);
         let kalem_sayisi: usize = self
             .is_gruplari
             .iter()
@@ -40,45 +41,72 @@ impl MetrajApp {
         ];
         let tamamlanan = adimlar.iter().filter(|tamam| **tamam).count();
 
-        tema::bolum_basligi(ui, "⌂", "Proje Merkezi");
-        ui.label(
-            RichText::new(
-                "Yeni bir projeyi dört net adımda kurun; ilerledikçe çıktılar otomatik hazırlanır.",
-            )
-            .color(tema::METIN_SOLUK)
-            .size(11.5),
+        tema::sayfa_basligi(
+            ui,
+            "Proje kontrol merkezi",
+            if self.metraj_adi.trim().is_empty() {
+                "Yeni projenizi hazırlayın"
+            } else {
+                &self.metraj_adi
+            },
+            "Künye, maliyet verileri ve sözleşme akışının tek bakışta özeti.",
         );
-        ui.add_space(8.0);
 
-        tema::kart(ui, |ui| {
+        tema::vurgu_karti(ui, |ui| {
+            let ilerleme_genisligi = ui.available_width();
             ui.horizontal_wrapped(|ui| {
                 ui.vertical(|ui| {
                     ui.label(
-                        RichText::new(if tamamlanan == adimlar.len() {
-                            "Proje akışı hazır"
+                        RichText::new(if self.proje_asamasi == ProjeAsamasi::Hakedis {
+                            "Hakediş çalışma alanı aktif"
+                        } else if tamamlanan == adimlar.len() {
+                            "Metrajınız sözleşmeye hazır"
                         } else {
-                            "Hızlı başlangıç"
+                            "Kurulumu tamamlayın"
                         })
                         .strong()
-                        .size(15.0),
+                        .size(18.0),
                     );
                     ui.label(
-                        RichText::new(format!(
-                            "{} / {} adım tamamlandı",
-                            tamamlanan,
-                            adimlar.len()
-                        ))
+                        RichText::new(if self.proje_asamasi == ProjeAsamasi::Hakedis {
+                            "Metraj donduruldu; sözleşme, ödeme ve iş programı birlikte ilerler."
+                                .to_owned()
+                        } else {
+                            format!(
+                                "{} / {} hazırlık adımı tamamlandı",
+                                tamamlanan,
+                                adimlar.len()
+                            )
+                        })
                         .color(tema::METIN_IKINCIL)
                         .size(12.0),
                     );
                 });
-                ui.add(
-                    egui::ProgressBar::new(tamamlanan as f32 / adimlar.len() as f32)
-                        .desired_width(220.0)
-                        .show_percentage(),
-                );
+                ui.add_space(20.0);
+                let etiket = if self.proje_asamasi == ProjeAsamasi::Hakedis {
+                    "Hakedişe devam et  >"
+                } else {
+                    "Metraja devam et  >"
+                };
+                if tema::birincil_buton(ui, etiket).clicked() {
+                    self.sekme_ac(if self.proje_asamasi == ProjeAsamasi::Hakedis {
+                        Sekme::Hakedis
+                    } else {
+                        Sekme::MetrajTablosu
+                    });
+                }
             });
-            ui.add_space(8.0);
+            ui.add_space(12.0);
+            ui.add(
+                egui::ProgressBar::new(tamamlanan as f32 / adimlar.len() as f32)
+                    .desired_width(ilerleme_genisligi)
+                    .text(format!("Hazırlık  ·  %{}", tamamlanan * 25)),
+            );
+        });
+        ui.add_space(12.0);
+
+        tema::bolum_basligi(ui, "↗", "Proje Akışı");
+        tema::kart(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 let _ = baslangic_adimi(
                     ui,
@@ -118,9 +146,9 @@ impl MetrajApp {
                 }
             });
         });
-        ui.add_space(12.0);
+        ui.add_space(16.0);
 
-        tema::bolum_basligi(ui, "▣", "Proje Bilgileri");
+        tema::bolum_basligi(ui, "•", "Proje Künyesi");
         ui.label(
             RichText::new(
                 "Bu bilgiler yaklaşık maliyet, hakediş ve teklif çıktılarının başlığına aktarılır.",
@@ -149,13 +177,13 @@ impl MetrajApp {
                     self.degisiklik_var = true;
                 }
                 ui.add_space(12.0);
-                if tema::basari_buton(ui, "💾 Kaydet").clicked() {
+                if tema::birincil_buton(ui, "Kaydet").clicked() {
                     self.metraj_kaydet();
                 }
-                if ui.button("📂 Aç").clicked() {
+                if tema::ikincil_buton(ui, "Proje Aç").clicked() {
                     self.metraj_yukle_diyalog();
                 }
-                if ui.button("⬇ Excel").clicked() {
+                if tema::ikincil_buton(ui, "Excel'e Aktar").clicked() {
                     self.metraj_excel_diyalog();
                 }
             });
@@ -332,7 +360,7 @@ impl MetrajApp {
 
 fn baslangic_adimi(ui: &mut Ui, sira: usize, baslik: &str, aciklama: &str, tamam: bool) -> bool {
     let durum = if tamam {
-        "✓".to_owned()
+        "OK".to_owned()
     } else {
         sira.to_string()
     };
@@ -342,11 +370,11 @@ fn baslangic_adimi(ui: &mut Ui, sira: usize, baslik: &str, aciklama: &str, tamam
                 .size(12.0)
                 .color(if tamam { tema::BASARI } else { tema::METIN }),
         )
-        .min_size(egui::vec2(200.0, 54.0))
+        .min_size(egui::vec2(198.0, 62.0))
         .fill(if tamam {
             tema::BASARI_KOYU
         } else {
-            tema::YUZEY
+            tema::YUZEY_3
         })
         .stroke(egui::Stroke::new(
             1.0,
@@ -359,10 +387,10 @@ fn baslangic_adimi(ui: &mut Ui, sira: usize, baslik: &str, aciklama: &str, tamam
 /// Küçük etiket-değer özet kutusu (pano rozetleri).
 fn ozet_kutu(ui: &mut Ui, etiket: &str, deger: &str, renk: egui::Color32) {
     egui::Frame::default()
-        .fill(tema::YUZEY_2)
-        .stroke(egui::Stroke::new(1.0, tema::KENAR))
+        .fill(tema::YUZEY_3)
+        .stroke(egui::Stroke::new(1.0, tema::KENAR_YUMUSAK))
         .corner_radius(egui::CornerRadius::same(tema::KOSE))
-        .inner_margin(egui::Margin::symmetric(14, 10))
+        .inner_margin(egui::Margin::symmetric(16, 12))
         .show(ui, |ui| {
             ui.vertical(|ui| {
                 ui.label(RichText::new(etiket).color(tema::METIN_SOLUK).size(11.0));

@@ -82,6 +82,30 @@ impl MetrajApp {
 
     fn render_hakedise_donusum(&mut self, ui: &mut Ui) {
         let kesif_bedeli = self.toplam_tutar();
+        ui.horizontal_wrapped(|ui| {
+            tema::istatistik(
+                ui,
+                "Keşif bedeli",
+                &format!("{} TL", para_formatla(kesif_bedeli)),
+                "Dönüşümde dondurulur",
+                tema::BASARI,
+            );
+            tema::istatistik(
+                ui,
+                "Metraj kalemi",
+                &self.kesif_kalemleri().len().to_string(),
+                "Sözleşme kapsamı",
+                tema::VURGU_HOVER,
+            );
+            tema::istatistik(
+                ui,
+                "İş programı",
+                "Hazır değil",
+                "Dönüşümle etkinleşir",
+                tema::AKSAN,
+            );
+        });
+        ui.add_space(10.0);
         tema::bildirim_seridi(
             ui,
             "Hakediş henüz etkin değil. Metrajı tamamlayın, sözleşme bilgilerini girin ve bilinçli olarak dönüştürün.",
@@ -352,8 +376,20 @@ impl MetrajApp {
     }
 
     pub(crate) fn render_hakedis(&mut self, ui: &mut Ui) {
-        tema::bolum_basligi(ui, "🧾", "Hakediş");
-        ui.add_space(6.0);
+        tema::sayfa_basligi(
+            ui,
+            if self.proje_asamasi == ProjeAsamasi::Metraj {
+                "Sözleşmeye geçiş"
+            } else {
+                "Ödeme çalışma alanı"
+            },
+            "Hakediş",
+            if self.proje_asamasi == ProjeAsamasi::Metraj {
+                "Tamamlanan metrajı sözleşmeye bağlayın ve kontrollü biçimde hakedişe dönüştürün."
+            } else {
+                "İmalat ilerlemesi, kesintiler, fiyat farkı ve net ödemeyi birlikte yönetin."
+            },
+        );
 
         let kesif = self.kesif_kalemleri();
         if kesif.is_empty() {

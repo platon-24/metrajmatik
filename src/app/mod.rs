@@ -537,6 +537,63 @@ impl MetrajApp {
     }
 }
 
+fn gezinti_butonu(
+    ui: &mut egui::Ui,
+    aktif: bool,
+    ikon: &str,
+    baslik: &str,
+    aciklama: &str,
+    kilitli: bool,
+) -> bool {
+    let isaret = if kilitli { "  ·  KİLİTLİ" } else { "" };
+    let metin = format!("{}  {}{}\n     {}", ikon, baslik, isaret, aciklama);
+    ui.add_sized(
+        [ui.available_width(), 52.0],
+        egui::Button::new(RichText::new(metin).size(12.5).color(if aktif {
+            Color32::WHITE
+        } else {
+            tema::METIN_IKINCIL
+        }))
+        .fill(if aktif {
+            tema::VURGU_SOLUK
+        } else {
+            Color32::TRANSPARENT
+        })
+        .stroke(egui::Stroke::new(
+            1.0,
+            if aktif {
+                tema::VURGU
+            } else {
+                Color32::TRANSPARENT
+            },
+        ))
+        .corner_radius(egui::CornerRadius::same(tema::KOSE_KUCUK)),
+    )
+    .clicked()
+}
+
+fn mobil_gezinti_butonu(ui: &mut egui::Ui, aktif: bool, ikon: &str, baslik: &str) -> bool {
+    ui.add(
+        egui::Button::new(
+            RichText::new(format!("{}  {}", ikon, baslik))
+                .size(12.5)
+                .strong()
+                .color(if aktif {
+                    Color32::WHITE
+                } else {
+                    tema::METIN_IKINCIL
+                }),
+        )
+        .fill(if aktif { tema::VURGU } else { tema::YUZEY_2 })
+        .stroke(egui::Stroke::new(
+            1.0,
+            if aktif { tema::VURGU } else { tema::KENAR },
+        ))
+        .corner_radius(egui::CornerRadius::same(tema::KOSE_KUCUK)),
+    )
+    .clicked()
+}
+
 impl eframe::App for MetrajApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.bildirimleri_guncelle(ctx);
@@ -628,159 +685,133 @@ impl eframe::App for MetrajApp {
         // Veri kaybı onayları diğer pencerelerin üstünde kalmalı.
         self.render_kaydetme_onaylari(ctx);
 
-        egui::TopBottomPanel::top("menu_bar")
+        let genis_pencere = ctx.screen_rect().width() >= 980.0;
+        let proje_adi = if self.metraj_adi.trim().is_empty() {
+            "Adsız proje".to_owned()
+        } else {
+            self.metraj_adi.clone()
+        };
+        let asama_etiketi = if self.proje_asamasi == ProjeAsamasi::Metraj {
+            "METRAJ AŞAMASI"
+        } else {
+            "HAKEDİŞ AŞAMASI"
+        };
+        let dosya_durumu = if self.degisiklik_var {
+            "Kaydedilmemiş değişiklik"
+        } else if self.mevcut_dosya_yolu.is_some() {
+            "Tüm değişiklikler kayıtlı"
+        } else {
+            "Yeni proje"
+        };
+
+        egui::TopBottomPanel::top("workspace_header")
+            .exact_height(68.0)
             .frame(
                 egui::Frame::default()
-                    .fill(tema::ARKA_PLAN)
-                    .inner_margin(egui::Margin::symmetric(14, 9)),
+                    .fill(tema::YUZEY)
+                    .stroke(egui::Stroke::new(1.0, tema::KENAR_YUMUSAK))
+                    .inner_margin(egui::Margin::symmetric(18, 10)),
             )
             .show(ctx, |ui| {
-                let genislik = ui.available_width();
-                let dar = genislik < 1120.0;
-                let marka_dar = genislik < 920.0;
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("🏗").size(22.0));
-                    if !marka_dar {
-                        ui.add_space(2.0);
-                        ui.label(
-                            RichText::new("METRAJMATIK")
-                                .color(tema::METIN)
-                                .size(17.0)
-                                .strong(),
-                        );
-                    }
-                    ui.add_space(if dar { 5.0 } else { 14.0 });
-                    ui.separator();
-                    ui.add_space(if dar { 2.0 } else { 6.0 });
-
-                    let ana_sekmeler = [
-                        (Sekme::Proje, "⌂", "Proje"),
-                        (Sekme::MetrajTablosu, "▤", "Metraj"),
-                        (Sekme::Icmal, "▥", "İcmal"),
-                        (Sekme::Hakedis, "◫", "Hakediş"),
-                        (Sekme::IsProgrami, "◷", "İş Programı"),
-                    ];
-                    for (sekme, ikon, ad) in ana_sekmeler {
-                        let aktif = self.aktif_sekme == sekme;
-                        let yazi = if aktif {
-                            Color32::WHITE
-                        } else {
-                            tema::METIN_IKINCIL
-                        };
-                        let etiket = if dar {
-                            ikon.to_owned()
-                        } else {
-                            format!("{}  {}", ikon, ad)
-                        };
-                        let yanit = ui
-                            .add(
-                                egui::Button::new(RichText::new(etiket).color(yazi).size(13.5))
-                                    .fill(if aktif {
-                                        tema::VURGU
-                                    } else {
-                                        Color32::TRANSPARENT
-                                    })
-                                    .stroke(if aktif {
-                                        egui::Stroke::NONE
-                                    } else {
-                                        egui::Stroke::new(1.0, tema::KENAR)
-                                    })
-                                    .corner_radius(egui::CornerRadius::same(tema::KOSE_KUCUK)),
-                            )
-                            .on_hover_text(ad);
-                        if yanit.clicked() {
-                            self.sekme_ac(sekme);
-                        }
-                    }
-
-                    let veri_aktif = matches!(
-                        self.aktif_sekme,
-                        Sekme::Pozlar | Sekme::KitapYoneticisi | Sekme::PdfYukle
-                    );
-                    let veri_etiketi = if dar { "⋯" } else { "◈  Veri" };
                     egui::Frame::default()
-                        .fill(if veri_aktif {
-                            tema::VURGU_SOLUK
-                        } else {
-                            Color32::TRANSPARENT
-                        })
-                        .stroke(egui::Stroke::new(
-                            1.0,
-                            if veri_aktif { tema::VURGU } else { tema::KENAR },
-                        ))
-                        .corner_radius(egui::CornerRadius::same(tema::KOSE_KUCUK))
-                        .inner_margin(egui::Margin::symmetric(2, 0))
+                        .fill(tema::AKSAN)
+                        .corner_radius(egui::CornerRadius::same(9))
+                        .inner_margin(egui::Margin::symmetric(11, 8))
                         .show(ui, |ui| {
-                            ui.menu_button(veri_etiketi, |ui| {
-                                ui.set_min_width(210.0);
-                                ui.label(
-                                    RichText::new("VERİ KAYNAKLARI")
-                                        .size(10.5)
-                                        .color(tema::METIN_SOLUK)
-                                        .strong(),
-                                );
-                                ui.separator();
-                                for (sekme, ikon, ad, aciklama) in [
-                                    (Sekme::Pozlar, "⌕", "Pozlar", "Pozları incele ve düzenle"),
-                                    (
-                                        Sekme::KitapYoneticisi,
-                                        "▦",
-                                        "Fiyat Kitapları",
-                                        "Kurum ve dönemleri yönet",
-                                    ),
-                                    (
-                                        Sekme::PdfYukle,
-                                        "⇧",
-                                        "PDF'den Aktar",
-                                        "Yeni fiyat verisi içe al",
-                                    ),
-                                ] {
-                                    let secili = self.aktif_sekme == sekme;
-                                    if ui
-                                        .selectable_label(secili, format!("{}  {}", ikon, ad))
-                                        .on_hover_text(aciklama)
-                                        .clicked()
-                                    {
-                                        self.sekme_ac(sekme);
-                                        ui.close_menu();
-                                    }
-                                }
-                            });
+                            ui.label(
+                                RichText::new("M")
+                                    .size(19.0)
+                                    .strong()
+                                    .color(tema::ARKA_PLAN),
+                            );
                         });
-
-                    if genislik > 1260.0 {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if let Some(ref yol) = self.mevcut_dosya_yolu {
-                                let dosya = yol.file_name().unwrap().to_string_lossy().to_string();
-                                let isaret = if self.degisiklik_var { "●  " } else { "" };
-                                ui.label(
-                                    RichText::new(format!("{}{}", isaret, dosya))
-                                        .color(if self.degisiklik_var {
-                                            tema::UYARI
-                                        } else {
-                                            tema::METIN_SOLUK
-                                        })
-                                        .size(12.5),
-                                );
-                                ui.label(RichText::new("📄").size(13.0));
-                            } else {
-                                ui.label(
-                                    RichText::new("Kaydedilmemiş proje")
-                                        .color(tema::METIN_SOLUK)
-                                        .size(12.5),
-                                );
-                            }
+                    ui.add_space(3.0);
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("METRAJMATİK").size(14.5).strong());
+                        ui.label(
+                            RichText::new("Keşiften hakedişe tek çalışma alanı")
+                                .size(10.5)
+                                .color(tema::METIN_SOLUK),
+                        );
+                    });
+                    if genis_pencere {
+                        ui.add_space(14.0);
+                        ui.separator();
+                        ui.add_space(8.0);
+                        ui.vertical(|ui| {
+                            ui.label(RichText::new(&proje_adi).size(14.0).strong());
+                            ui.label(
+                                RichText::new(asama_etiketi)
+                                    .size(10.0)
+                                    .strong()
+                                    .color(tema::AKSAN),
+                            );
                         });
                     }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if tema::birincil_buton(ui, "Kaydet").clicked() {
+                            self.metraj_kaydet();
+                        }
+                        if genis_pencere {
+                            ui.vertical(|ui| {
+                                ui.label(RichText::new(dosya_durumu).size(11.5).color(
+                                    if self.degisiklik_var {
+                                        tema::UYARI
+                                    } else {
+                                        tema::BASARI
+                                    },
+                                ));
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{} kalem  ·  {} TL",
+                                        self.metraj_kalemleri.len(),
+                                        para_formatla(self.toplam_tutar())
+                                    ))
+                                    .size(10.5)
+                                    .color(tema::METIN_SOLUK),
+                                );
+                            });
+                        }
+                    });
                 });
             });
+
+        if !genis_pencere {
+            egui::TopBottomPanel::top("mobile_navigation")
+                .frame(
+                    egui::Frame::default()
+                        .fill(tema::YUZEY)
+                        .inner_margin(egui::Margin::symmetric(10, 7)),
+                )
+                .show(ctx, |ui| {
+                    egui::ScrollArea::horizontal().show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            for (sekme, ikon, ad) in [
+                                (Sekme::Proje, "PR", "Proje"),
+                                (Sekme::MetrajTablosu, "MT", "Metraj"),
+                                (Sekme::Icmal, "IC", "İcmal"),
+                                (Sekme::Hakedis, "HK", "Hakediş"),
+                                (Sekme::IsProgrami, "IP", "Program"),
+                                (Sekme::Pozlar, "PZ", "Pozlar"),
+                                (Sekme::KitapYoneticisi, "FK", "Kitaplar"),
+                                (Sekme::PdfYukle, "PDF", "Aktar"),
+                            ] {
+                                if mobil_gezinti_butonu(ui, self.aktif_sekme == sekme, ikon, ad) {
+                                    self.sekme_ac(sekme);
+                                }
+                            }
+                        });
+                    });
+                });
+        }
 
         // ÖNEMLİ: Alt durum çubuğu CentralPanel'den ÖNCE eklenmeli; aksi halde merkez
         // içerik pencerenin en altına kadar uzar ve durum çubuğu içeriğin üzerine biner.
         egui::TopBottomPanel::bottom("status_bar")
             .frame(
                 egui::Frame::default()
-                    .fill(tema::ARKA_PLAN)
+                    .fill(tema::YUZEY)
                     .inner_margin(egui::Margin::symmetric(12, 5)),
             )
             .show(ctx, |ui| {
@@ -800,18 +831,14 @@ impl eframe::App for MetrajApp {
                         if let Some(ref k) = self.secili_kitap {
                             tema::rozet(
                                 ui,
-                                &format!("📚 {}", metni_kisalt(&k.ad, 30)),
+                                &format!("Kitap  ·  {}", metni_kisalt(&k.ad, 30)),
                                 tema::METIN_IKINCIL,
                             );
                         }
+                        tema::rozet(ui, &format!("{} poz", self.poz_sayisi), tema::METIN_IKINCIL);
                         tema::rozet(
                             ui,
-                            &format!("🗂 {} poz", self.poz_sayisi),
-                            tema::METIN_IKINCIL,
-                        );
-                        tema::rozet(
-                            ui,
-                            &format!("📋 {} kalem", self.metraj_kalemleri.len()),
+                            &format!("{} kalem", self.metraj_kalemleri.len()),
                             tema::METIN_IKINCIL,
                         );
                     }
@@ -832,8 +859,132 @@ impl eframe::App for MetrajApp {
                 });
             });
 
+        if genis_pencere {
+            egui::SidePanel::left("primary_navigation")
+                .exact_width(224.0)
+                .resizable(false)
+                .frame(
+                    egui::Frame::default()
+                        .fill(tema::YUZEY)
+                        .stroke(egui::Stroke::new(1.0, tema::KENAR_YUMUSAK))
+                        .inner_margin(egui::Margin::symmetric(12, 16)),
+                )
+                .show(ctx, |ui| {
+                    for (grup, ogeler) in [
+                        (
+                            "ÇALIŞMA",
+                            vec![
+                                (
+                                    Sekme::Proje,
+                                    "PR",
+                                    "Proje Merkezi",
+                                    "Künye ve genel durum",
+                                    false,
+                                ),
+                                (
+                                    Sekme::MetrajTablosu,
+                                    "MT",
+                                    "Metraj",
+                                    "Poz, grup ve miktarlar",
+                                    false,
+                                ),
+                                (
+                                    Sekme::Icmal,
+                                    "IC",
+                                    "İcmal",
+                                    "Maliyet ve genel toplam",
+                                    false,
+                                ),
+                            ],
+                        ),
+                        (
+                            "SÖZLEŞME",
+                            vec![
+                                (
+                                    Sekme::Hakedis,
+                                    "HK",
+                                    "Hakediş",
+                                    "Sözleşme ve ödemeler",
+                                    false,
+                                ),
+                                (
+                                    Sekme::IsProgrami,
+                                    "IP",
+                                    "İş Programı",
+                                    "Pursantaj ve zaman planı",
+                                    self.proje_asamasi == ProjeAsamasi::Metraj,
+                                ),
+                            ],
+                        ),
+                        (
+                            "KÜTÜPHANE",
+                            vec![
+                                (
+                                    Sekme::Pozlar,
+                                    "PZ",
+                                    "Poz Kütüphanesi",
+                                    "Birim fiyat verileri",
+                                    false,
+                                ),
+                                (
+                                    Sekme::KitapYoneticisi,
+                                    "FK",
+                                    "Fiyat Kitapları",
+                                    "Kurum ve dönemler",
+                                    false,
+                                ),
+                                (
+                                    Sekme::PdfYukle,
+                                    "PDF",
+                                    "PDF'den Aktar",
+                                    "Yeni veri kaynağı",
+                                    false,
+                                ),
+                            ],
+                        ),
+                    ] {
+                        ui.label(
+                            RichText::new(grup)
+                                .size(10.0)
+                                .strong()
+                                .color(tema::METIN_SOLUK),
+                        );
+                        ui.add_space(4.0);
+                        for (sekme, ikon, ad, aciklama, kilitli) in ogeler {
+                            if gezinti_butonu(
+                                ui,
+                                self.aktif_sekme == sekme,
+                                ikon,
+                                ad,
+                                aciklama,
+                                kilitli,
+                            ) {
+                                self.sekme_ac(sekme);
+                            }
+                        }
+                        ui.add_space(12.0);
+                    }
+                    ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+                        ui.label(
+                            RichText::new(if self.proje_asamasi == ProjeAsamasi::Metraj {
+                                "SONRAKİ AŞAMA  ·  HAKEDİŞ"
+                            } else {
+                                "AKTİF AŞAMA  ·  HAKEDİŞ"
+                            })
+                            .size(10.0)
+                            .strong()
+                            .color(tema::AKSAN),
+                        );
+                    });
+                });
+        }
+
         egui::CentralPanel::default()
-            .frame(egui::Frame::default().fill(tema::ARKA_PLAN).inner_margin(egui::Margin::same(12)))
+            .frame(
+                egui::Frame::default()
+                    .fill(tema::ARKA_PLAN)
+                    .inner_margin(egui::Margin::same(if genis_pencere { 18 } else { 10 })),
+            )
             .show(ctx, |ui| {
             // Kurtarma şeridi: otomatik kayıt dosyası varsa
             if self.kurtarma_mevcut {

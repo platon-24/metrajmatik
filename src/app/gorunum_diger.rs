@@ -16,8 +16,12 @@ use super::MetrajApp;
 impl MetrajApp {
     // ==================== KURUM / KİTAP YÖNETİCİSİ ====================
     pub(crate) fn render_kitap_yoneticisi(&mut self, ui: &mut Ui) {
-        tema::bolum_basligi(ui, "📚", "Kurum / Fiyat Kitabı Yöneticisi");
-        ui.add_space(6.0);
+        tema::sayfa_basligi(
+            ui,
+            "Veri kütüphanesi",
+            "Fiyat Kitapları",
+            "Kurumları, dönemleri, veri paketlerini ve yerel yedekleri yönetin.",
+        );
 
         let mut ice_aktar = false;
         let mut disa_aktar: Option<i64> = None;
@@ -303,8 +307,12 @@ impl MetrajApp {
 
     // ==================== İCMAL / YAKLAŞIK MALİYET ====================
     pub(crate) fn render_icmal(&mut self, ui: &mut Ui) {
-        tema::bolum_basligi(ui, "📊", "Keşif İcmali / Yaklaşık Maliyet");
-        ui.add_space(6.0);
+        tema::sayfa_basligi(
+            ui,
+            "Maliyet görünümü",
+            "Keşif İcmali",
+            "İş gruplarını, genel giderleri ve proje toplamını tek tabloda denetleyin.",
+        );
 
         let secili = self.secili_grup_id.as_deref();
         // Üst düzey grupların canlı toplamları
@@ -855,8 +863,12 @@ impl MetrajApp {
             self.pozlar_tablosu_yenile();
         }
 
-        tema::bolum_basligi(ui, "🔎", "Pozlar");
-        ui.add_space(6.0);
+        tema::sayfa_basligi(
+            ui,
+            "Birim fiyat kütüphanesi",
+            "Pozlar",
+            "Kurum ve dönem bazında pozları arayın, inceleyin ve yönetin.",
+        );
         tema::kart(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Kurum").color(tema::METIN_IKINCIL).size(12.0));
@@ -1097,8 +1109,12 @@ impl MetrajApp {
 
     // ==================== PDF YUKLE ====================
     pub(crate) fn render_pdf_yukle(&mut self, ui: &mut Ui) {
-        tema::bolum_basligi(ui, "📄", "PDF Birim Fiyat Listesi Yükle");
-        ui.add_space(6.0);
+        tema::sayfa_basligi(
+            ui,
+            "Veri içe aktarma",
+            "PDF'den Birim Fiyat Aktar",
+            "Birim fiyat listesini doğru kurum ve döneme kontrollü biçimde yükleyin.",
+        );
         if self.kitaplar.is_empty() {
             tema::bildirim_seridi(
                 ui,

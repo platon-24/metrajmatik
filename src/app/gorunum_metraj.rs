@@ -18,7 +18,12 @@ impl MetrajApp {
     // ==================== METRAJ TABLOSU ====================
     pub(crate) fn render_metraj_tablosu(&mut self, ui: &mut Ui) {
         if self.proje_asamasi == ProjeAsamasi::Hakedis {
-            tema::bolum_basligi(ui, "🔒", "Metraj Donduruldu");
+            tema::sayfa_basligi(
+                ui,
+                "Salt okunur sözleşme bazı",
+                "Metraj donduruldu",
+                "Hakediş tutarlılığını korumak için bu çalışma alanı artık düzenlenemez.",
+            );
             ui.add_space(6.0);
             tema::bildirim_seridi(
                 ui,
@@ -53,6 +58,36 @@ impl MetrajApp {
             });
             return;
         }
+        tema::sayfa_basligi(
+            ui,
+            "Keşif çalışma alanı",
+            "Metraj",
+            "Pozu bulun, iş grubuna yerleştirin ve ölçü detaylarını tek akışta yönetin.",
+        );
+        ui.horizontal_wrapped(|ui| {
+            tema::istatistik(
+                ui,
+                "Aktif kalem",
+                &self.metraj_kalemleri.len().to_string(),
+                "Seçili iş grubunda",
+                tema::VURGU_HOVER,
+            );
+            tema::istatistik(
+                ui,
+                "İş grubu",
+                &self.is_gruplari.len().to_string(),
+                "Proje kırılımı",
+                tema::AKSAN,
+            );
+            tema::istatistik(
+                ui,
+                "Keşif toplamı",
+                &format!("{} TL", para_formatla(self.toplam_tutar())),
+                "Güncel miktarlarla",
+                tema::BASARI,
+            );
+        });
+        ui.add_space(10.0);
         let dar_duzen = ui.available_width() < 1320.0;
         let kitap_genisligi = (ui.available_width() - 260.0).clamp(180.0, 360.0);
         tema::kart(ui, |ui| {

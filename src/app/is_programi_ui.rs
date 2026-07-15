@@ -14,7 +14,12 @@ use super::{MetrajApp, Sekme};
 impl MetrajApp {
     pub(crate) fn render_is_programi(&mut self, ui: &mut Ui) {
         if self.proje_asamasi == ProjeAsamasi::Metraj {
-            tema::bolum_basligi(ui, "🔒", "İş Programı");
+            tema::sayfa_basligi(
+                ui,
+                "Sözleşme sonrası araç",
+                "İş Programı kilitli",
+                "Pursantaj planı, hakediş aşaması başladığında sözleşme bedeli üzerinden etkinleşir.",
+            );
             ui.add_space(6.0);
             tema::bildirim_seridi(
                 ui,
@@ -33,9 +38,36 @@ impl MetrajApp {
         // Dağılım uzunluğunu süre ile hizala (süre değiştiyse eşit böler).
         self.is_programi.normalize();
 
-        tema::bolum_basligi(ui, "📅", "İş Programı (Pursantaj / Zaman Planı)");
-        ui.label(RichText::new("Sözleşme bedelini süre boyunca aylara dağıtır; kümülatif toplam ilerleme (S) eğrisini verir.").color(tema::METIN_SOLUK).size(11.5));
-        ui.add_space(8.0);
+        tema::sayfa_basligi(
+            ui,
+            "Planlama çalışma alanı",
+            "İş Programı",
+            "Sözleşme bedelini aylara dağıtın; pursantajı ve kümülatif ilerlemeyi izleyin.",
+        );
+        ui.horizontal_wrapped(|ui| {
+            tema::istatistik(
+                ui,
+                "Sözleşme bedeli",
+                &format!("{} TL", para_formatla(toplam_bedel)),
+                "Planlama bazı",
+                tema::BASARI,
+            );
+            tema::istatistik(
+                ui,
+                "Süre",
+                &format!("{} ay", self.is_programi.sure_ay),
+                "Toplam takvim",
+                tema::VURGU_HOVER,
+            );
+            tema::istatistik(
+                ui,
+                "Pursantaj",
+                &format!("% {:.2}", self.is_programi.toplam_yuzde()),
+                "Hedef %100",
+                tema::AKSAN,
+            );
+        });
+        ui.add_space(10.0);
 
         // ---- Ayarlar kartı ----
         let mut esit_dagit = false;

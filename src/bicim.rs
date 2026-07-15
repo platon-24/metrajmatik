@@ -44,6 +44,7 @@ pub fn metni_kisalt(metin: &str, en_fazla: usize) -> String {
 
 /// f64 parayı "1.234.567,89" (Türk biçimi, binlik nokta / ondalık virgül) yazdırır.
 pub fn para_formatla(deger: f64) -> String {
+    let deger = if deger.abs() < 0.005 { 0.0 } else { deger };
     let isaret = if deger.is_sign_negative() { "-" } else { "" };
     let yuvarlanmis = format!("{:.2}", deger.abs());
     let mut parcalar = yuvarlanmis.split('.');
