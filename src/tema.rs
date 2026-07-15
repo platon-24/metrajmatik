@@ -273,6 +273,25 @@ pub fn rozet(ui: &mut Ui, metin: &str, renk: Color32) {
         });
 }
 
+pub fn ikonlu_rozet(ui: &mut Ui, ikon: &str, metin: &str, renk: Color32) {
+    egui::Frame::default()
+        .fill(VURGU_SOLUK)
+        .stroke(Stroke::new(1.0, KENAR))
+        .corner_radius(CornerRadius::same(20))
+        .inner_margin(Margin::symmetric(9, 4))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 5.0;
+                ui.label(
+                    RichText::new(ikon)
+                        .font(FontId::new(12.5, ikon_fontu()))
+                        .color(renk),
+                );
+                ui.label(RichText::new(metin).size(11.5).strong().color(renk));
+            });
+        });
+}
+
 pub fn istatistik(ui: &mut Ui, etiket: &str, deger: &str, aciklama: &str, renk: Color32) {
     egui::Frame::default()
         .fill(YUZEY_2)

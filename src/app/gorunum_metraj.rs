@@ -697,10 +697,17 @@ impl MetrajApp {
                 "Metraj Tablosu",
                 16.0,
             ));
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new("AKTİF İŞ GRUBU")
+                    .size(9.5)
+                    .strong()
+                    .color(tema::METIN_SOLUK),
+            );
             match &aktif_grup_adi {
-                Some(ad) => tema::rozet(ui, &format!("▸ {}", ad), tema::VURGU_HOVER),
+                Some(ad) => tema::ikonlu_rozet(ui, tema::ikon::ALT_GRUP, ad, tema::VURGU_HOVER),
                 None if !self.is_gruplari.is_empty() => {
-                    tema::rozet(ui, "▸ Grup seçili değil", tema::UYARI)
+                    tema::ikonlu_rozet(ui, tema::ikon::ALT_GRUP, "Grup seçili değil", tema::UYARI)
                 }
                 None => {}
             }
