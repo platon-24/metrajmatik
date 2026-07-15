@@ -495,9 +495,17 @@ impl MetrajApp {
                     .show(ui, |ui| {
                         ui.horizontal_top(|ui| {
                             ui.label(
-                                RichText::new(if hata { "⚠" } else { "✓" })
-                                    .size(17.0)
-                                    .color(if hata { tema::TEHLIKE } else { tema::BASARI }),
+                                RichText::new(if hata {
+                                    tema::ikon::UYARI
+                                } else {
+                                    tema::ikon::ONAY
+                                })
+                                .font(egui::FontId::new(17.0, tema::ikon_fontu()))
+                                .color(if hata {
+                                    tema::TEHLIKE
+                                } else {
+                                    tema::BASARI
+                                }),
                             );
                             ui.add(
                                 egui::Label::new(
@@ -508,7 +516,9 @@ impl MetrajApp {
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new("✕").color(tema::METIN_IKINCIL),
+                                        RichText::new(tema::ikon::KAPAT)
+                                            .font(egui::FontId::new(12.0, tema::ikon_fontu()))
+                                            .color(tema::METIN_IKINCIL),
                                     )
                                     .fill(Color32::TRANSPARENT)
                                     .stroke(egui::Stroke::NONE),
@@ -858,14 +868,14 @@ impl eframe::App for MetrajApp {
                 ui.horizontal(|ui| {
                     let durum = if self.mevcut_dosya_yolu.is_some() {
                         if self.degisiklik_var {
-                            ("● Kaydedilmedi", tema::UYARI)
+                            (tema::ikon::UYARI, "Kaydedilmedi", tema::UYARI)
                         } else {
-                            ("✓ Kayıtlı", tema::BASARI)
+                            (tema::ikon::ONAY, "Kayıtlı", tema::BASARI)
                         }
                     } else {
-                        ("○ Yeni proje", tema::METIN_SOLUK)
+                        (tema::ikon::EKLE, "Yeni proje", tema::METIN_SOLUK)
                     };
-                    tema::rozet(ui, durum.0, durum.1);
+                    tema::ikonlu_rozet(ui, durum.0, durum.1, durum.2);
                     if !dar {
                         if let Some(ref k) = self.secili_kitap {
                             tema::rozet(

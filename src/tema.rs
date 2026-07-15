@@ -59,6 +59,9 @@ pub mod ikon {
     pub const EKLE: &str = "\u{E710}";
     pub const SIL: &str = "\u{E74D}";
     pub const YENI_HAKEDIS: &str = "\u{E82E}";
+    pub const ONAY: &str = "\u{E73E}";
+    pub const UYARI: &str = "\u{E7BA}";
+    pub const KAPAT: &str = "\u{E711}";
 }
 
 pub fn ikon_fontu() -> FontFamily {
@@ -299,6 +302,36 @@ pub fn rozet(ui: &mut Ui, metin: &str, renk: Color32) {
         .inner_margin(Margin::symmetric(9, 4))
         .show(ui, |ui| {
             ui.label(RichText::new(metin).size(11.5).strong().color(renk));
+        });
+}
+
+pub fn ikonlu_rozet(ui: &mut Ui, ikon: &str, metin: &str, renk: Color32) {
+    egui::Frame::default()
+        .fill(YUZEY_2)
+        .stroke(Stroke::new(1.0, KENAR_YUMUSAK))
+        .corner_radius(CornerRadius::same(20))
+        .inner_margin(Margin::symmetric(9, 4))
+        .show(ui, |ui| {
+            let mut duzen = LayoutJob::default();
+            duzen.append(
+                ikon,
+                0.0,
+                TextFormat {
+                    font_id: FontId::new(12.5, ikon_fontu()),
+                    color: renk,
+                    ..Default::default()
+                },
+            );
+            duzen.append(
+                metin,
+                5.0,
+                TextFormat {
+                    font_id: FontId::proportional(11.5),
+                    color: renk,
+                    ..Default::default()
+                },
+            );
+            ui.label(duzen);
         });
 }
 
