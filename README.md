@@ -7,7 +7,7 @@
 ![Rust](https://img.shields.io/badge/Rust-2021-000000?logo=rust&logoColor=white)
 ![egui](https://img.shields.io/badge/egui-0.31-1f6feb)
 ![SQLite](https://img.shields.io/badge/SQLite-FTS5-003B57?logo=sqlite&logoColor=white)
-![Testler](https://img.shields.io/badge/testler-46%20passing-2ea043)
+![Testler](https://img.shields.io/badge/testler-50%20passing-2ea043)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)
 ![Lisans](https://img.shields.io/badge/lisans-AGPL--3.0-blue)
 ![Durum](https://img.shields.io/badge/durum-aktif%20geliştirme-f5a623)
@@ -48,9 +48,9 @@
 | 4 | **Metraj** | Boyutlu miktar (adet/en/boy/yük + çıkan), imalat cinsi, otomatik icmal | ✅ |
 | 5 | **Fiyatlandır** | Kurum fiyatı doğrudan; değilse **birim fiyat analizi** (rayiçlerden) | ✅ |
 | 6 | **İcmal** | İş grubu bazlı, Kamu (KDV hariç) / Özel (KDV dahil) | ✅ |
-| 7 | **Güncelle** | Rayiçleri ihale tarihine/döneme toplu güncelleme | ⚠️ Kısmi |
+| 7 | **Güncelle** | Rayiçleri ihale tarihine/döneme veya Yİ-ÜFE endeksine göre toplu güncelleme | ✅ |
 | 8 | **Çıktı** | Resmî Excel dossier + CSV | ✅ |
-| 9 | **İhale** | Birim fiyat teklif cetveli + teklif mektubu | 🔜 Sırada |
+| 9 | **İhale** | Birim fiyat teklif cetveli + teklif mektubu (tutar yazı ile) | ✅ |
 | 10 | **Hakediş** | Yeşil defter → hakediş → fiyat farkı → kesin hesap | ✅ |
 
 ---
@@ -134,7 +134,7 @@ src/
 cargo test
 ```
 
-**46 test** çekirdek mantığı doğrular: kâr/KDV hesabı, kurum/dönem fiyat çözümü, v1→v2 göç, hakediş icmali, iş programı dağılımı, veri paketi round-trip, yedekleme ve Excel üretimi. *(1 test — gerçek kurum PDF'leriyle doğrulama — `#[ignore]`; yerel örnek dosyalar gerektirir.)*
+**50 test** çekirdek mantığı doğrular: kâr/KDV hesabı, kurum/dönem fiyat çözümü, "o tarihte geçerli rayiç", v1→v2 göç, hakediş icmali, iş programı dağılımı, sayı→yazı, veri paketi round-trip, yedekleme, teklif cetveli ve Excel üretimi. *(1 test — gerçek kurum PDF'leriyle doğrulama — `#[ignore]`; yerel örnek dosyalar gerektirir.)*
 
 ---
 
@@ -144,8 +144,10 @@ cargo test
 - [x] **P1** — Piyasa paritesi (6 kurum PDF profili, pursantaj, CSV, nakliye, fiyat araştırması)
 - [x] **P2** — Yaşam döngüsü (hakediş, fiyat farkı, KDV tevkifatı, kesin hesap, iş programı, veri paketi, yedek)
 - [x] **Proje künyesi** — resmî çıktı başlıkları (idare / iş adı / İKN)
-- [ ] **İhale tarafı** — birim fiyat teklif cetveli + teklif mektubu (sırada)
-- [ ] Dönem/endeks toplu güncelleme cilası
+- [x] **İhale tarafı** — birim fiyat teklif cetveli + teklif mektubu (tutar yazı ile)
+- [x] **Rayiç güncelleme** — ihale tarihine / döneme / Yİ-ÜFE endeksine göre
+
+> **Uçtan uca akışın 10 adımı da tamamlandı.** 🎯
 
 Ayrıntılı strateji ve mevzuat notları için: [`YAKLASIK_MALIYET_RAPORU.md`](YAKLASIK_MALIYET_RAPORU.md)
 

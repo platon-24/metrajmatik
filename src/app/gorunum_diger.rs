@@ -292,6 +292,22 @@ impl MetrajApp {
                 let toplam_baslik = if kamu { "TOPLAM YAKLAŞIK MALİYET (KDV Hariç)" } else { "TOPLAM YAKLAŞIK MALİYET (KDV Dahil)" };
                 satir(ui, toplam_baslik, ozet.genel_toplam, true);
             });
+
+        // İhale çıktısı: birim fiyat teklif cetveli + teklif mektubu
+        ui.add_space(10.0);
+        let mut teklif_dolu = false;
+        let mut teklif_bos = false;
+        tema::kart(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("📝 İhale Çıktısı").strong().size(13.0).color(tema::METIN));
+                ui.add_space(8.0);
+                if tema::basari_buton(ui, "Teklif Cetveli (Excel)").on_hover_text("Aynı metrajdan birim fiyat teklif cetveli + teklif mektubu (fiyatlarla dolu)").clicked() { teklif_dolu = true; }
+                if ui.button("📄 Boş Cetvel").on_hover_text("İsteklilere dağıtılacak boş birim fiyat teklif cetveli").clicked() { teklif_bos = true; }
+            });
+            ui.label(RichText::new("Birim fiyat teklif cetveli (KDV hariç). Teklif mektubu 2. sayfada, tutar yazı ile.").color(tema::METIN_SOLUK).size(11.0));
+        });
+        if teklif_dolu { self.teklif_cetveli_diyalog(true); }
+        if teklif_bos { self.teklif_cetveli_diyalog(false); }
     }
 
     // ==================== POZLAR ====================

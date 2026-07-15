@@ -1052,6 +1052,17 @@ mod testler {
     }
 
     #[test]
+    fn teklif_cetveli_dolu_ve_bos_uretilir() {
+        let m = ornek_metraj();
+        for dolu in [true, false] {
+            let yol = gecici_yol("xlsx");
+            teklif_cetveli_excel_aktar(&m, dolu, &yol).expect("teklif cetveli üretilmeli");
+            assert!(std::fs::metadata(&yol).unwrap().len() > 0, "teklif cetveli boş olmamalı");
+            let _ = std::fs::remove_file(&yol);
+        }
+    }
+
+    #[test]
     fn csv_yaz_oku_roundtrip() {
         let yol = gecici_yol("csv");
         metraj_csv_aktar(&ornek_metraj(), &yol).expect("CSV yazılmalı");

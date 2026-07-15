@@ -251,7 +251,9 @@ Kritik prensip: **metraj bir kez girilir**, her yerde (icmal, teklif cetveli, ha
 1. ✅ **PROJE KUR** — `models::ProjeBilgi` + 📁 Proje sekmesi (`app/proje_ui.rs`): idare adı, işin adı, İKN, iş yeri, iş türü, yüklenici, sözleşme + Kamu/Özel kipi + özet panosu. Künye resmî Excel başlıklarına (yaklaşık maliyet / hakediş / iş programı) akıyor.
 2. ✅ KİTAP/VERİ (.mvp veri paketi + dönem modeli) · 3. ✅ İŞ AĞACI (şablon gruplar) · 4. ✅ METRAJ · 5. ✅ FİYATLANDIR (analiz) · 6. ✅ İCMAL · 8. ✅ ÇIKTI (Excel) · 10. ✅ HAKEDİŞ (P2)
 7. ✅ **GÜNCELLE** — Rayiç güncelleme modalı (`render_fiyat_guncelle_popup`): **kuruma göre** (en son fiyat *veya* ihale tarihine göre "o tarihte geçerli" rayiç — `database::poz_fiyat_asof`) ve **endekse göre** (Yİ-ÜFE: tüm fiyatlar × güncel/temel). İş ağacı + düz liste destekli.
-9. ❌ **İHALE** — birim fiyat teklif cetveli + teklif mektubu + geçici teminat (sıradaki iş).
+9. ✅ **İHALE** — Birim Fiyat Teklif Cetveli + Teklif Mektubu (`export::teklif_cetveli_excel_aktar`, İcmal sekmesinde "📝 İhale Çıktısı"). Aynı metrajdan **dolu** (isteklinin çalışma kopyası, fiyatlarla) veya **boş** (isteklilere dağıtılacak) cetvel; KDV hariç toplam; teklif mektubu 2. sayfada tutar **yazı ile** (`bicim::sayi_yaziya` — Türkçe sayı→yazı).
+
+**Uçtan uca workflow'un 10 adımı da tamam.** 🎯 Kalan: geçici teminat mektubu (ayrı banka belgesi — kapsam dışı), dönem/endeks otomasyonu ince cila.
 
 ---
 
