@@ -2,17 +2,17 @@
 
 # 🏗️ Metrajmatik
 
-### Modern, hızlı ve mevzuata uygun **yaklaşık maliyet · metraj · hakediş** programı
+### Modern, hızlı ve mevzuat odaklı **yaklaşık maliyet · metraj · hakediş** programı
 
 ![Rust](https://img.shields.io/badge/Rust-2021-000000?logo=rust&logoColor=white)
 ![egui](https://img.shields.io/badge/egui-0.31-1f6feb)
 ![SQLite](https://img.shields.io/badge/SQLite-FTS5-003B57?logo=sqlite&logoColor=white)
-![Testler](https://img.shields.io/badge/testler-57%20passing-2ea043)
+![Testler](https://img.shields.io/badge/testler-61%20passing-2ea043)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)
 ![Lisans](https://img.shields.io/badge/lisans-AGPL--3.0-blue)
 ![Durum](https://img.shields.io/badge/durum-aktif%20geliştirme-f5a623)
 
-*Türk kamu ihale mevzuatına birebir uyumlu, tek dosyada çalışan masaüstü keşif/metraj/hakediş platformu.*
+*Türk kamu ihale iş akışları gözetilerek geliştirilen, tek dosyada çalışan masaüstü keşif/metraj/hakediş platformu.*
 
 `📁 Proje` · `📋 Metraj` · `📊 İcmal` · `🧾 Hakediş` · `📅 İş Programı` · `🔎 Pozlar` · `📚 Kitaplar` · `📄 PDF Yükle`
 
@@ -24,7 +24,7 @@
 
 **Metrajmatik**, yapım işlerinde bir projenin **yaklaşık maliyetinden** başlayıp **metraj**, **birim fiyat analizi**, **keşif icmali**, **hakediş** ve **iş programına** kadar tüm yaşam döngüsünü tek uygulamada yürütür. Rust + [egui](https://github.com/emilk/egui) ile yazılmış, harici bağımlılık gerektirmeyen (SQLite gömülü) **tek yürütülebilir dosya**dır.
 
-> **Tasarım ilkesi:** *Metraj bir kez girilir* — icmal, teklif cetveli, hakediş ve pursantaj hep aynı tek kaynağı yeniden kullanır.
+> **Tasarım ilkesi:** *Metraj bir kez girilir.* Proje sözleşmeye bağlandığında kullanıcı açıkça **Hakedişe Dönüştür** der; keşif bazı dondurulur, metraj kilitlenir ve hakediş/iş programı aynı kaynaktan devam eder.
 
 ---
 
@@ -34,6 +34,9 @@
 - **🗂️ Kurum/dönem veri modeli.** Kitap = *kurum*, poz = *kimlik*, fiyat = *(yıl/ay) indeksli*. Arama hep **en son dönem** fiyatını verir; eski dönemler korunur.
 - **📄 6 kurum PDF profili.** ÇŞB · KGM · DSİ · Vakıflar · PTT · Altyapı birim fiyat kitaplarını otomatik tanıyıp ayrıştırır (~10.000 poz doğrulandı).
 - **📊 Resmî Excel çıktıları.** Yaklaşık Maliyet Hesap Cetveli (GİZLİ damgası + imza blokları), Metraj Cetveli, Pursantaj, Analiz Föyleri, Hakediş Raporu, İş Programı — proje künyesi başlıklara akar.
+- **🔒 Kontrollü hakediş dönüşümü.** Hakediş otomatik başlamaz. Dönüşüm öncesinde yüklenici ve sözleşme bilgileri doğrulanır; kullanıcı isterse düzenlenebilir metrajın ayrı bir kopyasını kaydeder. Dönüşümden sonra metraj salt okunur olur.
+- **📉 Hassas tenzilat hesabı.** Tenzilat manuel oranla veya sözleşme bedelinden otomatik hesaplanır. Oran 6 ondalık hanede saklanır; parasal sonuçlar en son kuruşa yuvarlanır.
+- **📈 Sözleşmeye göre fiyat farkı.** Yok, manuel tutar, tek endeks ve yapım işleri için ağırlıklı `F = An × B × (Pn − 1)` seçenekleri; aylık temel/güncel endeks girişi ve resmî TÜİK Veri Portalı bağlantısı.
 - **🎨 Koyu, sade arayüz.** Otomatik kayıt + kurtarma, sınırsız geri al/yinele, canlı toplamlar.
 
 ---
@@ -51,15 +54,22 @@
 | 7 | **Güncelle** | Rayiçleri ihale tarihine/döneme veya Yİ-ÜFE endeksine göre toplu güncelleme | ✅ |
 | 8 | **Çıktı** | Resmî Excel dossier + CSV | ✅ |
 | 9 | **İhale** | Birim fiyat teklif cetveli + teklif mektubu (tutar yazı ile) | ✅ |
-| 10 | **Hakediş** | Yeşil defter → hakediş → fiyat farkı → kesin hesap | ✅ |
+| 10 | **Sözleşmeye Bağla** | Yüklenici, sözleşme no/tarihi, manuel veya bedelden tenzilat | ✅ |
+| 11 | **Hakedişe Dönüştür** | Açık onay, dönüşüm öncesi kopya, keşif bazını dondurma ve metraj kilidi | ✅ |
+| 12 | **Hakediş** | Kullanıcı tarafından oluşturulan yeşil defter → fiyat farkı → kesin hesap | ✅ |
+| 13 | **İş Programı** | Dönüşüm sonrası sözleşme bedelini aylık pursantaja dağıtma | ✅ |
 
 ---
 
 ## 🧾 Modüller ne yapar?
 
-**Hakediş** — Çoklu ara/kesin hakediş, önceki kümülatifi devralma, **yeşil defter** ölçü kırılımı, kesintiler (damga ‰9,48 · teminat · SGK · avans mahsubu), **fiyat farkı (Yİ-ÜFE)**, **KDV tevkifatı**, **kesin hesap** (sözleşme vs gerçekleşen) ve resmî Excel raporu.
+**Hakediş dönüşümü** — Metraj tamamlanmadan hakediş kendiliğinden işlenmez. Kullanıcı Hakediş sekmesinde yüklenici/şirket, sözleşme no ve tarihini girer; tenzilatı **manuel oran** veya **sözleşme bedelinden otomatik** yöntemle belirler. Son onay ekranı metrajın kilitleneceğini bildirir ve **Kopya Kaydet ve Dönüştür** seçeneğini sunar. Dönüşüm ilk hakedişi otomatik oluşturmaz.
 
-**İş Programı** — Sözleşme bedelini süre boyunca aylara pursantaj olarak dağıtır; aylık + kümülatif tablo, **ilerleme (S) eğrisi grafiği** ve Excel pursantaj cetveli.
+**Hakediş hesabı** — Çoklu ara/kesin hakediş, önceki kümülatifi devralma, **yeşil defter** ölçü kırılımı, tenzilat sonrası sözleşme fiyatları, kesintiler (damga ‰9,48 · teminat · SGK · avans mahsubu), **KDV tevkifatı**, **kesin hesap** (sözleşme vs gerçekleşen) ve Excel raporu.
+
+**Fiyat farkı** — Her hakediş için dört yöntem bulunur: **Yok**, **Manuel Tutar**, **Tek Endeks** ve **Yapım İşleri Ağırlıklı Formül**. Ağırlıklı yöntemde `a, b1, b2, b3, b4, b5, c` katsayıları ile temel/güncel aylık endeksler girilir; katsayı toplamı `1,000000` değilse hesap uygulanmaz. Endekslerin güvenilir kaynaktan alınabilmesi için [TÜİK Veri Portalı](https://veriportali.tuik.gov.tr/tr/) bağlantısı arayüzde yer alır. Otomatik internet aktarımı henüz etkin değildir.
+
+**İş Programı** — Metraj aşamasında kilitlidir; proje hakedişe dönüştürüldüğünde etkinleşir. Tenzilat sonrası sözleşme bedelini süre boyunca aylara pursantaj olarak dağıtır; aylık + kümülatif tablo, **ilerleme (S) eğrisi grafiği** ve Excel pursantaj cetveli üretir.
 
 **Analiz** — Rayiçlerden birim fiyat analizi (işçilik + malzeme + nakliye), kaynak izlenir, %25 yalnız analize uygulanır.
 
@@ -83,7 +93,10 @@ cargo run
 cargo run --release
 ```
 
-Veriler `%APPDATA%\Metrajmatik\` altında tutulur (fiyat kitabı veritabanı + otomatik kayıt). Projeler `.mrj` dosyalarında saklanır.
+Veriler `%APPDATA%\Metrajmatik\` altında tutulur (fiyat kitabı veritabanı + otomatik kayıt). Projeler `.mrj` dosyalarında saklanır. Proje aşaması, dondurulan keşif bedeli, sözleşme bedeli, tenzilat yöntemi/oranı, hakedişler, aylık fiyat farkı katsayı ve endeksleri ile İş Programı aynı proje dosyasına yazılır. Eski `.mrj` dosyaları varsayılan **Metraj** aşamasında açılır.
+
+> [!IMPORTANT]
+> Fiyat farkında kullanılacak yöntem, katsayılar, temel/güncel endeks türleri ve özel uygulama kuralları imzalanan sözleşme ile yürürlükteki mevzuata göre değişebilir. Metrajmatik hesap aracıdır; resmî ödeme öncesinde sözleşme dokümanı ve yetkili kontrolü esas alınmalıdır.
 
 ---
 
@@ -110,7 +123,7 @@ src/
 ├── database.rs           SQLite v2 şema + v1→v2 göç + FTS5 arama
 ├── export.rs             Excel / CSV / veri paketi çıktıları
 ├── pdf_parser.rs         6 kurum için PDF ayrıştırma profilleri
-├── hakedis.rs            Hakediş hesap motoru (kümülatif → kesinti → net)
+├── hakedis.rs            Hakediş motoru (tenzilat + fiyat farkı + kesinti → net)
 ├── maliyet.rs            Yaklaşık maliyet özeti (kâr + KDV mantığı)
 ├── is_grubu.rs           Hiyerarşik iş grupları
 ├── bicim.rs              Biçimlendirme + kuruş yuvarlama yardımcıları
@@ -121,8 +134,8 @@ src/
     ├── gorunum_metraj.rs 📋 Metraj sekmesi (arama, iş grupları, miktar popup)
     ├── gorunum_diger.rs  📊 İcmal · 🔎 Pozlar · 📚 Kitaplar · 📄 PDF
     ├── analiz_ui.rs      Birim fiyat analizi popup'ı
-    ├── hakedis_ui.rs     🧾 Hakediş sekmesi + yeşil defter
-    ├── is_programi_ui.rs 📅 İş programı sekmesi + S-eğrisi
+    ├── hakedis_ui.rs     🧾 Dönüşüm + sözleşme + hakediş + yeşil defter
+    ├── is_programi_ui.rs 📅 Dönüşüm kapılı iş programı + S-eğrisi
     └── islemler.rs       Dosya / arama / geri-al / yedek iş mantığı
 ```
 
@@ -134,7 +147,7 @@ src/
 cargo test
 ```
 
-**57 test** çekirdek mantığı doğrular: kâr/KDV hesabı, kalem kimlikli hakediş, kurum/dönem fiyat çözümü, "o tarihte geçerli rayiç", v1→v2 göç, güvenli kayıt/geri yükleme, iş programı dağılımı, sayı→yazı, veri paketi round-trip, teklif cetveli ve Excel üretimi. *(1 ek test — gerçek kurum PDF'leriyle doğrulama — `#[ignore]`; yerel örnek dosyalar gerektirir.)*
+**61 test** çekirdek mantığı doğrular: kâr/KDV hesabı, kalem kimlikli hakediş, 6 haneli tenzilat, sözleşme bedelinden oran türetme, ağırlıklı `Pn` fiyat farkı, kurum/dönem fiyat çözümü, "o tarihte geçerli rayiç", v1→v2 göç, güvenli kayıt/geri yükleme, iş programı dağılımı, sayı→yazı, veri paketi round-trip, teklif cetveli ve Excel üretimi. *(1 ek test — gerçek kurum PDF'leriyle doğrulama — `#[ignore]`; yerel örnek dosyalar gerektirir.)*
 
 ---
 
@@ -146,8 +159,12 @@ cargo test
 - [x] **Proje künyesi** — resmî çıktı başlıkları (idare / iş adı / İKN)
 - [x] **İhale tarafı** — birim fiyat teklif cetveli + teklif mektubu (tutar yazı ile)
 - [x] **Rayiç güncelleme** — ihale tarihine / döneme / Yİ-ÜFE endeksine göre
+- [x] **Hakediş yaşam döngüsü** — açık dönüşüm, dönüşüm öncesi kopya, metraj kilidi
+- [x] **Tenzilat** — manuel 6 haneli oran veya sözleşme bedelinden otomatik hesap
+- [x] **Fiyat farkı** — manuel, tek endeks ve yapım işleri ağırlıklı formülü
+- [ ] **TÜİK SDMX entegrasyonu** — seçilen ay/endeks verisini resmî servisten otomatik getirme
 
-> **Uçtan uca akışın 10 adımı da tamamlandı.** 🎯
+> **Uçtan uca temel proje ve hakediş akışı tamamlandı.** 🎯
 
 Ayrıntılı strateji ve mevzuat notları için: [`YAKLASIK_MALIYET_RAPORU.md`](YAKLASIK_MALIYET_RAPORU.md)
 
