@@ -6,13 +6,30 @@ use egui::{CornerRadius, FontId, Pos2, Rect, RichText, ScrollArea, Sense, Stroke
 
 use crate::bicim::para_formatla;
 use crate::export::ay_adi;
+use crate::models::ProjeAsamasi;
 use crate::tema;
 
-use super::MetrajApp;
+use super::{MetrajApp, Sekme};
 
 impl MetrajApp {
     pub(crate) fn render_is_programi(&mut self, ui: &mut Ui) {
-        let toplam_bedel = self.toplam_tutar();
+        if self.proje_asamasi == ProjeAsamasi::Metraj {
+            tema::bolum_basligi(ui, "🔒", "İş Programı");
+            ui.add_space(6.0);
+            tema::bildirim_seridi(
+                ui,
+                "İş Programı, metraj sözleşmeye bağlanıp hakedişe dönüştürüldükten sonra etkinleşir.",
+                tema::UYARI_KOYU,
+                tema::UYARI,
+                tema::UYARI,
+            );
+            ui.add_space(8.0);
+            if tema::birincil_buton(ui, "Hakediş Dönüşümüne Git").clicked() {
+                self.sekme_ac(Sekme::Hakedis);
+            }
+            return;
+        }
+        let toplam_bedel = self.sozlesme_ayarlari.hesaplanan_sozlesme_bedeli();
         // Dağılım uzunluğunu süre ile hizala (süre değiştiyse eşit böler).
         self.is_programi.normalize();
 
@@ -289,7 +306,7 @@ impl MetrajApp {
     }
 
     pub(crate) fn is_programi_excel_diyalog(&mut self) {
-        let toplam_bedel = self.toplam_tutar();
+        let toplam_bedel = self.sozlesme_ayarlari.hesaplanan_sozlesme_bedeli();
         let prog = self.is_programi.clone();
         let proje_adi = self.metraj_adi.clone();
         let pb = self.proje_bilgi.clone();

@@ -15,7 +15,8 @@ use crate::bicim::{metni_kisalt, para_formatla};
 use crate::database::Veritabani;
 use crate::is_grubu::ilk_yaprak_grup_id;
 use crate::models::{
-    Donem, Hakedis, HesapTuru, IsGrubu, IsProgrami, Kitap, MetrajKalemi, Poz, ProjeBilgi,
+    Donem, Hakedis, HesapTuru, IsGrubu, IsProgrami, Kitap, MetrajKalemi, Poz, ProjeAsamasi,
+    ProjeBilgi, SozlesmeAyarlari,
 };
 use crate::tema;
 
@@ -189,6 +190,9 @@ pub struct MetrajApp {
 
     // Proje künyesi (idare, iş adı, İKN — resmî çıktı başlıkları)
     proje_bilgi: ProjeBilgi,
+    proje_asamasi: ProjeAsamasi,
+    sozlesme_ayarlari: SozlesmeAyarlari,
+    hakedise_donusum_onayi: bool,
 
     // Geri al / yinele
     geri_al_yigini: Vec<Anlik>,
@@ -404,6 +408,9 @@ impl Default for MetrajApp {
 
             // Proje künyesi
             proje_bilgi: ProjeBilgi::default(),
+            proje_asamasi: ProjeAsamasi::Metraj,
+            sozlesme_ayarlari: SozlesmeAyarlari::default(),
+            hakedise_donusum_onayi: false,
 
             // Geri al / yinele
             geri_al_yigini: vec![],
@@ -547,14 +554,18 @@ impl eframe::App for MetrajApp {
             self.metraj_yukle_diyalog();
         }
         // Geri al / yinele (Ctrl+Z, Ctrl+Y veya Ctrl+Shift+Z)
-        if ctx.input(|i| i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::Z)) {
+        if self.proje_asamasi == ProjeAsamasi::Metraj
+            && ctx.input(|i| i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::Z))
+        {
             self.geri_al();
         }
-        if ctx.input(|i| {
-            i.modifiers.ctrl
-                && (i.key_pressed(egui::Key::Y)
-                    || (i.modifiers.shift && i.key_pressed(egui::Key::Z)))
-        }) {
+        if self.proje_asamasi == ProjeAsamasi::Metraj
+            && ctx.input(|i| {
+                i.modifiers.ctrl
+                    && (i.key_pressed(egui::Key::Y)
+                        || (i.modifiers.shift && i.key_pressed(egui::Key::Z)))
+            })
+        {
             self.yinele();
         }
         // Otomatik kayıt kontrolü

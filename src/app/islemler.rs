@@ -716,6 +716,31 @@ impl MetrajApp {
             hakedisler: self.hakedisler.clone(),
             is_programi: self.is_programi.clone(),
             proje_bilgi: self.proje_bilgi.clone(),
+            proje_asamasi: self.proje_asamasi,
+            sozlesme_ayarlari: self.sozlesme_ayarlari.clone(),
+        }
+    }
+
+    /// Mevcut proje yolunu değiştirmeden dönüşüm öncesi bağımsız bir kopya oluşturur.
+    pub(crate) fn proje_kopyasi_kaydet(&mut self) -> bool {
+        let proje = self.proje_olustur();
+        let Some(hedef) = rfd::FileDialog::new()
+            .add_filter("Metrajmatik Projesi", &["mrj"])
+            .set_file_name(format!("{} - metraj yedegi.mrj", self.metraj_adi))
+            .save_file()
+        else {
+            return false;
+        };
+        match metraj_json_kaydet(&proje, &hedef) {
+            Ok(()) => {
+                self.basarili_mesaj =
+                    format!("Dönüşüm öncesi kopya kaydedildi: {}", hedef.display());
+                true
+            }
+            Err(e) => {
+                self.hata_mesaji = e;
+                false
+            }
         }
     }
     pub(crate) fn metraj_kaydet(&mut self) {
@@ -853,6 +878,8 @@ impl MetrajApp {
                     hakedisler,
                     is_programi,
                     proje_bilgi,
+                    proje_asamasi,
+                    sozlesme_ayarlari,
                     ..
                 } = m;
                 self.hesap_turu = hesap_turu;
@@ -861,6 +888,9 @@ impl MetrajApp {
                 self.hakedisler = hakedisler;
                 self.is_programi = is_programi;
                 self.proje_bilgi = proje_bilgi;
+                self.proje_asamasi = proje_asamasi;
+                self.sozlesme_ayarlari = sozlesme_ayarlari;
+                self.hakedise_donusum_onayi = false;
                 self.secili_hakedis = None;
                 self.geri_al_yigini.clear();
                 self.yinele_yigini.clear();

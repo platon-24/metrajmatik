@@ -7,7 +7,10 @@ use std::collections::HashMap;
 
 use crate::bicim::{krono_tarih, metni_kisalt, para_formatla};
 use crate::hakedis::{icmal, poz_hesaplari};
-use crate::models::{Hakedis, HakedisSatiri, MetrajKalemi, MiktarDetay};
+use crate::models::{
+    FiyatFarkiYontemi, Hakedis, HakedisSatiri, MetrajKalemi, MiktarDetay, ProjeAsamasi,
+    TenzilatYontemi,
+};
 use crate::tema;
 
 use super::gorunum_metraj::{detay_to_satir, satir_miktar, satir_to_detay};
@@ -77,6 +80,277 @@ impl MetrajApp {
         }
     }
 
+    fn render_hakedise_donusum(&mut self, ui: &mut Ui) {
+        let kesif_bedeli = self.toplam_tutar();
+        tema::bildirim_seridi(
+            ui,
+            "Hakediş henüz etkin değil. Metrajı tamamlayın, sözleşme bilgilerini girin ve bilinçli olarak dönüştürün.",
+            tema::UYARI_KOYU,
+            tema::UYARI,
+            tema::UYARI,
+        );
+        ui.add_space(10.0);
+        tema::kart(ui, |ui| {
+            ui.label(RichText::new("Sözleşme bilgileri").strong().size(15.0));
+            ui.label(
+                RichText::new("Dönüşümden sonra metraj ve iş grupları salt okunur olur; İş Programı etkinleşir.")
+                    .color(tema::METIN_SOLUK)
+                    .size(11.5),
+            );
+            ui.add_space(8.0);
+            egui::Grid::new("hakedis_donusum_kunye")
+                .num_columns(2)
+                .spacing(egui::vec2(14.0, 8.0))
+                .show(ui, |ui| {
+                    for (etiket, deger, ipucu) in [
+                        (
+                            "Yüklenici / Şirket",
+                            &mut self.proje_bilgi.yuklenici,
+                            "Firma unvanı",
+                        ),
+                        (
+                            "Sözleşme No",
+                            &mut self.proje_bilgi.sozlesme_no,
+                            "Sözleşme numarası",
+                        ),
+                        (
+                            "Sözleşme Tarihi",
+                            &mut self.proje_bilgi.sozlesme_tarihi,
+                            "gg.aa.yyyy",
+                        ),
+                    ] {
+                        ui.label(RichText::new(etiket).color(tema::METIN_IKINCIL));
+                        if ui
+                            .add(
+                                TextEdit::singleline(deger)
+                                    .hint_text(ipucu)
+                                    .desired_width(320.0),
+                            )
+                            .changed()
+                        {
+                            self.degisiklik_var = true;
+                        }
+                        ui.end_row();
+                    }
+                });
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(8.0);
+            ui.label(RichText::new("Tenzilat yöntemi").strong());
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .selectable_label(
+                        self.sozlesme_ayarlari.tenzilat_yontemi == TenzilatYontemi::ManuelOran,
+                        "Manuel oran",
+                    )
+                    .clicked()
+                {
+                    self.sozlesme_ayarlari.tenzilat_yontemi = TenzilatYontemi::ManuelOran;
+                    self.degisiklik_var = true;
+                }
+                if ui
+                    .selectable_label(
+                        self.sozlesme_ayarlari.tenzilat_yontemi
+                            == TenzilatYontemi::SozlesmeBedelinden,
+                        "Sözleşme bedelinden hesapla",
+                    )
+                    .clicked()
+                {
+                    self.sozlesme_ayarlari.tenzilat_yontemi = TenzilatYontemi::SozlesmeBedelinden;
+                    self.degisiklik_var = true;
+                }
+            });
+            ui.add_space(5.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.label(format!(
+                    "Dönüşüm keşif bedeli: {} TL",
+                    para_formatla(kesif_bedeli)
+                ));
+                match self.sozlesme_ayarlari.tenzilat_yontemi {
+                    TenzilatYontemi::ManuelOran => {
+                        ui.label("Tenzilat (%):");
+                        if ui
+                            .add(
+                                egui::DragValue::new(
+                                    &mut self.sozlesme_ayarlari.manuel_tenzilat_orani,
+                                )
+                                .range(0.0..=100.0)
+                                .speed(0.0001)
+                                .fixed_decimals(6),
+                            )
+                            .changed()
+                        {
+                            self.degisiklik_var = true;
+                        }
+                        let bedel = kesif_bedeli
+                            * (1.0 - self.sozlesme_ayarlari.manuel_tenzilat_orani / 100.0);
+                        ui.label(format!("Sözleşme bedeli: {} TL", para_formatla(bedel)));
+                    }
+                    TenzilatYontemi::SozlesmeBedelinden => {
+                        ui.label("Sözleşme bedeli (TL):");
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut self.sozlesme_ayarlari.sozlesme_bedeli)
+                                    .range(0.0..=f64::INFINITY)
+                                    .speed(100.0)
+                                    .fixed_decimals(2),
+                            )
+                            .changed()
+                        {
+                            self.degisiklik_var = true;
+                        }
+                        let oran = if kesif_bedeli > 0.0 {
+                            (1.0 - self.sozlesme_ayarlari.sozlesme_bedeli / kesif_bedeli) * 100.0
+                        } else {
+                            0.0
+                        };
+                        ui.label(format!("Hesaplanan tenzilat: % {:.6}", oran));
+                    }
+                }
+            });
+            ui.label(
+                RichText::new(
+                    "Oran 6 ondalık hanede saklanır; TL sonuçları en son kuruşa yuvarlanır.",
+                )
+                .color(tema::METIN_SOLUK)
+                .size(11.0),
+            );
+            ui.add_space(10.0);
+            if tema::birincil_buton(ui, "Hakedişe Dönüştür").clicked() {
+                self.hakedise_donusum_onayi = true;
+            }
+        });
+
+        if self.hakedise_donusum_onayi {
+            self.render_hakedise_donusum_onayi(ui.ctx(), kesif_bedeli);
+        }
+    }
+
+    fn render_hakedise_donusum_onayi(&mut self, ctx: &egui::Context, kesif_bedeli: f64) {
+        let mut kopyala_donustur = false;
+        let mut donustur = false;
+        let mut vazgec = false;
+        egui::Window::new("Hakedişe dönüştürme onayı")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .default_width(540.0)
+            .show(ctx, |ui| {
+                ui.label(
+                    RichText::new("Bu işlem proje çalışma biçimini kalıcı olarak değiştirir.")
+                        .strong(),
+                );
+                ui.add_space(6.0);
+                ui.label("• Metraj girişi, poz ve iş grubu düzenleme kilitlenecek.");
+                ui.label("• Dönüşüm anındaki keşif bedeli sözleşme bazı olarak dondurulacak.");
+                ui.label("• İş Programı ve hakediş girişi etkinleşecek.");
+                ui.label("• Dönüşüm otomatik olarak ilk hakedişi oluşturmayacak.");
+                ui.add_space(8.0);
+                tema::bildirim_seridi(
+                    ui,
+                    "Önerilen seçenek, önce düzenlenebilir metrajın ayrı bir kopyasını kaydeder.",
+                    tema::UYARI_KOYU,
+                    tema::UYARI,
+                    tema::UYARI,
+                );
+                ui.add_space(10.0);
+                ui.horizontal_wrapped(|ui| {
+                    if tema::basari_buton(ui, "Kopya Kaydet ve Dönüştür").clicked() {
+                        kopyala_donustur = true;
+                    }
+                    if tema::tehlike_buton(ui, "Doğrudan Dönüştür").clicked() {
+                        donustur = true;
+                    }
+                    if ui.button("Vazgeç").clicked() {
+                        vazgec = true;
+                    }
+                });
+            });
+
+        if vazgec {
+            self.hakedise_donusum_onayi = false;
+            return;
+        }
+        if kopyala_donustur && !self.proje_kopyasi_kaydet() {
+            return;
+        }
+        if kopyala_donustur || donustur {
+            if let Err(e) = self.hakedise_donustur(kesif_bedeli) {
+                self.hata_mesaji = e;
+            }
+        }
+    }
+
+    fn hakedise_donustur(&mut self, kesif_bedeli: f64) -> Result<(), String> {
+        if kesif_bedeli <= 0.0 {
+            return Err("Dönüşüm için metraj toplamı sıfırdan büyük olmalı.".into());
+        }
+        if self.proje_bilgi.yuklenici.trim().is_empty()
+            || self.proje_bilgi.sozlesme_no.trim().is_empty()
+            || self.proje_bilgi.sozlesme_tarihi.trim().is_empty()
+        {
+            return Err("Yüklenici, sözleşme no ve sözleşme tarihini doldurun.".into());
+        }
+        self.sozlesme_ayarlari.kesif_bedeli = kesif_bedeli;
+        let oran = self.sozlesme_ayarlari.tenzilat_orani();
+        if !(0.0..=100.0).contains(&oran) {
+            return Err(
+                "Tenzilat oranı %0 ile %100 arasında olmalı; sözleşme bedelini kontrol edin."
+                    .into(),
+            );
+        }
+        self.sozlesme_ayarlari.manuel_tenzilat_orani =
+            (self.sozlesme_ayarlari.manuel_tenzilat_orani * 1_000_000.0).round() / 1_000_000.0;
+        self.sozlesme_ayarlari.sozlesme_bedeli =
+            self.sozlesme_ayarlari.hesaplanan_sozlesme_bedeli();
+        self.sozlesme_ayarlari.donusum_tarihi = krono_tarih();
+        self.proje_asamasi = ProjeAsamasi::Hakedis;
+        self.is_programi.normalize();
+        self.geri_al_yigini.clear();
+        self.yinele_yigini.clear();
+        self.hakedise_donusum_onayi = false;
+        self.degisiklik_var = true;
+        self.basarili_mesaj =
+            "Proje hakediş aşamasına dönüştürüldü. Metraj kilitlendi; İş Programı etkin.".into();
+        Ok(())
+    }
+
+    fn render_sozlesme_ozeti(&mut self, ui: &mut Ui) {
+        tema::kart(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    RichText::new("🔒 Metraj donduruldu")
+                        .color(tema::UYARI)
+                        .strong(),
+                );
+                ui.separator();
+                ui.label(format!("Yüklenici: {}", self.proje_bilgi.yuklenici));
+                ui.label(format!(
+                    "Sözleşme: {} · {}",
+                    self.proje_bilgi.sozlesme_no, self.proje_bilgi.sozlesme_tarihi
+                ));
+            });
+            ui.horizontal_wrapped(|ui| {
+                ui.label(format!(
+                    "Keşif: {} TL",
+                    para_formatla(self.sozlesme_ayarlari.kesif_bedeli)
+                ));
+                ui.label(format!(
+                    "Tenzilat: % {:.6}",
+                    self.sozlesme_ayarlari.tenzilat_orani()
+                ));
+                ui.label(
+                    RichText::new(format!(
+                        "Sözleşme: {} TL",
+                        para_formatla(self.sozlesme_ayarlari.hesaplanan_sozlesme_bedeli())
+                    ))
+                    .color(tema::BASARI)
+                    .strong(),
+                );
+            });
+        });
+    }
+
     pub(crate) fn render_hakedis(&mut self, ui: &mut Ui) {
         tema::bolum_basligi(ui, "🧾", "Hakediş");
         ui.add_space(6.0);
@@ -86,6 +360,14 @@ impl MetrajApp {
             tema::bildirim_seridi(ui, "Önce Metraj sekmesinden sözleşme (keşif) kalemlerini girin. Hakediş bunların üzerine kurulur.", tema::UYARI_KOYU, tema::UYARI, tema::UYARI);
             return;
         }
+
+        if self.proje_asamasi == ProjeAsamasi::Metraj {
+            self.render_hakedise_donusum(ui);
+            return;
+        }
+
+        self.render_sozlesme_ozeti(ui);
+        ui.add_space(8.0);
 
         // Hakediş listesi + yeni + excel + sil
         let mut secilecek: Option<usize> = None;
@@ -156,6 +438,7 @@ impl MetrajApp {
         };
 
         self.hakedis_hizala(idx, &kesif);
+        self.hakedisler[idx].fiyat_farki_ayari.normalize();
 
         let onceki_kum: HashMap<String, f64> = if idx > 0 {
             self.hakedisler[idx - 1]
@@ -248,54 +531,156 @@ impl MetrajApp {
             });
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
-                ayar_degisti |= ui
-                    .checkbox(&mut h.ff_uygula, "Fiyat Farkı (Yİ-ÜFE)")
-                    .on_hover_text("F = Bu Hakediş × B × (güncel/temel − 1)")
-                    .changed();
-                if h.ff_uygula {
-                    ui.label(RichText::new("B").color(tema::METIN_IKINCIL).size(12.0));
+                ui.label(RichText::new("Fiyat farkı").color(tema::METIN_IKINCIL));
+                egui::ComboBox::from_id_salt(format!("ff_yontem_{}", idx))
+                    .selected_text(match h.fiyat_farki_ayari.yontem {
+                        FiyatFarkiYontemi::Yok => "Yok",
+                        FiyatFarkiYontemi::Manuel => "Manuel tutar",
+                        FiyatFarkiYontemi::TekEndeks => "Tek endeks (sözleşmeye göre)",
+                        FiyatFarkiYontemi::YapimAgirlikli => "Yapım işleri ağırlıklı formül",
+                    })
+                    .show_ui(ui, |ui| {
+                        for (yontem, ad) in [
+                            (FiyatFarkiYontemi::Yok, "Yok"),
+                            (FiyatFarkiYontemi::Manuel, "Manuel tutar"),
+                            (FiyatFarkiYontemi::TekEndeks, "Tek endeks (sözleşmeye göre)"),
+                            (
+                                FiyatFarkiYontemi::YapimAgirlikli,
+                                "Yapım işleri ağırlıklı formül",
+                            ),
+                        ] {
+                            if ui
+                                .selectable_label(h.fiyat_farki_ayari.yontem == yontem, ad)
+                                .clicked()
+                            {
+                                h.fiyat_farki_ayari.yontem = yontem;
+                                h.ff_uygula = false;
+                                ayar_degisti = true;
+                            }
+                        }
+                    });
+                if h.fiyat_farki_ayari.yontem == FiyatFarkiYontemi::Manuel {
+                    ui.label("Tutar (TL)");
                     ayar_degisti |= ui
                         .add(
-                            egui::DragValue::new(&mut h.ff_b)
-                                .speed(0.01)
-                                .range(0.0..=1.0),
+                            egui::DragValue::new(&mut h.fiyat_farki)
+                                .speed(10.0)
+                                .fixed_decimals(2),
                         )
-                        .changed();
-                    ui.label(
-                        RichText::new("Temel endeks (Po)")
-                            .color(tema::METIN_IKINCIL)
-                            .size(12.0),
-                    );
-                    ayar_degisti |= ui
-                        .add(
-                            egui::DragValue::new(&mut h.ff_temel_endeks)
-                                .speed(0.5)
-                                .range(0.0..=f64::INFINITY),
-                        )
-                        .changed();
-                    ui.label(
-                        RichText::new("Güncel endeks (Pn)")
-                            .color(tema::METIN_IKINCIL)
-                            .size(12.0),
-                    );
-                    ayar_degisti |= ui
-                        .add(
-                            egui::DragValue::new(&mut h.ff_guncel_endeks)
-                                .speed(0.5)
-                                .range(0.0..=f64::INFINITY),
-                        )
-                        .changed();
-                } else {
-                    ui.label(
-                        RichText::new("Fiyat farkı (TL, elle)")
-                            .color(tema::METIN_IKINCIL)
-                            .size(12.0),
-                    );
-                    ayar_degisti |= ui
-                        .add(egui::DragValue::new(&mut h.fiyat_farki).speed(10.0))
                         .changed();
                 }
-                ui.add_space(16.0);
+                if matches!(
+                    h.fiyat_farki_ayari.yontem,
+                    FiyatFarkiYontemi::TekEndeks | FiyatFarkiYontemi::YapimAgirlikli
+                ) {
+                    ui.label("B");
+                    ayar_degisti |= ui
+                        .add(
+                            egui::DragValue::new(&mut h.fiyat_farki_ayari.b)
+                                .speed(0.01)
+                                .range(0.0..=1.0)
+                                .fixed_decimals(4),
+                        )
+                        .changed();
+                    ui.label("Uygulama ayı");
+                    ayar_degisti |= ui
+                        .add(
+                            TextEdit::singleline(&mut h.fiyat_farki_ayari.uygulama_ayi)
+                                .hint_text("2026-07")
+                                .desired_width(80.0),
+                        )
+                        .changed();
+                }
+                ui.hyperlink_to("TÜİK Veri Portalı ↗", "https://veriportali.tuik.gov.tr/tr/");
+            });
+            if h.fiyat_farki_ayari.yontem == FiyatFarkiYontemi::TekEndeks {
+                ui.horizontal_wrapped(|ui| {
+                    let b = &mut h.fiyat_farki_ayari.bilesenler[0];
+                    ui.label("Yİ-ÜFE Genel · temel endeks");
+                    ayar_degisti |= ui
+                        .add(
+                            egui::DragValue::new(&mut b.temel_endeks)
+                                .speed(0.5)
+                                .range(0.0..=f64::INFINITY)
+                                .fixed_decimals(4),
+                        )
+                        .changed();
+                    ui.label("güncel endeks");
+                    ayar_degisti |= ui
+                        .add(
+                            egui::DragValue::new(&mut b.guncel_endeks)
+                                .speed(0.5)
+                                .range(0.0..=f64::INFINITY)
+                                .fixed_decimals(4),
+                        )
+                        .changed();
+                });
+            }
+            if h.fiyat_farki_ayari.yontem == FiyatFarkiYontemi::YapimAgirlikli {
+                let katsayi_toplami: f64 = h
+                    .fiyat_farki_ayari
+                    .bilesenler
+                    .iter()
+                    .map(|b| b.katsayi)
+                    .sum();
+                ui.label(
+                    RichText::new(format!(
+                        "F = An × B × (Pn − 1) · katsayı toplamı: {:.6}{}",
+                        katsayi_toplami,
+                        if (katsayi_toplami - 1.0).abs() > 0.000001 {
+                            "  (1,000000 olmalı)"
+                        } else {
+                            ""
+                        }
+                    ))
+                    .color(if (katsayi_toplami - 1.0).abs() > 0.000001 {
+                        tema::UYARI
+                    } else {
+                        tema::BASARI
+                    })
+                    .size(11.0),
+                );
+                egui::Grid::new(format!("ff_bilesenler_{}", idx))
+                    .num_columns(5)
+                    .spacing(egui::vec2(10.0, 4.0))
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for baslik in ["Kod", "Bileşen", "Katsayı", "Temel", "Güncel"] {
+                            ui.label(RichText::new(baslik).strong().size(11.0));
+                        }
+                        ui.end_row();
+                        for b in &mut h.fiyat_farki_ayari.bilesenler {
+                            ui.label(RichText::new(&b.kod).monospace());
+                            ui.label(&b.ad);
+                            ayar_degisti |= ui
+                                .add(
+                                    egui::DragValue::new(&mut b.katsayi)
+                                        .range(0.0..=1.0)
+                                        .speed(0.001)
+                                        .fixed_decimals(6),
+                                )
+                                .changed();
+                            ayar_degisti |= ui
+                                .add(
+                                    egui::DragValue::new(&mut b.temel_endeks)
+                                        .range(0.0..=f64::INFINITY)
+                                        .speed(0.5)
+                                        .fixed_decimals(4),
+                                )
+                                .changed();
+                            ayar_degisti |= ui
+                                .add(
+                                    egui::DragValue::new(&mut b.guncel_endeks)
+                                        .range(0.0..=f64::INFINITY)
+                                        .speed(0.5)
+                                        .fixed_decimals(4),
+                                )
+                                .changed();
+                            ui.end_row();
+                        }
+                    });
+            }
+            ui.horizontal_wrapped(|ui| {
                 ui.label(
                     RichText::new("KDV (%)")
                         .color(tema::METIN_IKINCIL)
@@ -331,6 +716,8 @@ impl MetrajApp {
         // Tablo: keşif kalemleri + editlenebilir kümülatif (yeşil defter)
         let mut degisti = false;
         let mut detay_ac: Option<usize> = None;
+        let tenzilat_orani = self.sozlesme_ayarlari.tenzilat_orani();
+        let sozlesme_fiyat_carpani = 1.0 - tenzilat_orani / 100.0;
         ScrollArea::both()
             .max_height((ui.available_height() - 230.0).max(140.0))
             .auto_shrink([false, false])
@@ -351,7 +738,7 @@ impl MetrajApp {
                         bsl(ui, "Poz No");
                         bsl(ui, "Açıklama");
                         bsl(ui, "Birim");
-                        bsl(ui, "B.Fiyat");
+                        bsl(ui, "Sözleşme B.Fiyat");
                         bsl(ui, "Sözleşme");
                         bsl(ui, "Önceki Küm.");
                         bsl(ui, "Bu Küm. (yeşil defter)");
@@ -376,9 +763,11 @@ impl MetrajApp {
                             .on_hover_text(&k.tanim);
                             ui.label(RichText::new(&k.birim).size(10.5).color(tema::METIN_SOLUK));
                             ui.label(
-                                RichText::new(para_formatla(k.birim_fiyat))
-                                    .size(10.5)
-                                    .color(tema::METIN_IKINCIL),
+                                RichText::new(para_formatla(
+                                    k.birim_fiyat * sozlesme_fiyat_carpani,
+                                ))
+                                .size(10.5)
+                                .color(tema::METIN_IKINCIL),
                             );
                             ui.label(
                                 RichText::new(format!("{:.2}", k.miktar))
@@ -428,10 +817,12 @@ impl MetrajApp {
                                     .color(renk),
                             );
                             ui.label(
-                                RichText::new(para_formatla(k.birim_fiyat * bu_miktar))
-                                    .size(10.5)
-                                    .strong()
-                                    .color(tema::BASARI),
+                                RichText::new(para_formatla(
+                                    k.birim_fiyat * sozlesme_fiyat_carpani * bu_miktar,
+                                ))
+                                .size(10.5)
+                                .strong()
+                                .color(tema::BASARI),
                             );
                             ui.end_row();
                         }
@@ -451,7 +842,7 @@ impl MetrajApp {
         } else {
             None
         };
-        let hesaplar = poz_hesaplari(&kesif, &guncel, onceki_hakedis.as_ref());
+        let hesaplar = poz_hesaplari(&kesif, &guncel, onceki_hakedis.as_ref(), tenzilat_orani);
         let ic = icmal(&hesaplar, &guncel);
 
         ui.add_space(6.0);
@@ -490,7 +881,21 @@ impl MetrajApp {
                     false,
                 );
                 satir(ui, "Önceki Hakedişler Brütü", ic.onceki_brut, false);
-                satir(ui, "Bu Hakediş Brütü", ic.bu_hakedis_brut, false);
+                satir(ui, "Bu Hakediş Ham İmalat", ic.bu_hakedis_ham, false);
+                if ic.tenzilat_tutari != 0.0 {
+                    satir(
+                        ui,
+                        &format!("Tenzilat (% {:.6})", tenzilat_orani),
+                        -ic.tenzilat_tutari,
+                        false,
+                    );
+                }
+                satir(
+                    ui,
+                    "Bu Hakediş (Tenzilat Sonrası)",
+                    ic.bu_hakedis_brut,
+                    false,
+                );
                 if ic.fiyat_farki != 0.0 {
                     satir(ui, "Fiyat Farkı (±)", ic.fiyat_farki, false);
                 }
@@ -545,10 +950,7 @@ impl MetrajApp {
                 satir(ui, "ÖDENECEK TUTAR", ic.odenecek_tutar, true);
                 // Kesin hesap özeti
                 let sozlesme_bedeli = crate::bicim::kurus_yuvarla(
-                    hesaplar
-                        .iter()
-                        .map(|h| h.birim_fiyat * h.sozlesme_miktar)
-                        .sum(),
+                    self.sozlesme_ayarlari.hesaplanan_sozlesme_bedeli(),
                 );
                 ui.add_space(4.0);
                 ui.separator();
@@ -589,6 +991,7 @@ impl MetrajApp {
                 &kesif,
                 &guncel,
                 onceki.as_ref(),
+                &self.sozlesme_ayarlari,
                 &d,
             ) {
                 Ok(()) => self.basarili_mesaj = format!("Hakediş Excel: {}", d.display()),

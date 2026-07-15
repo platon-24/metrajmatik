@@ -290,6 +290,9 @@ pub struct Hakedis {
     pub kdv_orani: f64,
     #[serde(default)]
     pub tevkifat_orani: f64, // 0,4 = 4/10 tevkifat
+    /// Yeni fiyat farkı modeli. Eski ff_* alanları dosya uyumluluğu için korunur.
+    #[serde(default)]
+    pub fiyat_farki_ayari: FiyatFarkiAyari,
 }
 
 impl Hakedis {
@@ -310,6 +313,7 @@ impl Hakedis {
             ff_guncel_endeks: 0.0,
             kdv_orani: 20.0,
             tevkifat_orani: 0.0,
+            fiyat_farki_ayari: FiyatFarkiAyari::default(),
         }
     }
     /// Verilen keşif kaleminin bu hakedişteki kümülatif miktarı. Eski proje
@@ -327,6 +331,79 @@ impl Hakedis {
             .map(|s| s.kumulatif_miktar)
             .unwrap_or(0.0)
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FiyatFarkiYontemi {
+    #[default]
+    Yok,
+    Manuel,
+    TekEndeks,
+    YapimAgirlikli,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FiyatFarkiBileseni {
+    pub kod: String,
+    pub ad: String,
+    #[serde(default)]
+    pub katsayi: f64,
+    #[serde(default)]
+    pub temel_endeks: f64,
+    #[serde(default)]
+    pub guncel_endeks: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FiyatFarkiAyari {
+    #[serde(default)]
+    pub yontem: FiyatFarkiYontemi,
+    #[serde(default = "hakedis_ff_b")]
+    pub b: f64,
+    #[serde(default)]
+    pub uygulama_ayi: String,
+    #[serde(default = "varsayilan_fiyat_farki_bilesenleri")]
+    pub bilesenler: Vec<FiyatFarkiBileseni>,
+}
+
+impl Default for FiyatFarkiAyari {
+    fn default() -> Self {
+        Self {
+            yontem: FiyatFarkiYontemi::Yok,
+            b: 0.90,
+            uygulama_ayi: String::new(),
+            bilesenler: varsayilan_fiyat_farki_bilesenleri(),
+        }
+    }
+}
+
+impl FiyatFarkiAyari {
+    pub fn normalize(&mut self) {
+        if self.bilesenler.len() != 7 {
+            self.bilesenler = varsayilan_fiyat_farki_bilesenleri();
+        }
+    }
+}
+
+fn varsayilan_fiyat_farki_bilesenleri() -> Vec<FiyatFarkiBileseni> {
+    [
+        ("a", "İşçilik"),
+        ("b1", "Metalik olmayan mineral ürünler"),
+        ("b2", "Demir ve çelik ürünleri"),
+        ("b3", "Katı / sıvı yakıtlar"),
+        ("b4", "Ağaç ve mantar ürünleri"),
+        ("b5", "Diğer malzemeler"),
+        ("c", "Makine ve ekipman amortismanı"),
+    ]
+    .into_iter()
+    .map(|(kod, ad)| FiyatFarkiBileseni {
+        kod: kod.into(),
+        ad: ad.into(),
+        katsayi: 0.0,
+        temel_endeks: 0.0,
+        guncel_endeks: 0.0,
+    })
+    .collect()
 }
 
 fn hakedis_damga_orani() -> f64 {
@@ -376,6 +453,74 @@ pub struct KayitliMetraj {
     pub is_programi: IsProgrami,
     #[serde(default)]
     pub proje_bilgi: ProjeBilgi,
+    #[serde(default)]
+    pub proje_asamasi: ProjeAsamasi,
+    #[serde(default)]
+    pub sozlesme_ayarlari: SozlesmeAyarlari,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProjeAsamasi {
+    #[default]
+    Metraj,
+    Hakedis,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TenzilatYontemi {
+    #[default]
+    ManuelOran,
+    SozlesmeBedelinden,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SozlesmeAyarlari {
+    /// Dönüşüm anındaki metraj toplamı; sözleşme bazını sonradan değişmeye karşı dondurur.
+    #[serde(default)]
+    pub kesif_bedeli: f64,
+    #[serde(default)]
+    pub sozlesme_bedeli: f64,
+    #[serde(default)]
+    pub tenzilat_yontemi: TenzilatYontemi,
+    #[serde(default)]
+    pub manuel_tenzilat_orani: f64,
+    #[serde(default)]
+    pub donusum_tarihi: String,
+}
+
+impl Default for SozlesmeAyarlari {
+    fn default() -> Self {
+        Self {
+            kesif_bedeli: 0.0,
+            sozlesme_bedeli: 0.0,
+            tenzilat_yontemi: TenzilatYontemi::ManuelOran,
+            manuel_tenzilat_orani: 0.0,
+            donusum_tarihi: String::new(),
+        }
+    }
+}
+
+impl SozlesmeAyarlari {
+    /// Oran hesabı altı ondalık hanede tutulur; parasal yuvarlama daha sonra yapılır.
+    pub fn tenzilat_orani(&self) -> f64 {
+        let oran = match self.tenzilat_yontemi {
+            TenzilatYontemi::ManuelOran => self.manuel_tenzilat_orani,
+            TenzilatYontemi::SozlesmeBedelinden if self.kesif_bedeli > 0.0 => {
+                (1.0 - self.sozlesme_bedeli / self.kesif_bedeli) * 100.0
+            }
+            TenzilatYontemi::SozlesmeBedelinden => 0.0,
+        };
+        (oran * 1_000_000.0).round() / 1_000_000.0
+    }
+
+    pub fn hesaplanan_sozlesme_bedeli(&self) -> f64 {
+        match self.tenzilat_yontemi {
+            TenzilatYontemi::SozlesmeBedelinden => self.sozlesme_bedeli,
+            TenzilatYontemi::ManuelOran => {
+                self.kesif_bedeli * (1.0 - self.tenzilat_orani() / 100.0)
+            }
+        }
+    }
 }
 
 /// Resmî çıktıların (yaklaşık maliyet cetveli, hakediş, teklif) başlığında yer alan
@@ -608,6 +753,8 @@ mod testler {
             hakedisler: vec![],
             is_programi: IsProgrami::default(),
             proje_bilgi: ProjeBilgi::default(),
+            proje_asamasi: ProjeAsamasi::Metraj,
+            sozlesme_ayarlari: SozlesmeAyarlari::default(),
         };
         assert_eq!(m.toplam_tutar(), 175.0);
     }
@@ -639,6 +786,17 @@ mod testler {
         p.normalize(); // uzunluk uyumsuz → eşitle
         assert_eq!(p.dagilim.len(), 3);
         assert!((p.dagilim[0] - 100.0 / 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn sozlesme_bedelinden_tenzilat_alti_hanede_hesaplanir() {
+        let ayar = SozlesmeAyarlari {
+            kesif_bedeli: 1_000_000.0,
+            sozlesme_bedeli: 876_543.22,
+            tenzilat_yontemi: TenzilatYontemi::SozlesmeBedelinden,
+            ..SozlesmeAyarlari::default()
+        };
+        assert_eq!(ayar.tenzilat_orani(), 12.345678);
     }
 
     #[test]
@@ -688,6 +846,8 @@ mod testler {
             hakedisler: vec![h],
             is_programi: IsProgrami::default(),
             proje_bilgi: ProjeBilgi::default(),
+            proje_asamasi: ProjeAsamasi::Metraj,
+            sozlesme_ayarlari: SozlesmeAyarlari::default(),
         };
 
         proje.kimlikleri_tamamla();

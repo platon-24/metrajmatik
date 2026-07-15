@@ -9,14 +9,50 @@ use crate::bicim::{metni_kisalt, para_formatla, sayi_oku};
 use crate::is_grubu::{
     grup_bul_mut, grup_bul_ref, grup_canli_toplam, grup_sil, ilk_yaprak_grup_id,
 };
-use crate::models::{IsGrubu, MetrajKalemi, MiktarDetay};
+use crate::models::{IsGrubu, MetrajKalemi, MiktarDetay, ProjeAsamasi};
 use crate::tema;
 
-use super::{MetrajApp, MetrajPaneli, PopupDetaySatiri};
+use super::{MetrajApp, MetrajPaneli, PopupDetaySatiri, Sekme};
 
 impl MetrajApp {
     // ==================== METRAJ TABLOSU ====================
     pub(crate) fn render_metraj_tablosu(&mut self, ui: &mut Ui) {
+        if self.proje_asamasi == ProjeAsamasi::Hakedis {
+            tema::bolum_basligi(ui, "🔒", "Metraj Donduruldu");
+            ui.add_space(6.0);
+            tema::bildirim_seridi(
+                ui,
+                "Bu proje hakediş aşamasına dönüştürüldü. Sözleşme bazını korumak için poz, miktar ve iş grubu düzenleme kapalıdır.",
+                tema::UYARI_KOYU,
+                tema::UYARI,
+                tema::UYARI,
+            );
+            ui.add_space(10.0);
+            tema::kart(ui, |ui| {
+                ui.label(
+                    RichText::new(format!(
+                        "Dondurulan keşif: {} TL",
+                        para_formatla(self.sozlesme_ayarlari.kesif_bedeli)
+                    ))
+                    .strong(),
+                );
+                ui.label(format!(
+                    "Sözleşme bedeli: {} TL · Tenzilat: % {:.6}",
+                    para_formatla(self.sozlesme_ayarlari.hesaplanan_sozlesme_bedeli()),
+                    self.sozlesme_ayarlari.tenzilat_orani()
+                ));
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if tema::birincil_buton(ui, "Hakedişe Git").clicked() {
+                        self.sekme_ac(Sekme::Hakedis);
+                    }
+                    if ui.button("İş Programına Git").clicked() {
+                        self.sekme_ac(Sekme::IsProgrami);
+                    }
+                });
+            });
+            return;
+        }
         let dar_duzen = ui.available_width() < 1320.0;
         let kitap_genisligi = (ui.available_width() - 260.0).clamp(180.0, 360.0);
         tema::kart(ui, |ui| {

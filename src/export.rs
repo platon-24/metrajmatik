@@ -5,7 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::maliyet::MaliyetOzeti;
 use crate::models::{
-    AnalizGirdisi, Hakedis, IsProgrami, KayitliMetraj, MetrajKalemi, ProjeBilgi, VeriPaketi,
+    AnalizGirdisi, Hakedis, IsProgrami, KayitliMetraj, MetrajKalemi, ProjeBilgi, SozlesmeAyarlari,
+    VeriPaketi,
 };
 
 static GUVENLI_YAZ_SAYACI: AtomicU64 = AtomicU64::new(1);
@@ -1050,9 +1051,10 @@ pub fn hakedis_excel_aktar(
     kesif: &[MetrajKalemi],
     hakedis: &Hakedis,
     onceki: Option<&Hakedis>,
+    sozlesme: &SozlesmeAyarlari,
     dosya_yolu: &Path,
 ) -> Result<(), String> {
-    let hesaplar = crate::hakedis::poz_hesaplari(kesif, hakedis, onceki);
+    let hesaplar = crate::hakedis::poz_hesaplari(kesif, hakedis, onceki, sozlesme.tenzilat_orani());
     let ic = crate::hakedis::icmal(&hesaplar, hakedis);
 
     let mut workbook = Workbook::new();
@@ -1247,7 +1249,23 @@ pub fn hakedis_excel_aktar(
     icmal_satiri(
         ws,
         &mut satir,
-        "Bu Hakediş Brütü",
+        "Bu Hakediş Ham İmalat",
+        ic.bu_hakedis_ham,
+        &icmal_format,
+    )?;
+    if ic.tenzilat_tutari != 0.0 {
+        icmal_satiri(
+            ws,
+            &mut satir,
+            &format!("Tenzilat (% {:.6})", sozlesme.tenzilat_orani()),
+            -ic.tenzilat_tutari,
+            &icmal_format,
+        )?;
+    }
+    icmal_satiri(
+        ws,
+        &mut satir,
+        "Bu Hakediş (Tenzilat Sonrası)",
         ic.bu_hakedis_brut,
         &icmal_format,
     )?;
@@ -1928,6 +1946,8 @@ mod testler {
             hakedisler: vec![],
             is_programi: crate::models::IsProgrami::default(),
             proje_bilgi: crate::models::ProjeBilgi::default(),
+            proje_asamasi: crate::models::ProjeAsamasi::Metraj,
+            sozlesme_ayarlari: crate::models::SozlesmeAyarlari::default(),
         }
     }
 
@@ -2060,6 +2080,7 @@ mod testler {
             &kesif,
             &h,
             None,
+            &crate::models::SozlesmeAyarlari::default(),
             &yol,
         )
         .expect("hakediş Excel üretilmeli");
