@@ -317,7 +317,7 @@ impl MetrajApp {
     }
 
     pub(crate) fn render_is_gruplari_paneli(&mut self, ui: &mut Ui) {
-        tema::bolum_basligi(ui, "🗂", "İş Grupları");
+        tema::ikonlu_bolum_basligi(ui, tema::ikon::ALT_GRUP, "İş Grupları");
         ui.add_space(4.0);
 
         tema::kart(ui, |ui| {
@@ -415,7 +415,7 @@ impl MetrajApp {
     }
 
     pub(crate) fn render_arama_paneli(&mut self, ui: &mut Ui) {
-        tema::bolum_basligi(ui, "🔍", "Poz Arama");
+        tema::ikonlu_bolum_basligi(ui, tema::ikon::POZLAR, "Poz Arama");
         ui.add_space(4.0);
 
         tema::kart(ui, |ui| {
@@ -698,16 +698,29 @@ impl MetrajApp {
                 16.0,
             ));
             ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(3.0);
             ui.label(
-                RichText::new("AKTİF İŞ GRUBU")
-                    .size(9.5)
-                    .strong()
-                    .color(tema::METIN_SOLUK),
+                RichText::new("Seçili grup:")
+                    .size(12.0)
+                    .color(tema::METIN_IKINCIL),
             );
             match &aktif_grup_adi {
-                Some(ad) => tema::ikonlu_rozet(ui, tema::ikon::ALT_GRUP, ad, tema::VURGU_HOVER),
+                Some(ad) => {
+                    ui.label(
+                        RichText::new(tema::ikon::ALT_GRUP)
+                            .font(egui::FontId::new(13.0, tema::ikon_fontu()))
+                            .color(tema::VURGU_HOVER),
+                    );
+                    ui.label(RichText::new(ad).size(12.5).strong().color(tema::METIN));
+                }
                 None if !self.is_gruplari.is_empty() => {
-                    tema::ikonlu_rozet(ui, tema::ikon::ALT_GRUP, "Grup seçili değil", tema::UYARI)
+                    ui.label(
+                        RichText::new("Grup seçili değil")
+                            .size(12.5)
+                            .strong()
+                            .color(tema::UYARI),
+                    );
                 }
                 None => {}
             }

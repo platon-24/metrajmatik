@@ -214,6 +214,19 @@ pub fn bolum_basligi(ui: &mut Ui, ikon: &str, baslik: &str) {
     ui.add_space(2.0);
 }
 
+pub fn ikonlu_bolum_basligi(ui: &mut Ui, ikon: &str, baslik: &str) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        ui.label(
+            RichText::new(ikon)
+                .font(FontId::new(16.0, ikon_fontu()))
+                .color(AKSAN),
+        );
+        ui.label(RichText::new(baslik).size(15.5).strong().color(METIN));
+    });
+    ui.add_space(2.0);
+}
+
 fn renkli_buton(ui: &mut Ui, metin: &str, zemin: Color32, yazi: Color32) -> Response {
     egui::Button::new(RichText::new(metin).color(yazi).strong())
         .fill(zemin)
@@ -270,25 +283,6 @@ pub fn rozet(ui: &mut Ui, metin: &str, renk: Color32) {
         .inner_margin(Margin::symmetric(9, 4))
         .show(ui, |ui| {
             ui.label(RichText::new(metin).size(11.5).strong().color(renk));
-        });
-}
-
-pub fn ikonlu_rozet(ui: &mut Ui, ikon: &str, metin: &str, renk: Color32) {
-    egui::Frame::default()
-        .fill(VURGU_SOLUK)
-        .stroke(Stroke::new(1.0, KENAR))
-        .corner_radius(CornerRadius::same(20))
-        .inner_margin(Margin::symmetric(9, 4))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 5.0;
-                ui.label(
-                    RichText::new(ikon)
-                        .font(FontId::new(12.5, ikon_fontu()))
-                        .color(renk),
-                );
-                ui.label(RichText::new(metin).size(11.5).strong().color(renk));
-            });
         });
 }
 
