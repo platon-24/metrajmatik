@@ -123,6 +123,40 @@ impl MetrajApp {
         }
     }
 
+    /// Kurtarma dosyasını kullanıcı niyetiyle siler. Başarısız silme işlemini
+    /// sessizce yutmaz; aksi halde aynı kurtarma uyarısı sonraki açılışta geri gelir.
+    pub(crate) fn autosave_dosyasini_sil(&mut self, basari_bildir: bool) -> bool {
+        let mut yollari = vec![self.autosave_yolu.clone()];
+        for yol in super::eski_autosave_yollari() {
+            if !yollari.contains(&yol) {
+                yollari.push(yol);
+            }
+        }
+
+        let mut hatalar = Vec::new();
+        for yol in yollari {
+            match std::fs::remove_file(&yol) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => hatalar.push(format!("{}: {}", yol.display(), e)),
+            }
+        }
+        if !hatalar.is_empty() {
+            self.hata_mesaji = format!(
+                "Otomatik kurtarma kaydı tamamen silinemedi: {}",
+                hatalar.join("; ")
+            );
+            return false;
+        }
+
+        self.kurtarma_mevcut = false;
+        self.son_autosave = 0.0;
+        if basari_bildir {
+            self.basarili_mesaj = "Otomatik kurtarma kaydı kalıcı olarak silindi.".into();
+        }
+        true
+    }
+
     // Hiyerarşik is_gruplari yapısını düzleştirip (eski sürümler için) kalemler ile birlikte döndürür.
     fn kayit_yapisi_hazirla(&mut self) -> (Vec<IsGrubu>, Vec<MetrajKalemi>) {
         self.aktif_grubu_senkronize();
@@ -793,8 +827,12 @@ impl MetrajApp {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             } else if kaydetmeden_kapat {
-                self.kapanisa_izin_ver = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                // Kullanıcı değişiklikleri açıkça çöpe attı; bu oturumun autosave'i
+                // sonraki açılışta tekrar kurtarma önerisi olarak gösterilmemeli.
+                if self.autosave_dosyasini_sil(false) {
+                    self.kapanisa_izin_ver = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
             } else if vazgec {
                 self.kapanis_onayi = false;
             }

@@ -9,7 +9,7 @@
 use eframe::egui;
 use egui::{Color32, RichText, TextEdit};
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::bicim::{metni_kisalt, para_formatla};
 use crate::database::Veritabani;
@@ -229,6 +229,50 @@ fn veri_yolu(dosya_adi: &str) -> PathBuf {
     yeni
 }
 
+const AUTOSAVE_DOSYA_ADI: &str = "metrajmatik_autosave.mrj";
+
+/// Eski sürümlerin autosave bırakabildiği çalışma ve uygulama dizinleri.
+fn eski_autosave_yollari() -> Vec<PathBuf> {
+    let mut yollari = vec![PathBuf::from(AUTOSAVE_DOSYA_ADI)];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dizin) = exe.parent() {
+            let exe_yolu = dizin.join(AUTOSAVE_DOSYA_ADI);
+            if !yollari.contains(&exe_yolu) {
+                yollari.push(exe_yolu);
+            }
+        }
+    }
+    yollari
+}
+
+/// Eski autosave'i yeni konuma yalnız bir kez taşır ve kaynak kopyaları tüketir.
+/// Kaynağı yerinde bırakan normal veri göçü autosave için uygun değildir; kullanıcı
+/// yeni dosyayı sildiğinde eski kopya sonraki açılışta yeniden canlanır.
+fn eski_autosave_kopyalarini_tuket(yeni: &Path, eskiler: &[PathBuf]) -> std::io::Result<()> {
+    for eski in eskiler {
+        if eski == yeni || !eski.exists() {
+            continue;
+        }
+        if yeni.exists() {
+            std::fs::remove_file(eski)?;
+            continue;
+        }
+        if std::fs::rename(eski, yeni).is_err() {
+            std::fs::copy(eski, yeni)?;
+            std::fs::remove_file(eski)?;
+        }
+    }
+    Ok(())
+}
+
+fn autosave_veri_yolu() -> PathBuf {
+    let yeni = veri_dizini().join(AUTOSAVE_DOSYA_ADI);
+    if let Err(e) = eski_autosave_kopyalarini_tuket(&yeni, &eski_autosave_yollari()) {
+        log::warn!("Eski otomatik kayıt temizlenemedi: {}", e);
+    }
+    yeni
+}
+
 impl Default for MetrajApp {
     fn default() -> Self {
         let db_yolu = veri_yolu("metrajmatik_veriler.db");
@@ -249,7 +293,7 @@ impl Default for MetrajApp {
             .and_then(|vt| vt.varsayilan_gruplari_getir().ok())
             .unwrap_or_default();
         let baslangic_secili = ilk_yaprak_grup_id(&baslangic_gruplari);
-        let autosave_yolu = veri_yolu("metrajmatik_autosave.mrj");
+        let autosave_yolu = autosave_veri_yolu();
         let kurtarma_mevcut = autosave_yolu.exists();
         Self {
             db,
@@ -783,7 +827,7 @@ impl eframe::App for MetrajApp {
             // Kurtarma şeridi: otomatik kayıt dosyası varsa
             if self.kurtarma_mevcut {
                 let mut kurtar = false;
-                let mut yoksay = false;
+                let mut autosave_sil = false;
                 egui::Frame::default()
                     .fill(tema::UYARI_KOYU)
                     .stroke(egui::Stroke::new(1.0, tema::UYARI))
@@ -793,7 +837,12 @@ impl eframe::App for MetrajApp {
                         ui.horizontal_wrapped(|ui| {
                             ui.label(RichText::new("⟲  Önceki oturumdan kurtarılabilir otomatik kayıt bulundu.").color(tema::UYARI));
                             if tema::birincil_buton(ui, "Kurtar").clicked() { kurtar = true; }
-                            if ui.button("Yoksay").clicked() { yoksay = true; }
+                            if tema::tehlike_buton(ui, "🗑 Otomatik Kaydı Sil")
+                                .on_hover_text("Bu kurtarma dosyasını kalıcı olarak siler")
+                                .clicked()
+                            {
+                                autosave_sil = true;
+                            }
                         });
                     });
                 ui.add_space(6.0);
@@ -802,9 +851,8 @@ impl eframe::App for MetrajApp {
                     self.metraj_dosyadan_yukle(&yol, false);
                     self.kurtarma_mevcut = false;
                 }
-                if yoksay {
-                    let _ = std::fs::remove_file(&self.autosave_yolu);
-                    self.kurtarma_mevcut = false;
+                if autosave_sil {
+                    self.autosave_dosyasini_sil(true);
                 }
             }
             match self.aktif_sekme {
@@ -823,5 +871,46 @@ impl eframe::App for MetrajApp {
             }
         });
         self.render_bildirimler(ctx);
+    }
+}
+
+#[cfg(test)]
+mod testler {
+    use super::eski_autosave_kopyalarini_tuket;
+    use std::path::PathBuf;
+
+    fn gecici_dizin() -> PathBuf {
+        let benzersiz = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("sistem saati")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "metrajmatik-autosave-test-{}-{}",
+            std::process::id(),
+            benzersiz
+        ))
+    }
+
+    #[test]
+    fn eski_autosave_bir_kez_tasinir_ve_tekrar_canlanmaz() {
+        let dizin = gecici_dizin();
+        std::fs::create_dir_all(&dizin).expect("geçici dizin");
+        let yeni = dizin.join("appdata-autosave.mrj");
+        let eski = dizin.join("eski-autosave.mrj");
+
+        std::fs::write(&eski, "eski kayıt").expect("eski kayıt");
+        eski_autosave_kopyalarini_tuket(&yeni, std::slice::from_ref(&eski)).expect("ilk taşıma");
+        assert_eq!(std::fs::read_to_string(&yeni).unwrap(), "eski kayıt");
+        assert!(!eski.exists());
+
+        // Eski konumda yeniden bir artık bulunsa bile yeni kayıt değiştirilmez;
+        // artık kaynak tüketilir ve sonraki silmede tekrar geri gelemez.
+        std::fs::write(&eski, "bayat kayıt").expect("bayat kayıt");
+        eski_autosave_kopyalarini_tuket(&yeni, std::slice::from_ref(&eski))
+            .expect("artık temizliği");
+        assert_eq!(std::fs::read_to_string(&yeni).unwrap(), "eski kayıt");
+        assert!(!eski.exists());
+
+        std::fs::remove_dir_all(dizin).expect("geçici dizin temizliği");
     }
 }
