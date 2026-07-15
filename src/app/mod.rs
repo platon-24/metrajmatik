@@ -82,6 +82,14 @@ pub struct MetrajApp {
     duzenleme_adi: String,
     silinecek_kitap: Option<Kitap>,
     fiyat_guncelle_hedef: Option<Kitap>,
+    // Rayiç güncelleme modalı
+    fiyat_guncelle_acik: bool,
+    fiyat_guncelle_endeks_mod: bool, // false = kuruma göre, true = endekse (Yİ-ÜFE) göre
+    fiyat_guncelle_en_son: bool,     // kurum kipinde: en son fiyat mı, seçilen dönem mi
+    fiyat_guncelle_yil: u32,
+    fiyat_guncelle_ay: u32,
+    fiyat_endeks_temel: f64,
+    fiyat_endeks_guncel: f64,
     cift_tiklama_ekle: bool,
     pdf_durumu: String,
     pdf_yukleniyor: bool,
@@ -217,6 +225,13 @@ impl Default for MetrajApp {
             yeni_kitap_adi: String::new(), yeni_kitap_yil: 2026, yeni_kitap_ay: 5,
             duzenlenen_kitap: None, duzenleme_adi: String::new(), silinecek_kitap: None,
             fiyat_guncelle_hedef: None,
+            fiyat_guncelle_acik: false,
+            fiyat_guncelle_endeks_mod: false,
+            fiyat_guncelle_en_son: true,
+            fiyat_guncelle_yil: 2026,
+            fiyat_guncelle_ay: 5,
+            fiyat_endeks_temel: 100.0,
+            fiyat_endeks_guncel: 100.0,
             cift_tiklama_ekle: false,
             pdf_durumu: String::new(), pdf_yukleniyor: false, import_profili: "Otomatik".into(),
             aktif_sekme: Sekme::Proje,
@@ -346,6 +361,9 @@ impl eframe::App for MetrajApp {
 
         // Hakediş yeşil defter kırılımı popup'ı
         self.render_hakedis_detay_popup(ctx);
+
+        // Rayiç/fiyat güncelleme modalı
+        self.render_fiyat_guncelle_popup(ctx);
 
         egui::TopBottomPanel::top("menu_bar")
             .frame(egui::Frame::default().fill(tema::ARKA_PLAN).inner_margin(egui::Margin::symmetric(14, 9)))

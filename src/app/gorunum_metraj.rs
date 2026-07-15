@@ -291,27 +291,14 @@ impl MetrajApp {
                     self.kalem_ekle();
                 }
             });
-            // Fiyat güncelleme - hedef kitap seçerek tüm kalemleri yeni fiyatlarla güncelle
-            if !self.metraj_kalemleri.is_empty() && self.kitaplar.len() > 1 {
+            // Rayiç güncelleme: kuruma/döneme göre yeniden fiyatlandırma veya Yİ-ÜFE endeksi
+            if !self.metraj_kalemleri.is_empty() || !self.is_gruplari.is_empty() {
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("🔄 Toplu Fiyat Güncelle").color(tema::METIN_IKINCIL).size(12.0));
-                    let hedef_metni = self.fiyat_guncelle_hedef.as_ref()
-                        .map(|k| format!("{} ({}/{})", k.ad, k.ay, k.yil))
-                        .unwrap_or_else(|| "Hedef kitap seçin".to_string());
-                    egui::ComboBox::from_id_salt("fiyat_guncelle_combo")
-                        .selected_text(&hedef_metni)
-                        .width(280.0)
-                        .show_ui(ui, |ui| {
-                            for k in &self.kitaplar.clone() {
-                                if ui.selectable_label(false, format!("{} ({}/{})", k.ad, k.ay, k.yil)).clicked() {
-                                    self.fiyat_guncelle_hedef = Some(k.clone());
-                                }
-                            }
-                        });
-                    if ui.button("Güncelle").clicked() {
-                        self.fiyatlari_guncelle();
+                    if ui.button("🔄 Rayiç Güncelle").on_hover_text("Tüm kalemleri kuruma/döneme göre veya Yİ-ÜFE endeksiyle topluca güncelle").clicked() {
+                        self.fiyat_guncelle_acik = true;
                     }
+                    ui.label(RichText::new("İhale tarihine göre rayiç veya endeks güncellemesi").color(tema::METIN_SOLUK).size(11.0));
                 });
             }
         });
@@ -342,6 +329,80 @@ impl MetrajApp {
                     });
                 });
             });
+    }
+
+    /// Rayiç güncelleme modalı: kuruma/döneme göre yeniden fiyatlandırma veya Yİ-ÜFE endeksi.
+    pub(crate) fn render_fiyat_guncelle_popup(&mut self, ctx: &egui::Context) {
+        if !self.fiyat_guncelle_acik { return; }
+        let mut uygula = false;
+        let mut kapat = false;
+        egui::Window::new("🔄 Rayiç / Fiyat Güncelleme")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.set_width(460.0);
+                ui.label(RichText::new("Metrajdaki tüm kalemlerin birim fiyatlarını topluca günceller.").color(tema::METIN_SOLUK).size(11.5));
+                ui.add_space(8.0);
+
+                // Kip seçimi
+                ui.horizontal(|ui| {
+                    if ui.selectable_label(!self.fiyat_guncelle_endeks_mod, "🏛 Kuruma göre").clicked() { self.fiyat_guncelle_endeks_mod = false; }
+                    if ui.selectable_label(self.fiyat_guncelle_endeks_mod, "📈 Endekse göre (Yİ-ÜFE)").clicked() { self.fiyat_guncelle_endeks_mod = true; }
+                });
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(8.0);
+
+                if self.fiyat_guncelle_endeks_mod {
+                    ui.label(RichText::new("Fiyatları Yİ-ÜFE oranıyla güncelle (güncel ÷ temel).").size(12.5).color(tema::METIN));
+                    ui.add_space(6.0);
+                    egui::Grid::new("fg_endeks_grid").num_columns(2).spacing(egui::vec2(12.0, 8.0)).show(ui, |ui| {
+                        ui.label(RichText::new("Temel endeks (sözleşme/eski)").color(tema::METIN_IKINCIL).size(12.5));
+                        ui.add(egui::DragValue::new(&mut self.fiyat_endeks_temel).speed(0.1).range(0.01..=1_000_000.0));
+                        ui.end_row();
+                        ui.label(RichText::new("Güncel endeks (yeni)").color(tema::METIN_IKINCIL).size(12.5));
+                        ui.add(egui::DragValue::new(&mut self.fiyat_endeks_guncel).speed(0.1).range(0.01..=1_000_000.0));
+                        ui.end_row();
+                    });
+                    let carpan = if self.fiyat_endeks_temel > 0.0 { self.fiyat_endeks_guncel / self.fiyat_endeks_temel } else { 0.0 };
+                    ui.add_space(4.0);
+                    ui.label(RichText::new(format!("Çarpan: × {:.4}   (% {:+.1})", carpan, (carpan - 1.0) * 100.0)).color(tema::VURGU_HOVER).strong());
+                } else {
+                    let hedef_metni = self.fiyat_guncelle_hedef.as_ref().map(|k| k.ad.clone()).unwrap_or_else(|| "Kurum seçin".into());
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Hedef kurum").color(tema::METIN_IKINCIL).size(12.5));
+                        egui::ComboBox::from_id_salt("fg_kurum").selected_text(&hedef_metni).width(260.0).show_ui(ui, |ui| {
+                            for k in &self.kitaplar.clone() {
+                                let secili = self.fiyat_guncelle_hedef.as_ref().map(|h| h.id == k.id).unwrap_or(false);
+                                if ui.selectable_label(secili, &k.ad).clicked() { self.fiyat_guncelle_hedef = Some(k.clone()); }
+                            }
+                        });
+                    });
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        if ui.selectable_label(self.fiyat_guncelle_en_son, "En son fiyat").clicked() { self.fiyat_guncelle_en_son = true; }
+                        if ui.selectable_label(!self.fiyat_guncelle_en_son, "İhale tarihine göre").clicked() { self.fiyat_guncelle_en_son = false; }
+                    });
+                    if !self.fiyat_guncelle_en_son {
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Dönem").color(tema::METIN_IKINCIL).size(12.5));
+                            ui.add(egui::DragValue::new(&mut self.fiyat_guncelle_ay).range(1..=12).prefix("Ay "));
+                            ui.add(egui::DragValue::new(&mut self.fiyat_guncelle_yil).range(2000..=2100));
+                        });
+                        ui.label(RichText::new("O tarihte geçerli (tarih ve öncesindeki en son) rayiç uygulanır.").color(tema::METIN_SOLUK).size(10.5));
+                    }
+                }
+
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    if tema::basari_buton(ui, "✓ Güncelle").clicked() { uygula = true; }
+                    if ui.button("İptal").clicked() { kapat = true; }
+                });
+            });
+        if uygula { self.fiyatlari_guncelle(); }
+        if kapat { self.fiyat_guncelle_acik = false; }
     }
 
     pub(crate) fn render_metraj_kalem_tablosu(&mut self, ui: &mut Ui) {

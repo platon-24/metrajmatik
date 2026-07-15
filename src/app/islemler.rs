@@ -3,7 +3,6 @@
 //! ve toplu fiyat güncelleme. Tümü `MetrajApp` üzerinde `pub(crate)` metotlardır.
 
 use eframe::egui;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::bicim::krono_tarih;
@@ -514,6 +513,19 @@ impl MetrajApp {
         }
     }
 
+    /// Birim fiyat teklif cetveli + teklif mektubu (Excel). `dolu`: proje fiyatlarıyla
+    /// dolu (isteklinin çalışma kopyası) ya da boş (isteklilere dağıtılacak cetvel).
+    pub(crate) fn teklif_cetveli_diyalog(&mut self, dolu: bool) {
+        let m = self.proje_olustur();
+        let ek = if dolu { "Teklif Cetveli" } else { "Bos Teklif Cetveli" };
+        if let Some(d) = rfd::FileDialog::new().add_filter("Excel", &["xlsx"]).set_file_name(&format!("{} - {}.xlsx", self.metraj_adi, ek)).save_file() {
+            match crate::export::teklif_cetveli_excel_aktar(&m, dolu, &d) {
+                Ok(()) => self.basarili_mesaj = format!("Teklif cetveli: {}", d.display()),
+                Err(e) => self.hata_mesaji = e,
+            }
+        }
+    }
+
     /// Metrajı CSV'ye aktarır (Excel'de açılabilir).
     pub(crate) fn metraj_csv_diyalog(&mut self) {
         let m = self.proje_olustur();
@@ -564,70 +576,85 @@ impl MetrajApp {
         };
     }
 
+    /// Rayiç/fiyat güncelleme. İki kip:
+    /// - **Kuruma göre:** her kalemi hedef kurumun fiyatıyla (en son ya da seçilen
+    ///   döneme göre "o tarihte geçerli" rayiçle) yeniden fiyatlandırır.
+    /// - **Endekse göre (Yİ-ÜFE):** tüm birim fiyatları (güncel/temel) oranıyla çarpar.
     pub(crate) fn fiyatlari_guncelle(&mut self) {
-        let hedef_kitap = match self.fiyat_guncelle_hedef.clone() {
-            Some(k) => k,
-            None => { self.hata_mesaji = "Lutfen hedef kitap secin!".into(); return; }
-        };
         // Aktif grubun tampondaki kalemlerini ağaca yaz ki güncelleme tüm gruplara uygulansın
         self.anlik_goruntu_al();
-        if let Some(ref db) = self.db {
-            let mut guncellenen = 0;
-            let mut bulunamayan = 0;
-            // Kitap bazlı sayaç: (eski_kitap_adi, guncellenen, bulunamayan)
-            let mut kitap_bazli: HashMap<String, (u32, u32)> = HashMap::new();
 
-            // Tek bir kalemi güncelleyen kapanış (closure)
-            let mut kalem_guncelle = |kalem: &mut MetrajKalemi| {
-                let eski_kitap = kalem.kitap_adi.clone();
-                if let Ok(Some(poz)) = db.poz_getir(&kalem.poz_no, Some(hedef_kitap.id)) {
-                    if let Some(yeni_fiyat) = poz.fiyat {
-                        kalem.birim_fiyat = yeni_fiyat;
-                        kalem.kitap_adi = format!("{} ({}/{})", hedef_kitap.ad, hedef_kitap.ay, hedef_kitap.yil);
-                        kalem.tutar_guncelle();
-                        guncellenen += 1;
-                        let entry = kitap_bazli.entry(eski_kitap).or_insert((0, 0));
-                        entry.0 += 1;
-                        return;
-                    }
-                }
-                bulunamayan += 1;
-                let entry = kitap_bazli.entry(eski_kitap).or_insert((0, 0));
-                entry.1 += 1;
-            };
-
-            // Ağaçtaki tüm grupları gezerek her kalemi güncelle
-            fn agaci_gez(gruplar: &mut [IsGrubu], f: &mut dyn FnMut(&mut MetrajKalemi)) {
-                for g in gruplar.iter_mut() {
-                    for kalem in g.kalemler.iter_mut() { f(kalem); }
-                    agaci_gez(&mut g.alt_gruplar, f);
-                }
+        // Ağaçtaki (veya düz listedeki) her kaleme bir işlem uygular.
+        fn agaci_gez(gruplar: &mut [IsGrubu], f: &mut dyn FnMut(&mut MetrajKalemi)) {
+            for g in gruplar.iter_mut() {
+                for kalem in g.kalemler.iter_mut() { f(kalem); }
+                agaci_gez(&mut g.alt_gruplar, f);
             }
+        }
 
+        if self.fiyat_guncelle_endeks_mod {
+            // ---- Endekse göre (Yİ-ÜFE) ----
+            let (temel, guncel) = (self.fiyat_endeks_temel, self.fiyat_endeks_guncel);
+            if temel <= 0.0 { self.hata_mesaji = "Temel endeks sıfırdan büyük olmalı.".into(); return; }
+            let carpan = guncel / temel;
+            let mut n = 0u32;
+            let mut uygula = |kalem: &mut MetrajKalemi| {
+                kalem.birim_fiyat = crate::bicim::kurus_yuvarla(kalem.birim_fiyat * carpan);
+                kalem.tutar_guncelle();
+                n += 1;
+            };
             if self.is_gruplari.is_empty() {
-                for kalem in self.metraj_kalemleri.iter_mut() { kalem_guncelle(&mut *kalem); }
+                for kalem in self.metraj_kalemleri.iter_mut() { uygula(kalem); }
             } else {
-                agaci_gez(&mut self.is_gruplari, &mut kalem_guncelle);
+                agaci_gez(&mut self.is_gruplari, &mut uygula);
             }
             self.degisiklik_var = true;
-            self.fiyat_guncelle_hedef = None;
-
-            let mut detay = String::new();
-            for (kitap, (g, b)) in &kitap_bazli {
-                if *g > 0 || *b > 0 {
-                    detay.push_str(&format!("\n  📦 {}: {} güncellendi, {} bulunamadı", kitap, g, b));
+            self.fiyat_guncelle_acik = false;
+            self.basarili_mesaj = format!("✅ {} kalem endeksle güncellendi (× {:.4}; Yİ-ÜFE {:.1} → {:.1}).", n, carpan, temel, guncel);
+        } else {
+            // ---- Kuruma göre (isteğe bağlı dönem) ----
+            let hedef = match self.fiyat_guncelle_hedef.clone() {
+                Some(k) => k,
+                None => { self.hata_mesaji = "Lütfen hedef kurum seçin.".into(); return; }
+            };
+            let en_son = self.fiyat_guncelle_en_son;
+            let (ty, ta) = (self.fiyat_guncelle_yil, self.fiyat_guncelle_ay);
+            if let Some(ref db) = self.db {
+                let mut guncellenen = 0u32;
+                let mut bulunamayan = 0u32;
+                let mut kalem_guncelle = |kalem: &mut MetrajKalemi| {
+                    let yeni = if en_son {
+                        db.poz_getir(&kalem.poz_no, Some(hedef.id)).ok().flatten().and_then(|p| p.fiyat)
+                    } else {
+                        db.poz_fiyat_asof(hedef.id, &kalem.poz_no, ty, ta).ok().flatten()
+                    };
+                    if let Some(f) = yeni {
+                        kalem.birim_fiyat = f;
+                        kalem.kitap_adi = if en_son { hedef.ad.clone() } else { format!("{} ({}/{})", hedef.ad, ta, ty) };
+                        kalem.tutar_guncelle();
+                        guncellenen += 1;
+                    } else {
+                        bulunamayan += 1;
+                    }
+                };
+                if self.is_gruplari.is_empty() {
+                    for kalem in self.metraj_kalemleri.iter_mut() { kalem_guncelle(kalem); }
+                } else {
+                    agaci_gez(&mut self.is_gruplari, &mut kalem_guncelle);
                 }
+                self.degisiklik_var = true;
+                self.fiyat_guncelle_acik = false;
+                let donem = if en_son { "en son".to_string() } else { format!("{}/{}", ta, ty) };
+                self.basarili_mesaj = format!("✅ {} kalem güncellendi (→ {} / {} rayiçleri). {} kalem bulunamadı.", guncellenen, hedef.ad, donem, bulunamayan);
             }
-            self.basarili_mesaj = format!(
-                "✅ {} kalem güncellendi (→ {} fiyatlarıyla). {} kalem hedef kitapta bulunamadı.{}",
-                guncellenen, hedef_kitap.ad, bulunamayan, detay
-            );
         }
+
         // Aktif grubun tampondaki kalemlerini güncellenmiş ağaçtan tazele
         if let Some(id) = self.secili_grup_id.clone() {
             if let Some(g) = grup_bul_ref(&self.is_gruplari, &id) {
                 self.metraj_kalemleri = g.kalemler.clone();
             }
         }
+        self.fiyat_guncelle_hedef = None;
     }
 }

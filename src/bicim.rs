@@ -88,6 +88,83 @@ pub fn teklif_ortalamasi(metin: &str) -> Option<f64> {
     Some(kurus_yuvarla(sayilar.iter().sum::<f64>() / sayilar.len() as f64))
 }
 
+/// Bir tam sayıyı Türkçe okunuşuna çevirir ("bin iki yüz otuz dört"). 0 → "sıfır".
+/// Türkçe kuralları: "yüz" (bir yüz değil), "bin" (bir bin değil — yalnız binler
+/// basamağında ve grup tam 1 iken); "bir milyon" ise "bir" ile yazılır.
+fn tam_sayi_yaziya(n: i64) -> String {
+    if n == 0 {
+        return "sıfır".to_string();
+    }
+    if n < 0 {
+        return format!("eksi {}", tam_sayi_yaziya(-n));
+    }
+    const BIRLER: [&str; 10] = ["", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz"];
+    const ONLAR: [&str; 10] = ["", "on", "yirmi", "otuz", "kırk", "elli", "altmış", "yetmiş", "seksen", "doksan"];
+    const BASAMAKLAR: [&str; 5] = ["", "bin", "milyon", "milyar", "trilyon"];
+
+    // Sayıyı 3'lü gruplara böl (en düşük basamak önce).
+    let mut gruplar: Vec<usize> = Vec::new();
+    let mut x = n;
+    while x > 0 {
+        gruplar.push((x % 1000) as usize);
+        x /= 1000;
+    }
+
+    let mut parcalar: Vec<String> = Vec::new();
+    for (i, &grup) in gruplar.iter().enumerate().rev() {
+        if grup == 0 {
+            continue;
+        }
+        let (yuz, on, bir) = (grup / 100, (grup % 100) / 10, grup % 10);
+        let mut p = String::new();
+        if yuz > 0 {
+            if yuz > 1 {
+                p.push_str(BIRLER[yuz]);
+                p.push(' ');
+            }
+            p.push_str("yüz");
+        }
+        if on > 0 {
+            if !p.is_empty() {
+                p.push(' ');
+            }
+            p.push_str(ONLAR[on]);
+        }
+        if bir > 0 && !(i == 1 && grup == 1) {
+            // Binler basamağında tam "1" ise "bir" yazma → "bin".
+            if !p.is_empty() {
+                p.push(' ');
+            }
+            p.push_str(BIRLER[bir]);
+        }
+        if i > 0 {
+            if !p.is_empty() {
+                p.push(' ');
+            }
+            p.push_str(BASAMAKLAR[i]);
+        }
+        parcalar.push(p);
+    }
+    parcalar.join(" ").trim().to_string()
+}
+
+/// Para tutarını "yazı ile" Türkçe okunuşuna çevirir: teklif mektubu / hakediş
+/// gibi resmî belgelerde rakamın yanına yazılır. Örn: `1234.5` → "bin iki yüz
+/// otuz dört TL elli Kr". Kuruş 0 ise yalnız TL kısmı yazılır.
+pub fn sayi_yaziya(deger: f64) -> String {
+    let yuvarlanmis = kurus_yuvarla(deger.abs());
+    let tam = yuvarlanmis.trunc() as i64;
+    let kurus = ((yuvarlanmis - tam as f64) * 100.0).round() as i64;
+    let isaret = if deger < 0.0 { "eksi " } else { "" };
+    let mut s = format!("{}{} TL", isaret, tam_sayi_yaziya(tam));
+    if kurus > 0 {
+        s.push(' ');
+        s.push_str(&tam_sayi_yaziya(kurus));
+        s.push_str(" Kr");
+    }
+    s
+}
+
 #[cfg(test)]
 mod testler {
     use super::*;
@@ -126,6 +203,28 @@ mod testler {
     fn metin_kisaltma() {
         assert_eq!(metni_kisalt("kısa", 10), "kısa");
         assert_eq!(metni_kisalt("çok uzun bir metin", 8), "çok u...");
+    }
+
+    #[test]
+    fn sayi_yaziya_temel() {
+        assert_eq!(tam_sayi_yaziya(0), "sıfır");
+        assert_eq!(tam_sayi_yaziya(1), "bir");
+        assert_eq!(tam_sayi_yaziya(100), "yüz"); // "bir yüz" değil
+        assert_eq!(tam_sayi_yaziya(200), "iki yüz");
+        assert_eq!(tam_sayi_yaziya(1000), "bin"); // "bir bin" değil
+        assert_eq!(tam_sayi_yaziya(2000), "iki bin");
+        assert_eq!(tam_sayi_yaziya(1234), "bin iki yüz otuz dört");
+        assert_eq!(tam_sayi_yaziya(21000), "yirmi bir bin");
+        assert_eq!(tam_sayi_yaziya(1_000_000), "bir milyon"); // "bir" ile
+        assert_eq!(tam_sayi_yaziya(1_234_567), "bir milyon iki yüz otuz dört bin beş yüz altmış yedi");
+    }
+
+    #[test]
+    fn sayi_yaziya_para() {
+        assert_eq!(sayi_yaziya(1234.56), "bin iki yüz otuz dört TL elli altı Kr");
+        assert_eq!(sayi_yaziya(1000.0), "bin TL"); // kuruş 0 → yalnız TL
+        assert_eq!(sayi_yaziya(0.0), "sıfır TL");
+        assert_eq!(sayi_yaziya(0.5), "sıfır TL elli Kr");
     }
 
     #[test]

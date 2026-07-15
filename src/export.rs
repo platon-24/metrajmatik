@@ -762,6 +762,124 @@ pub fn is_programi_excel_aktar(proje_adi: &str, pb: &ProjeBilgi, toplam_bedel: f
     Ok(())
 }
 
+/// Birim Fiyat Teklif Cetveli + Teklif Mektubu (Excel, 2 sayfa).
+/// `dolu` true ise proje birim fiyatları teklif olarak yazılır (isteklinin çalışma
+/// kopyası); false ise birim fiyat/tutar sütunları boş bırakılır (isteklilere
+/// dağıtılacak boş cetvel). Teklif bedeli KDV hariçtir.
+pub fn teklif_cetveli_excel_aktar(metraj: &KayitliMetraj, dolu: bool, dosya_yolu: &Path) -> Result<(), String> {
+    // Kalemleri düzleştir (iş ağacı veya düz liste).
+    let kalemler: Vec<MetrajKalemi> = if metraj.is_gruplari.is_empty() {
+        metraj.kalemler.clone()
+    } else {
+        let mut v = Vec::new();
+        for g in &metraj.is_gruplari {
+            v.extend(g.tum_kalemler_duz());
+        }
+        v
+    };
+    let toplam = crate::bicim::kurus_yuvarla(kalemler.iter().map(|k| k.miktar * k.birim_fiyat).sum());
+
+    let mut workbook = Workbook::new();
+    let ws = workbook.add_worksheet();
+    ws.set_name("Teklif Cetveli").map_err(|e| e.to_string())?;
+
+    let baslik_format = Format::new().set_bold().set_font_size(14).set_font_color(Color::White).set_background_color(Color::RGB(0x2C3E50)).set_align(FormatAlign::Center);
+    let meta_format = Format::new().set_font_size(11).set_border(FormatBorder::Thin);
+    let sutun_format = Format::new().set_bold().set_font_size(10).set_background_color(Color::RGB(0x34495E)).set_font_color(Color::White).set_border(FormatBorder::Thin).set_align(FormatAlign::Center).set_text_wrap();
+    let metin_format = Format::new().set_font_size(10).set_border(FormatBorder::Thin);
+    let miktar_format = Format::new().set_font_size(10).set_border(FormatBorder::Thin).set_num_format("#,##0.000");
+    let sayi_format = Format::new().set_font_size(10).set_border(FormatBorder::Thin).set_num_format("#,##0.00");
+    let bos_format = Format::new().set_font_size(10).set_border(FormatBorder::Thin).set_background_color(Color::RGB(0xFCF3CF));
+    let toplam_format = Format::new().set_bold().set_font_size(11).set_background_color(Color::RGB(0xD5F5E3)).set_border(FormatBorder::Thin).set_num_format("#,##0.00");
+
+    let pb = &metraj.proje_bilgi;
+    let ust_baslik = if pb.is_adi.trim().is_empty() { metraj.ad.clone() } else { pb.is_adi.clone() };
+    ws.merge_range(0, 0, 0, 6, &format!("{} — BİRİM FİYAT TEKLİF CETVELİ", ust_baslik), &baslik_format).map_err(|e| e.to_string())?;
+    ws.set_row_height(0, 28).map_err(|e| e.to_string())?;
+    let mut ust = 1u32;
+    if pb.dolu_mu() {
+        ws.merge_range(ust, 0, ust, 3, &format!("İdarenin Adı: {}", pb.idare_adi), &meta_format).map_err(|e| e.to_string())?;
+        ws.merge_range(ust, 4, ust, 6, &format!("İhale Kayıt No: {}", pb.ihale_kayit_no), &meta_format).map_err(|e| e.to_string())?;
+        ust += 1;
+    }
+
+    let basliklar = ["Sıra No", "Poz No", "İş Kaleminin Adı", "Birimi", "Miktarı", "Teklif Edilen Birim Fiyat (TL)", "Tutarı (TL)"];
+    let baslik_satir = ust;
+    for (c, b) in basliklar.iter().enumerate() {
+        ws.write_with_format(baslik_satir, c as u16, *b, &sutun_format).map_err(|e| e.to_string())?;
+    }
+    for (i, w) in [7.0, 14.0, 46.0, 9.0, 12.0, 18.0, 16.0].iter().enumerate() {
+        ws.set_column_width(i as u16, *w).map_err(|e| e.to_string())?;
+    }
+
+    let mut satir = baslik_satir + 1;
+    for (idx, k) in kalemler.iter().enumerate() {
+        let ad = if k.imalat_cinsi.trim().is_empty() { k.tanim.clone() } else { format!("{} — {}", k.imalat_cinsi, k.tanim) };
+        ws.write_with_format(satir, 0, (idx + 1) as u32, &metin_format).map_err(|e| e.to_string())?;
+        ws.write_with_format(satir, 1, &k.poz_no, &metin_format).map_err(|e| e.to_string())?;
+        ws.write_with_format(satir, 2, &ad, &metin_format).map_err(|e| e.to_string())?;
+        ws.write_with_format(satir, 3, &k.birim, &metin_format).map_err(|e| e.to_string())?;
+        ws.write_with_format(satir, 4, k.miktar, &miktar_format).map_err(|e| e.to_string())?;
+        if dolu {
+            ws.write_with_format(satir, 5, k.birim_fiyat, &sayi_format).map_err(|e| e.to_string())?;
+            ws.write_with_format(satir, 6, crate::bicim::kurus_yuvarla(k.miktar * k.birim_fiyat), &sayi_format).map_err(|e| e.to_string())?;
+        } else {
+            // İstekli dolduracak → sarı boş hücreler
+            ws.write_with_format(satir, 5, "", &bos_format).map_err(|e| e.to_string())?;
+            ws.write_with_format(satir, 6, "", &bos_format).map_err(|e| e.to_string())?;
+        }
+        satir += 1;
+    }
+
+    // Toplam
+    ws.merge_range(satir, 0, satir, 5, "TOPLAM TEKLİF BEDELİ (KDV Hariç)", &toplam_format).map_err(|e| e.to_string())?;
+    if dolu {
+        ws.write_with_format(satir, 6, toplam, &toplam_format).map_err(|e| e.to_string())?;
+    } else {
+        ws.write_with_format(satir, 6, "", &toplam_format).map_err(|e| e.to_string())?;
+    }
+    satir += 2;
+    if dolu {
+        ws.merge_range(satir, 0, satir, 6, &format!("Yazı ile: {}", crate::bicim::sayi_yaziya(toplam)), &meta_format).map_err(|e| e.to_string())?;
+    }
+
+    // ---- 2. Sayfa: Teklif Mektubu ----
+    let ws2 = workbook.add_worksheet();
+    ws2.set_name("Teklif Mektubu").map_err(|e| e.to_string())?;
+    ws2.set_column_width(0, 100.0).map_err(|e| e.to_string())?;
+    let mkt_baslik = Format::new().set_bold().set_font_size(13).set_align(FormatAlign::Center);
+    let mkt_metin = Format::new().set_font_size(11).set_text_wrap().set_align(FormatAlign::Left);
+    let mkt_vurgu = Format::new().set_bold().set_font_size(11);
+
+    ws2.write_with_format(0, 0, "BİRİM FİYAT TEKLİF MEKTUBU", &mkt_baslik).map_err(|e| e.to_string())?;
+    let idare_satiri = if pb.idare_adi.trim().is_empty() { "…".to_string() } else { pb.idare_adi.clone() };
+    let govde = format!(
+        "{} İHALE KOMİSYONU BAŞKANLIĞINA\n\n\
+         \"{}\" işine ait ihale dokümanını oluşturan bütün belgeler incelenmiş, okunmuş ve herhangi bir ayrım ve sınırlama yapılmadan bütün koşullarıyla kabul edilmiştir. İhaleye ilişkin olarak aşağıdaki hususları içeren teklifimizin kabulünü arz ederiz.\n\n\
+         1) İhale Kayıt Numarası: {}\n\
+         2) Yukarıda belirtilen işi, ekli birim fiyat teklif cetvelinde belirtilen her bir iş kalemi için teklif ettiğimiz birim fiyatlar üzerinden Katma Değer Vergisi hariç toplam bedel karşılığında yapmayı kabul ve taahhüt ederiz.\n\
+         3) Teklifimiz ihale tarihinden itibaren geçerlidir.",
+        idare_satiri, ust_baslik, if pb.ihale_kayit_no.trim().is_empty() { "…".to_string() } else { pb.ihale_kayit_no.clone() }
+    );
+    ws2.write_with_format(2, 0, &govde, &mkt_metin).map_err(|e| e.to_string())?;
+    ws2.set_row_height(2, 200).map_err(|e| e.to_string())?;
+
+    let bedel_metni = if dolu {
+        format!("Teklif Edilen Toplam Bedel (KDV Hariç): {:.2} TL\nYazı ile: {}", toplam, crate::bicim::sayi_yaziya(toplam))
+    } else {
+        "Teklif Edilen Toplam Bedel (KDV Hariç): ………………………… TL\nYazı ile: …………………………".to_string()
+    };
+    ws2.write_with_format(4, 0, &bedel_metni, &mkt_vurgu).map_err(|e| e.to_string())?;
+    ws2.set_row_height(4, 34).map_err(|e| e.to_string())?;
+
+    let istekli = if pb.yuklenici.trim().is_empty() { "İstekli (Adı / Ünvanı):".to_string() } else { format!("İstekli: {}", pb.yuklenici) };
+    ws2.write_with_format(6, 0, &format!("{}\nTarih: {}\nKaşe / İmza:", istekli, metraj.tarih), &mkt_metin).map_err(|e| e.to_string())?;
+    ws2.set_row_height(6, 60).map_err(|e| e.to_string())?;
+
+    workbook.save(dosya_yolu).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ==================== VERİ PAKETİ (.mvp) ====================
 pub fn veri_paketi_kaydet(paket: &VeriPaketi, dosya_yolu: &Path) -> Result<(), String> {
     let json = serde_json::to_string(paket).map_err(|e| e.to_string())?;

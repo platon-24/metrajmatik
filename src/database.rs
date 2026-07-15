@@ -485,6 +485,20 @@ impl Veritabani {
         Ok(rows.next().transpose()?)
     }
 
+    /// Bir pozun (yıl, ay) tarihinde GEÇERLİ fiyatı: o tarih ve öncesinde yayımlanmış
+    /// en son fiyat. Rayiçleri ihale tarihine güncellerken kullanılır (kurum kitabı
+    /// her ay yeniden yayımlanmayabilir; "o tarihteki geçerli rayiç" mantığı). Yoksa None.
+    pub fn poz_fiyat_asof(&self, kitap_id: i64, poz_no: &str, yil: u32, ay: u32) -> Result<Option<f64>> {
+        let hedef = (yil * 100 + ay) as i64;
+        let sql = "SELECT f.fiyat FROM pozlar p
+                   JOIN poz_fiyatlari f ON f.poz_id = p.id
+                   WHERE p.kitap_id = ?1 AND p.poz_no = ?2 AND (f.yil * 100 + f.ay) <= ?3 AND f.fiyat IS NOT NULL
+                   ORDER BY (f.yil * 100 + f.ay) DESC LIMIT 1";
+        let mut stmt = self.conn.prepare(sql)?;
+        let mut rows = stmt.query_map(params![kitap_id, poz_no, hedef], |r| r.get::<_, f64>(0))?;
+        rows.next().transpose()
+    }
+
     pub fn tum_pozlar(&self, kitap_id: Option<i64>) -> Result<Vec<Poz>> {
         let sql = format!("{} ORDER BY p.poz_no", poz_secim_sql(kitap_id));
         let mut stmt = self.conn.prepare(&sql)?;
@@ -668,6 +682,24 @@ mod testler {
         drop(db2);
         let _ = std::fs::remove_file(&yol);
         let _ = std::fs::remove_file(&yol2);
+    }
+
+    #[test]
+    fn poz_fiyat_asof_o_tarihte_gecerli_rayici_verir() {
+        let yol = gecici_yol();
+        let db = Veritabani::ac(&yol).unwrap();
+        let kid = db.kitap_ekle("ÇŞB").unwrap();
+        db.poz_ekle(kid, 2026, 3, "15.150.1001", "Beton", "m³", Some(800.0), "Beton").unwrap();
+        db.poz_ekle(kid, 2026, 6, "15.150.1001", "Beton", "m³", Some(900.0), "Beton").unwrap();
+        // 2026/05: Haziran henüz yok → Mart rayici (800)
+        assert_eq!(db.poz_fiyat_asof(kid, "15.150.1001", 2026, 5).unwrap(), Some(800.0));
+        // Tam Haziran ve sonrası → 900
+        assert_eq!(db.poz_fiyat_asof(kid, "15.150.1001", 2026, 6).unwrap(), Some(900.0));
+        assert_eq!(db.poz_fiyat_asof(kid, "15.150.1001", 2027, 1).unwrap(), Some(900.0));
+        // İlk dönemden önce → yok
+        assert_eq!(db.poz_fiyat_asof(kid, "15.150.1001", 2026, 1).unwrap(), None);
+        drop(db);
+        let _ = std::fs::remove_file(&yol);
     }
 
     #[test]
