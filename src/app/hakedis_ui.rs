@@ -147,7 +147,7 @@ impl MetrajApp {
                         if ui
                             .add(
                                 TextEdit::singleline(deger)
-                                    .hint_text(ipucu)
+                                    .hint_text(tema::alan_ipucu(ipucu))
                                     .desired_width(320.0),
                             )
                             .changed()
@@ -624,7 +624,7 @@ impl MetrajApp {
                     ayar_degisti |= ui
                         .add(
                             TextEdit::singleline(&mut h.fiyat_farki_ayari.uygulama_ayi)
-                                .hint_text("2026-07")
+                                .hint_text(tema::alan_ipucu("2026-07"))
                                 .desired_width(80.0),
                         )
                         .changed();
@@ -1111,7 +1111,7 @@ impl MetrajApp {
                             ui.add(
                                 TextEdit::singleline(&mut satir.aciklama)
                                     .desired_width(150.0)
-                                    .hint_text("açıklama"),
+                                    .hint_text(tema::alan_ipucu("açıklama")),
                             );
                             ui.add(TextEdit::singleline(&mut satir.adet).desired_width(46.0));
                             ui.add(TextEdit::singleline(&mut satir.en).desired_width(46.0));
@@ -1139,27 +1139,27 @@ impl MetrajApp {
                     ui.label(RichText::new("Yeni").size(11.0).color(tema::METIN_IKINCIL));
                     ui.add(
                         TextEdit::singleline(&mut self.popup_yeni.aciklama)
-                            .hint_text("açıklama")
+                            .hint_text(tema::alan_ipucu("açıklama"))
                             .desired_width(140.0),
                     );
                     ui.add(
                         TextEdit::singleline(&mut self.popup_yeni.adet)
-                            .hint_text("adet")
+                            .hint_text(tema::alan_ipucu("adet"))
                             .desired_width(46.0),
                     );
                     ui.add(
                         TextEdit::singleline(&mut self.popup_yeni.en)
-                            .hint_text("en")
+                            .hint_text(tema::alan_ipucu("en"))
                             .desired_width(46.0),
                     );
                     ui.add(
                         TextEdit::singleline(&mut self.popup_yeni.boy)
-                            .hint_text("boy")
+                            .hint_text(tema::alan_ipucu("boy"))
                             .desired_width(46.0),
                     );
                     ui.add(
                         TextEdit::singleline(&mut self.popup_yeni.yukseklik)
-                            .hint_text("yük.")
+                            .hint_text(tema::alan_ipucu("yük."))
                             .desired_width(46.0),
                     );
                     ui.checkbox(&mut self.popup_yeni.cikan, "çıkan");

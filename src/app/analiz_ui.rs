@@ -126,7 +126,7 @@ impl MetrajApp {
                     if ui
                         .add(
                             TextEdit::singleline(&mut self.analiz_rayic_arama)
-                                .hint_text("işçi, çimento, 10.100…")
+                                .hint_text(tema::alan_ipucu("işçi, çimento, 10.100…"))
                                 .desired_width(300.0),
                         )
                         .changed()

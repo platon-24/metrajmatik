@@ -17,7 +17,7 @@ fn kunye_alan(ui: &mut Ui, etiket: &str, deger: &mut String, ipucu: &str) -> boo
     let degisti = ui
         .add(
             TextEdit::singleline(deger)
-                .hint_text(ipucu)
+                .hint_text(tema::alan_ipucu(ipucu))
                 .desired_width(440.0),
         )
         .changed();
@@ -122,7 +122,7 @@ impl MetrajApp {
                 if ui
                     .add(
                         TextEdit::singleline(&mut self.metraj_adi)
-                            .hint_text("Proje / dosya adı")
+                            .hint_text(tema::alan_ipucu("Proje / dosya adı"))
                             .desired_width(300.0),
                     )
                     .changed()

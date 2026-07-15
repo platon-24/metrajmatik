@@ -30,7 +30,7 @@ impl MetrajApp {
         tema::kart(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new("Kurum Adı").color(tema::METIN_IKINCIL).size(12.0));
-                ui.add(TextEdit::singleline(&mut self.yeni_kitap_adi).hint_text("örn: Çevre ve Şehircilik Bakanlığı").desired_width(320.0));
+                ui.add(TextEdit::singleline(&mut self.yeni_kitap_adi).hint_text(tema::alan_ipucu("örn: Çevre ve Şehircilik Bakanlığı")).desired_width(320.0));
                 if tema::birincil_ikonlu_buton(ui, tema::ikon::EKLE, "Kurum Ekle").clicked() {
                     let ad = self.yeni_kitap_adi.trim().to_string();
                     if ad.is_empty() { self.hata_mesaji = "Kurum adı girin.".into(); }
@@ -712,7 +712,7 @@ impl MetrajApp {
                     );
                     ui.add(
                         TextEdit::singleline(&mut self.poz_form_fiyat)
-                            .hint_text("boş olabilir")
+                            .hint_text(tema::alan_ipucu("boş olabilir"))
                             .desired_width(120.0),
                     );
                 });
@@ -724,7 +724,7 @@ impl MetrajApp {
                     );
                     ui.add(
                         TextEdit::singleline(&mut self.poz_form_teklifler)
-                            .hint_text("teklifler: 1200,00 1350,00 1180,00")
+                            .hint_text(tema::alan_ipucu("teklifler: 1200,00 1350,00 1180,00"))
                             .desired_width(240.0),
                     );
                     if ui
@@ -939,8 +939,9 @@ impl MetrajApp {
                     if ui
                         .add_sized(
                             Vec2::new(340.0, 26.0),
-                            TextEdit::singleline(&mut self.pozlar_arama_metni)
-                                .hint_text("poz no, açıklama, birim veya kategori"),
+                            TextEdit::singleline(&mut self.pozlar_arama_metni).hint_text(
+                                tema::alan_ipucu("poz no, açıklama, birim veya kategori"),
+                            ),
                         )
                         .changed()
                     {

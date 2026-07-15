@@ -75,6 +75,10 @@ pub fn ikonlu_metin(ikon: &str, metin: &str) -> WidgetText {
     ikonlu_metin_boyut(ikon, metin, 13.0)
 }
 
+pub fn alan_ipucu(metin: impl Into<String>) -> RichText {
+    RichText::new(metin).color(METIN_SOLUK).italics()
+}
+
 pub fn ikonlu_metin_boyut(ikon: &str, metin: &str, boyut: f32) -> WidgetText {
     let mut duzen = LayoutJob::default();
     duzen.append(

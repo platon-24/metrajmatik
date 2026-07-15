@@ -323,7 +323,7 @@ impl MetrajApp {
         tema::kart(ui, |ui| {
             ui.add(
                 TextEdit::singleline(&mut self.yeni_grup_adi)
-                    .hint_text("Yeni grup adı…")
+                    .hint_text(tema::alan_ipucu("Yeni grup adı…"))
                     .desired_width(f32::INFINITY),
             );
             ui.add_space(6.0);
@@ -421,7 +421,7 @@ impl MetrajApp {
         tema::kart(ui, |ui| {
             ui.add(
                 TextEdit::singleline(&mut self.akilli_arama_metni)
-                    .hint_text("⚡ Hızlı ara: 15.180 veya plywood kalıp")
+                    .hint_text(tema::alan_ipucu("⚡ Hızlı ara: 15.180 veya plywood kalıp"))
                     .desired_width(f32::INFINITY),
             )
             .changed()
@@ -436,7 +436,8 @@ impl MetrajApp {
                 if ui
                     .add_sized(
                         Vec2::new(110.0, 26.0),
-                        TextEdit::singleline(&mut self.poz_arama_metni).hint_text("15.100"),
+                        TextEdit::singleline(&mut self.poz_arama_metni)
+                            .hint_text(tema::alan_ipucu("15.100")),
                     )
                     .changed()
                 {
@@ -451,7 +452,8 @@ impl MetrajApp {
                 if ui
                     .add_sized(
                         Vec2::new(ui.available_width(), 26.0),
-                        TextEdit::singleline(&mut self.aciklama_arama_metni).hint_text("beton"),
+                        TextEdit::singleline(&mut self.aciklama_arama_metni)
+                            .hint_text(tema::alan_ipucu("beton")),
                     )
                     .changed()
                 {
@@ -778,7 +780,7 @@ impl MetrajApp {
                 if ui
                     .add(
                         TextEdit::singleline(&mut self.metraj_adi)
-                            .hint_text("Proje / metraj adı")
+                            .hint_text(tema::alan_ipucu("Proje / metraj adı"))
                             .desired_width(240.0),
                     )
                     .changed()
@@ -793,7 +795,7 @@ impl MetrajApp {
                 );
                 let poz_no_response = ui.add(
                     TextEdit::singleline(&mut self.yeni_poz_no)
-                        .hint_text("15.100.1001")
+                        .hint_text(tema::alan_ipucu("15.100.1001"))
                         .desired_width(140.0),
                 );
                 if poz_no_response.changed() {
@@ -1245,7 +1247,7 @@ impl MetrajApp {
                 });
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("İmalat cinsi").size(12.0).color(tema::METIN_IKINCIL));
-                    ui.add(TextEdit::singleline(&mut self.popup_imalat_cinsi).hint_text("ör. Zemin kat perde duvarları").desired_width(380.0));
+                    ui.add(TextEdit::singleline(&mut self.popup_imalat_cinsi).hint_text(tema::alan_ipucu("ör. Zemin kat perde duvarları")).desired_width(380.0));
                 });
                 ui.separator();
 
@@ -1259,7 +1261,7 @@ impl MetrajApp {
                     let mut silinecek_satir: Option<usize> = None;
                     for (d_idx, satir) in self.popup_detaylar.iter_mut().enumerate() {
                         ui.label(RichText::new(format!("{}", d_idx + 1)).color(tema::METIN_SOLUK).size(11.0));
-                        ui.add(TextEdit::singleline(&mut satir.aciklama).desired_width(170.0).hint_text("açıklama"));
+                        ui.add(TextEdit::singleline(&mut satir.aciklama).desired_width(170.0).hint_text(tema::alan_ipucu("açıklama")));
                         ui.add(TextEdit::singleline(&mut satir.adet).desired_width(48.0));
                         ui.add(TextEdit::singleline(&mut satir.en).desired_width(48.0));
                         ui.add(TextEdit::singleline(&mut satir.boy).desired_width(48.0));
@@ -1279,11 +1281,11 @@ impl MetrajApp {
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Yeni satır").color(tema::METIN_IKINCIL).size(11.5));
-                    ui.add(TextEdit::singleline(&mut self.popup_yeni.aciklama).hint_text("açıklama").desired_width(160.0));
-                    ui.add(TextEdit::singleline(&mut self.popup_yeni.adet).hint_text("adet").desired_width(48.0));
-                    ui.add(TextEdit::singleline(&mut self.popup_yeni.en).hint_text("en").desired_width(48.0));
-                    ui.add(TextEdit::singleline(&mut self.popup_yeni.boy).hint_text("boy").desired_width(48.0));
-                    ui.add(TextEdit::singleline(&mut self.popup_yeni.yukseklik).hint_text("yük.").desired_width(48.0));
+                    ui.add(TextEdit::singleline(&mut self.popup_yeni.aciklama).hint_text(tema::alan_ipucu("açıklama")).desired_width(160.0));
+                    ui.add(TextEdit::singleline(&mut self.popup_yeni.adet).hint_text(tema::alan_ipucu("adet")).desired_width(48.0));
+                    ui.add(TextEdit::singleline(&mut self.popup_yeni.en).hint_text(tema::alan_ipucu("en")).desired_width(48.0));
+                    ui.add(TextEdit::singleline(&mut self.popup_yeni.boy).hint_text(tema::alan_ipucu("boy")).desired_width(48.0));
+                    ui.add(TextEdit::singleline(&mut self.popup_yeni.yukseklik).hint_text(tema::alan_ipucu("yük.")).desired_width(48.0));
                     ui.checkbox(&mut self.popup_yeni.cikan, "çıkan");
                     let ekle = tema::birincil_buton(ui, "＋ Ekle").clicked();
                     let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -1388,7 +1390,7 @@ impl MetrajApp {
                     );
                     ui.add(
                         TextEdit::singleline(&mut self.nakliye_miktar)
-                            .hint_text("120 (ton/m³)")
+                            .hint_text(tema::alan_ipucu("120 (ton/m³)"))
                             .desired_width(100.0),
                     );
                     ui.label(
@@ -1398,7 +1400,7 @@ impl MetrajApp {
                     );
                     ui.add(
                         TextEdit::singleline(&mut self.nakliye_mesafe)
-                            .hint_text("25")
+                            .hint_text(tema::alan_ipucu("25"))
                             .desired_width(80.0),
                     );
                 });
