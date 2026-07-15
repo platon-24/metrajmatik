@@ -24,7 +24,7 @@ impl MetrajApp {
 
         // Yeni kurum ekleme (yalnız ad — dönem yok; fiyatlar PDF Yükle'den yüklenir)
         tema::kart(ui, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new("Kurum Adı").color(tema::METIN_IKINCIL).size(12.0));
                 ui.add(TextEdit::singleline(&mut self.yeni_kitap_adi).hint_text("örn: Çevre ve Şehircilik Bakanlığı").desired_width(320.0));
                 if tema::birincil_buton(ui, "＋ Kurum Ekle").clicked() {
@@ -322,7 +322,7 @@ impl MetrajApp {
 
         // Hesap türü + oran ayarları
         tema::kart(ui, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(
                     RichText::new("Hesap Türü")
                         .color(tema::METIN_IKINCIL)
@@ -589,7 +589,7 @@ impl MetrajApp {
         match fiyat.replace(',', ".").parse::<f64>() {
             Ok(deger) => Some(Some(deger)),
             Err(_) => {
-                self.hata_mesaji = "Birim fiyat sayi olmali. Ornek: 1250,50".into();
+                self.hata_mesaji = "Birim fiyat sayı olmalı. Örnek: 1250,50".into();
                 None
             }
         }
@@ -599,7 +599,7 @@ impl MetrajApp {
         let kitap = match self.secili_kitap.clone() {
             Some(kitap) => kitap,
             None => {
-                self.hata_mesaji = "Once kitap secin.".into();
+                self.hata_mesaji = "Önce kitap seçin.".into();
                 return;
             }
         };
@@ -971,7 +971,7 @@ impl MetrajApp {
         }
 
         let pozlar = self.pozlar_tablosu.clone();
-        ScrollArea::vertical()
+        ScrollArea::both()
             .max_height(ui.available_height())
             .auto_shrink([false, false])
             .show(ui, |ui| {

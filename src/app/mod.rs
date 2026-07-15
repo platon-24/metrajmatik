@@ -27,7 +27,7 @@ mod is_programi_ui;
 mod islemler;
 mod proje_ui;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Sekme {
     Proje,
     MetrajTablosu,
@@ -37,6 +37,13 @@ enum Sekme {
     Pozlar,
     KitapYoneticisi,
     PdfYukle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MetrajPaneli {
+    PozAra,
+    IsGruplari,
+    Metraj,
 }
 
 /// Miktar popup'ında bir detay satırının düzenlenebilir (metin) hali.
@@ -80,6 +87,7 @@ pub struct MetrajApp {
     mevcut_dosya_yolu: Option<PathBuf>,
     degisiklik_var: bool,
     bekleyen_acma_yolu: Option<PathBuf>,
+    bekleyen_geri_yukleme_yolu: Option<PathBuf>,
     kapanis_onayi: bool,
     kapanisa_izin_ver: bool,
     poz_arama_metni: String,
@@ -109,8 +117,15 @@ pub struct MetrajApp {
     pdf_yukleniyor: bool,
     import_profili: String, // PDF ayrıştırma profili: "Otomatik" | "Çevre ve Şehircilik" | "Genel"
     aktif_sekme: Sekme,
+    dar_metraj_paneli: MetrajPaneli,
     hata_mesaji: String,
     basarili_mesaj: String,
+    son_hata_mesaji: String,
+    son_basarili_mesaj: String,
+    hata_gosterim_baslangici: f64,
+    basari_gosterim_baslangici: f64,
+    silinecek_grup_id: Option<String>,
+    metraj_temizleme_onayi: bool,
     kategoriler: Vec<String>,
     secili_kategori: String,
     kategori_pozlar: Vec<Poz>,
@@ -246,6 +261,7 @@ impl Default for MetrajApp {
             mevcut_dosya_yolu: None,
             degisiklik_var: false,
             bekleyen_acma_yolu: None,
+            bekleyen_geri_yukleme_yolu: None,
             kapanis_onayi: false,
             kapanisa_izin_ver: false,
             poz_arama_metni: String::new(),
@@ -273,8 +289,15 @@ impl Default for MetrajApp {
             pdf_yukleniyor: false,
             import_profili: "Otomatik".into(),
             aktif_sekme: Sekme::Proje,
+            dar_metraj_paneli: MetrajPaneli::PozAra,
             hata_mesaji: String::new(),
             basarili_mesaj: String::new(),
+            son_hata_mesaji: String::new(),
+            son_basarili_mesaj: String::new(),
+            hata_gosterim_baslangici: 0.0,
+            basari_gosterim_baslangici: 0.0,
+            silinecek_grup_id: None,
+            metraj_temizleme_onayi: false,
             kategoriler: vec![],
             secili_kategori: "TÜMÜ".into(),
             kategori_pozlar: vec![],
@@ -350,8 +373,122 @@ impl Default for MetrajApp {
     }
 }
 
+impl MetrajApp {
+    fn sekme_ac(&mut self, sekme: Sekme) {
+        self.aktif_sekme = sekme;
+        if matches!(
+            sekme,
+            Sekme::MetrajTablosu | Sekme::Pozlar | Sekme::KitapYoneticisi
+        ) {
+            self.kitaplari_yenile();
+        }
+        if sekme == Sekme::MetrajTablosu {
+            self.kategorileri_yukle();
+        }
+        if sekme == Sekme::Pozlar {
+            self.pozlar_tablosu_yenile();
+        }
+    }
+
+    fn bildirimleri_guncelle(&mut self, ctx: &egui::Context) {
+        let simdi = ctx.input(|i| i.time);
+        let yeni_hata =
+            self.hata_mesaji != self.son_hata_mesaji && !self.hata_mesaji.trim().is_empty();
+        let yeni_basari = self.basarili_mesaj != self.son_basarili_mesaj
+            && !self.basarili_mesaj.trim().is_empty();
+
+        if yeni_hata {
+            self.hata_gosterim_baslangici = simdi;
+            self.basarili_mesaj.clear();
+        } else if yeni_basari {
+            self.basari_gosterim_baslangici = simdi;
+            self.hata_mesaji.clear();
+        }
+
+        if !self.hata_mesaji.is_empty() && simdi - self.hata_gosterim_baslangici > 9.0 {
+            self.hata_mesaji.clear();
+        }
+        if !self.basarili_mesaj.is_empty() && simdi - self.basari_gosterim_baslangici > 4.5 {
+            self.basarili_mesaj.clear();
+        }
+
+        self.son_hata_mesaji.clone_from(&self.hata_mesaji);
+        self.son_basarili_mesaj.clone_from(&self.basarili_mesaj);
+    }
+
+    fn render_bildirimler(&mut self, ctx: &egui::Context) {
+        let (mesaj, hata) = if !self.hata_mesaji.is_empty() {
+            (self.hata_mesaji.clone(), true)
+        } else if !self.basarili_mesaj.is_empty() {
+            (self.basarili_mesaj.clone(), false)
+        } else {
+            return;
+        };
+        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+
+        let mut kapat = false;
+        egui::Area::new(egui::Id::new("bildirim_toast"))
+            .anchor(egui::Align2::RIGHT_TOP, [-16.0, 72.0])
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                ui.set_max_width(420.0);
+                egui::Frame::default()
+                    .fill(if hata {
+                        tema::TEHLIKE_KOYU
+                    } else {
+                        tema::BASARI_KOYU
+                    })
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        if hata { tema::TEHLIKE } else { tema::BASARI },
+                    ))
+                    .corner_radius(egui::CornerRadius::same(tema::KOSE))
+                    .inner_margin(egui::Margin::symmetric(12, 10))
+                    .shadow(egui::epaint::Shadow {
+                        offset: [0, 5],
+                        blur: 18,
+                        spread: 0,
+                        color: Color32::from_black_alpha(130),
+                    })
+                    .show(ui, |ui| {
+                        ui.horizontal_top(|ui| {
+                            ui.label(
+                                RichText::new(if hata { "⚠" } else { "✓" })
+                                    .size(17.0)
+                                    .color(if hata { tema::TEHLIKE } else { tema::BASARI }),
+                            );
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(mesaj).color(tema::METIN).size(13.0),
+                                )
+                                .wrap(),
+                            );
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("✕").color(tema::METIN_IKINCIL),
+                                    )
+                                    .fill(Color32::TRANSPARENT)
+                                    .stroke(egui::Stroke::NONE),
+                                )
+                                .on_hover_text("Bildirimi kapat")
+                                .clicked()
+                            {
+                                kapat = true;
+                            }
+                        });
+                    });
+            });
+        if kapat {
+            self.hata_mesaji.clear();
+            self.basarili_mesaj.clear();
+        }
+    }
+}
+
 impl eframe::App for MetrajApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.bildirimleri_guncelle(ctx);
         if !self.kapanisa_izin_ver
             && self.degisiklik_var
             && ctx.input(|i| i.viewport().close_requested())
@@ -415,6 +552,8 @@ impl eframe::App for MetrajApp {
         self.render_poz_form_popup(ctx);
         self.render_poz_sil_onay_popup(ctx);
         self.render_kitap_sil_onay_popup(ctx);
+        self.render_metraj_onaylari(ctx);
+        self.render_veritabani_geri_yukleme_onayi(ctx);
 
         // Miktar detay popup'ı
         self.render_miktar_popup(ctx);
@@ -441,112 +580,143 @@ impl eframe::App for MetrajApp {
                     .inner_margin(egui::Margin::symmetric(14, 9)),
             )
             .show(ctx, |ui| {
+                let genislik = ui.available_width();
+                let dar = genislik < 1120.0;
+                let marka_dar = genislik < 920.0;
                 ui.horizontal(|ui| {
-                    // Marka
                     ui.label(RichText::new("🏗").size(22.0));
-                    ui.add_space(2.0);
-                    ui.vertical(|ui| {
-                        ui.add_space(1.0);
+                    if !marka_dar {
+                        ui.add_space(2.0);
                         ui.label(
                             RichText::new("METRAJMATIK")
                                 .color(tema::METIN)
-                                .size(18.0)
+                                .size(17.0)
                                 .strong(),
                         );
-                    });
-                    ui.add_space(4.0);
-                    ui.label(
-                        RichText::new("Yaklaşık Maliyet")
-                            .color(tema::METIN_SOLUK)
-                            .size(12.0),
-                    );
-
-                    ui.add_space(20.0);
+                    }
+                    ui.add_space(if dar { 5.0 } else { 14.0 });
                     ui.separator();
-                    ui.add_space(8.0);
+                    ui.add_space(if dar { 2.0 } else { 6.0 });
 
-                    // Sekme "pill"leri
-                    let sekmeler = [
-                        Sekme::Proje,
-                        Sekme::MetrajTablosu,
-                        Sekme::Icmal,
-                        Sekme::Hakedis,
-                        Sekme::IsProgrami,
-                        Sekme::Pozlar,
-                        Sekme::KitapYoneticisi,
-                        Sekme::PdfYukle,
+                    let ana_sekmeler = [
+                        (Sekme::Proje, "⌂", "Proje"),
+                        (Sekme::MetrajTablosu, "▤", "Metraj"),
+                        (Sekme::Icmal, "▥", "İcmal"),
+                        (Sekme::Hakedis, "◫", "Hakediş"),
+                        (Sekme::IsProgrami, "◷", "İş Programı"),
                     ];
-                    let isimler = [
-                        "📁 Proje",
-                        "📋 Metraj",
-                        "📊 İcmal",
-                        "🧾 Hakediş",
-                        "📅 İş Programı",
-                        "🔎 Pozlar",
-                        "📚 Kitaplar",
-                        "📄 PDF Yükle",
-                    ];
-                    for i in 0..sekmeler.len() {
-                        let s = &sekmeler[i];
-                        let aktif = self.aktif_sekme == *s;
+                    for (sekme, ikon, ad) in ana_sekmeler {
+                        let aktif = self.aktif_sekme == sekme;
                         let yazi = if aktif {
                             Color32::WHITE
                         } else {
                             tema::METIN_IKINCIL
                         };
-                        let buton =
-                            egui::Button::new(RichText::new(isimler[i]).color(yazi).size(14.0))
-                                .fill(if aktif {
-                                    tema::VURGU
-                                } else {
-                                    Color32::TRANSPARENT
-                                })
-                                .stroke(if aktif {
-                                    egui::Stroke::NONE
-                                } else {
-                                    egui::Stroke::new(1.0, tema::KENAR)
-                                })
-                                .corner_radius(egui::CornerRadius::same(tema::KOSE_KUCUK));
-                        if ui.add(buton).clicked() {
-                            self.aktif_sekme = s.clone();
-                            if *s == Sekme::MetrajTablosu
-                                || *s == Sekme::Pozlar
-                                || *s == Sekme::KitapYoneticisi
-                            {
-                                self.kitaplari_yenile();
-                            }
-                            if *s == Sekme::MetrajTablosu {
-                                self.kategorileri_yukle();
-                            }
-                            if *s == Sekme::Pozlar {
-                                self.pozlar_tablosu_yenile();
-                            }
+                        let etiket = if dar {
+                            ikon.to_owned()
+                        } else {
+                            format!("{}  {}", ikon, ad)
+                        };
+                        let yanit = ui
+                            .add(
+                                egui::Button::new(RichText::new(etiket).color(yazi).size(13.5))
+                                    .fill(if aktif {
+                                        tema::VURGU
+                                    } else {
+                                        Color32::TRANSPARENT
+                                    })
+                                    .stroke(if aktif {
+                                        egui::Stroke::NONE
+                                    } else {
+                                        egui::Stroke::new(1.0, tema::KENAR)
+                                    })
+                                    .corner_radius(egui::CornerRadius::same(tema::KOSE_KUCUK)),
+                            )
+                            .on_hover_text(ad);
+                        if yanit.clicked() {
+                            self.sekme_ac(sekme);
                         }
                     }
 
-                    // Sağ tarafta dosya adı
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if let Some(ref yol) = self.mevcut_dosya_yolu {
-                            let dosya = yol.file_name().unwrap().to_string_lossy().to_string();
-                            let isaret = if self.degisiklik_var { "●  " } else { "" };
-                            ui.label(
-                                RichText::new(format!("{}{}", isaret, dosya))
-                                    .color(if self.degisiklik_var {
-                                        tema::UYARI
-                                    } else {
-                                        tema::METIN_SOLUK
-                                    })
-                                    .size(12.5),
-                            );
-                            ui.label(RichText::new("📄").size(13.0));
+                    let veri_aktif = matches!(
+                        self.aktif_sekme,
+                        Sekme::Pozlar | Sekme::KitapYoneticisi | Sekme::PdfYukle
+                    );
+                    let veri_etiketi = if dar { "⋯" } else { "◈  Veri" };
+                    egui::Frame::default()
+                        .fill(if veri_aktif {
+                            tema::VURGU_SOLUK
                         } else {
-                            ui.label(
-                                RichText::new("Kaydedilmemiş proje")
-                                    .color(tema::METIN_SOLUK)
-                                    .size(12.5),
-                            );
-                        }
-                    });
+                            Color32::TRANSPARENT
+                        })
+                        .stroke(egui::Stroke::new(
+                            1.0,
+                            if veri_aktif { tema::VURGU } else { tema::KENAR },
+                        ))
+                        .corner_radius(egui::CornerRadius::same(tema::KOSE_KUCUK))
+                        .inner_margin(egui::Margin::symmetric(2, 0))
+                        .show(ui, |ui| {
+                            ui.menu_button(veri_etiketi, |ui| {
+                                ui.set_min_width(210.0);
+                                ui.label(
+                                    RichText::new("VERİ KAYNAKLARI")
+                                        .size(10.5)
+                                        .color(tema::METIN_SOLUK)
+                                        .strong(),
+                                );
+                                ui.separator();
+                                for (sekme, ikon, ad, aciklama) in [
+                                    (Sekme::Pozlar, "⌕", "Pozlar", "Pozları incele ve düzenle"),
+                                    (
+                                        Sekme::KitapYoneticisi,
+                                        "▦",
+                                        "Fiyat Kitapları",
+                                        "Kurum ve dönemleri yönet",
+                                    ),
+                                    (
+                                        Sekme::PdfYukle,
+                                        "⇧",
+                                        "PDF'den Aktar",
+                                        "Yeni fiyat verisi içe al",
+                                    ),
+                                ] {
+                                    let secili = self.aktif_sekme == sekme;
+                                    if ui
+                                        .selectable_label(secili, format!("{}  {}", ikon, ad))
+                                        .on_hover_text(aciklama)
+                                        .clicked()
+                                    {
+                                        self.sekme_ac(sekme);
+                                        ui.close_menu();
+                                    }
+                                }
+                            });
+                        });
+
+                    if genislik > 1260.0 {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if let Some(ref yol) = self.mevcut_dosya_yolu {
+                                let dosya = yol.file_name().unwrap().to_string_lossy().to_string();
+                                let isaret = if self.degisiklik_var { "●  " } else { "" };
+                                ui.label(
+                                    RichText::new(format!("{}{}", isaret, dosya))
+                                        .color(if self.degisiklik_var {
+                                            tema::UYARI
+                                        } else {
+                                            tema::METIN_SOLUK
+                                        })
+                                        .size(12.5),
+                                );
+                                ui.label(RichText::new("📄").size(13.0));
+                            } else {
+                                ui.label(
+                                    RichText::new("Kaydedilmemiş proje")
+                                        .color(tema::METIN_SOLUK)
+                                        .size(12.5),
+                                );
+                            }
+                        });
+                    }
                 });
             });
 
@@ -559,6 +729,7 @@ impl eframe::App for MetrajApp {
                     .inner_margin(egui::Margin::symmetric(12, 5)),
             )
             .show(ctx, |ui| {
+                let dar = ui.available_width() < 900.0;
                 ui.horizontal(|ui| {
                     let durum = if self.mevcut_dosya_yolu.is_some() {
                         if self.degisiklik_var {
@@ -570,23 +741,25 @@ impl eframe::App for MetrajApp {
                         ("○ Yeni proje", tema::METIN_SOLUK)
                     };
                     tema::rozet(ui, durum.0, durum.1);
-                    if let Some(ref k) = self.secili_kitap {
+                    if !dar {
+                        if let Some(ref k) = self.secili_kitap {
+                            tema::rozet(
+                                ui,
+                                &format!("📚 {}", metni_kisalt(&k.ad, 30)),
+                                tema::METIN_IKINCIL,
+                            );
+                        }
                         tema::rozet(
                             ui,
-                            &format!("📚 {}", metni_kisalt(&k.ad, 30)),
+                            &format!("🗂 {} poz", self.poz_sayisi),
+                            tema::METIN_IKINCIL,
+                        );
+                        tema::rozet(
+                            ui,
+                            &format!("📋 {} kalem", self.metraj_kalemleri.len()),
                             tema::METIN_IKINCIL,
                         );
                     }
-                    tema::rozet(
-                        ui,
-                        &format!("🗂 {} poz", self.poz_sayisi),
-                        tema::METIN_IKINCIL,
-                    );
-                    tema::rozet(
-                        ui,
-                        &format!("📋 {} kalem", self.metraj_kalemleri.len()),
-                        tema::METIN_IKINCIL,
-                    );
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
@@ -607,26 +780,6 @@ impl eframe::App for MetrajApp {
         egui::CentralPanel::default()
             .frame(egui::Frame::default().fill(tema::ARKA_PLAN).inner_margin(egui::Margin::same(12)))
             .show(ctx, |ui| {
-            let mut hata_kapat = false;
-            if !self.hata_mesaji.is_empty() {
-                ui.horizontal(|ui| {
-                    egui::Frame::default()
-                        .fill(tema::TEHLIKE_KOYU)
-                        .stroke(egui::Stroke::new(1.0, tema::TEHLIKE))
-                        .corner_radius(egui::CornerRadius::same(tema::KOSE_KUCUK))
-                        .inner_margin(egui::Margin::symmetric(10, 7))
-                        .show(ui, |ui| {
-                            ui.label(RichText::new(format!("⚠  {}", self.hata_mesaji)).color(tema::TEHLIKE));
-                            if ui.add(egui::Button::new(RichText::new("✕").color(tema::TEHLIKE)).fill(Color32::TRANSPARENT).stroke(egui::Stroke::NONE)).clicked() { hata_kapat = true; }
-                        });
-                });
-                ui.add_space(6.0);
-            }
-            if hata_kapat { self.hata_mesaji.clear(); }
-            if !self.basarili_mesaj.is_empty() {
-                tema::bildirim_seridi(ui, &format!("✓  {}", self.basarili_mesaj), tema::BASARI_KOYU, tema::BASARI, tema::BASARI);
-                ui.add_space(6.0);
-            }
             // Kurtarma şeridi: otomatik kayıt dosyası varsa
             if self.kurtarma_mevcut {
                 let mut kurtar = false;
@@ -637,7 +790,7 @@ impl eframe::App for MetrajApp {
                     .corner_radius(egui::CornerRadius::same(tema::KOSE_KUCUK))
                     .inner_margin(egui::Margin::symmetric(10, 7))
                     .show(ui, |ui| {
-                        ui.horizontal(|ui| {
+                        ui.horizontal_wrapped(|ui| {
                             ui.label(RichText::new("⟲  Önceki oturumdan kurtarılabilir otomatik kayıt bulundu.").color(tema::UYARI));
                             if tema::birincil_buton(ui, "Kurtar").clicked() { kurtar = true; }
                             if ui.button("Yoksay").clicked() { yoksay = true; }
@@ -657,7 +810,11 @@ impl eframe::App for MetrajApp {
             match self.aktif_sekme {
                 Sekme::MetrajTablosu => self.render_metraj_tablosu(ui),
                 Sekme::Icmal => self.render_icmal(ui),
-                Sekme::Proje => self.render_proje(ui),
+                Sekme::Proje => {
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| self.render_proje(ui));
+                }
                 Sekme::Hakedis => self.render_hakedis(ui),
                 Sekme::IsProgrami => self.render_is_programi(ui),
                 Sekme::Pozlar => self.render_pozlar_tablosu(ui),
@@ -665,5 +822,6 @@ impl eframe::App for MetrajApp {
                 Sekme::PdfYukle => self.render_pdf_yukle(ui),
             }
         });
+        self.render_bildirimler(ctx);
     }
 }

@@ -124,7 +124,7 @@ impl MetrajApp {
 
         // ---- Aylık dağılım tablosu (düzenlenebilir) ----
         tema::kart(ui, |ui| {
-            ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+            ScrollArea::both().max_height(360.0).show(ui, |ui| {
                 egui::Grid::new("is_prog_grid")
                     .num_columns(6)
                     .spacing(egui::vec2(14.0, 7.0))

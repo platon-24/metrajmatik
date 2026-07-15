@@ -287,7 +287,7 @@ impl MetrajApp {
         let poz = match self.secili_poz.clone() {
             Some(p) => p,
             None => {
-                self.hata_mesaji = "Once bir poz secin.".into();
+                self.hata_mesaji = "Önce bir poz seçin.".into();
                 return;
             }
         };
@@ -446,6 +446,71 @@ impl MetrajApp {
             return;
         }
 
+        self.bekleyen_geri_yukleme_yolu = Some(kaynak);
+    }
+
+    pub(crate) fn render_veritabani_geri_yukleme_onayi(&mut self, ctx: &egui::Context) {
+        let Some(kaynak) = self.bekleyen_geri_yukleme_yolu.clone() else {
+            return;
+        };
+        let dosya_adi = kaynak
+            .file_name()
+            .map(|ad| ad.to_string_lossy().to_string())
+            .unwrap_or_else(|| kaynak.display().to_string());
+        let mut geri_yukle = false;
+        let mut vazgec = false;
+        egui::Window::new("Fiyat kitaplarını geri yükle")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.set_width(460.0);
+                ui.label(egui::RichText::new(dosya_adi).strong().size(14.0));
+                ui.label(
+                    egui::RichText::new(
+                        "Mevcut kurumlar, dönemler, pozlar ve analizler bu yedekteki verilerle değiştirilecek.",
+                    )
+                    .color(crate::tema::METIN_IKINCIL),
+                );
+                ui.add_space(6.0);
+                ui.label(
+                    egui::RichText::new(
+                        "Proje dosyaları etkilenmez. İşlemden önce otomatik güvenlik kopyası alınır.",
+                    )
+                    .color(crate::tema::UYARI)
+                    .size(12.0),
+                );
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if crate::tema::tehlike_buton(ui, "Geri Yükle").clicked() {
+                        geri_yukle = true;
+                    }
+                    if ui.button("Vazgeç").clicked() {
+                        vazgec = true;
+                    }
+                });
+            });
+
+        if geri_yukle {
+            self.bekleyen_geri_yukleme_yolu = None;
+            self.veritabani_geri_yukle(&kaynak);
+        } else if vazgec {
+            self.bekleyen_geri_yukleme_yolu = None;
+        }
+    }
+
+    fn veritabani_geri_yukle(&mut self, kaynak: &Path) {
+        let hedef = super::veri_yolu("metrajmatik_veriler.db");
+        if std::fs::canonicalize(kaynak).ok() == std::fs::canonicalize(&hedef).ok() {
+            self.hata_mesaji = "Canlı veritabanı geri yükleme kaynağı olarak seçilemez.".into();
+            return;
+        }
+        if let Err(e) = crate::database::Veritabani::yedek_dogrula(kaynak) {
+            self.hata_mesaji = format!("Yedek dosyası artık geçerli değil: {}", e);
+            return;
+        }
+        let kaynak = kaynak.to_path_buf();
+
         // Canlı veriyi geri yüklemeden önce bağımsız ve bütünlüklü bir güvenlik
         // yedeğine al. Bu adım başarısızsa mevcut veriye dokunma.
         let mut guvenlik = super::veri_yolu("metrajmatik_restore_oncesi.db");
@@ -557,7 +622,7 @@ impl MetrajApp {
         let kitap = match self.secili_kitap.clone() {
             Some(k) => k,
             None => {
-                self.hata_mesaji = "Once hedef kurum secin!".into();
+                self.hata_mesaji = "Önce hedef kurumu seçin.".into();
                 return;
             }
         };
@@ -588,7 +653,7 @@ impl MetrajApp {
                                 "✅ {} kurumuna {}/{} dönemi için {} poz yuklendi!",
                                 kitap.ad, ay, yil, sayi
                             );
-                            self.pdf_durumu = format!("✅ {} poz yuklendi.", sayi);
+                            self.pdf_durumu = format!("✅ {} poz yüklendi.", sayi);
                             if let Ok(Some(yk)) = db.kitap_getir(kitap.id) {
                                 self.secili_kitap = Some(yk);
                             }

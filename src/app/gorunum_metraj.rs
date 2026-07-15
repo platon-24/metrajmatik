@@ -12,13 +12,15 @@ use crate::is_grubu::{
 use crate::models::{IsGrubu, MetrajKalemi, MiktarDetay};
 use crate::tema;
 
-use super::{MetrajApp, PopupDetaySatiri};
+use super::{MetrajApp, MetrajPaneli, PopupDetaySatiri};
 
 impl MetrajApp {
     // ==================== METRAJ TABLOSU ====================
     pub(crate) fn render_metraj_tablosu(&mut self, ui: &mut Ui) {
+        let dar_duzen = ui.available_width() < 1320.0;
+        let kitap_genisligi = (ui.available_width() - 260.0).clamp(180.0, 360.0);
         tema::kart(ui, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(
                     RichText::new("Fiyat Kitabı")
                         .color(tema::METIN_IKINCIL)
@@ -31,7 +33,7 @@ impl MetrajApp {
                     .unwrap_or_else(|| "TÜM KİTAPLAR".into());
                 egui::ComboBox::from_id_salt("kitap_secici")
                     .selected_text(&km)
-                    .width(360.0)
+                    .width(kitap_genisligi)
                     .show_ui(ui, |ui| {
                         if ui
                             .selectable_label(self.secili_kitap.is_none(), "TÜM KİTAPLAR")
@@ -50,16 +52,45 @@ impl MetrajApp {
                             }
                         }
                     });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if !dar_duzen {
                     ui.label(
                         RichText::new("Arama yapılacak fiyat kaynağı")
                             .color(tema::METIN_SOLUK)
                             .size(12.0),
                     );
-                });
+                }
             });
         });
         ui.add_space(8.0);
+
+        if dar_duzen {
+            tema::kart(ui, |ui| {
+                ui.horizontal(|ui| {
+                    for (panel, ikon, ad) in [
+                        (MetrajPaneli::PozAra, "⌕", "Poz Ara"),
+                        (MetrajPaneli::IsGruplari, "▦", "İş Grupları"),
+                        (MetrajPaneli::Metraj, "▤", "Metraj Tablosu"),
+                    ] {
+                        if ui
+                            .selectable_label(
+                                self.dar_metraj_paneli == panel,
+                                format!("{}  {}", ikon, ad),
+                            )
+                            .clicked()
+                        {
+                            self.dar_metraj_paneli = panel;
+                        }
+                    }
+                });
+            });
+            ui.add_space(8.0);
+            match self.dar_metraj_paneli {
+                MetrajPaneli::PozAra => self.render_arama_paneli(ui),
+                MetrajPaneli::IsGruplari => self.render_is_gruplari_paneli(ui),
+                MetrajPaneli::Metraj => self.render_metraj_listesi(ui),
+            }
+            return;
+        }
 
         let panel_frame = egui::Frame::default()
             .fill(tema::YUZEY)
@@ -94,6 +125,114 @@ impl MetrajApp {
             .show_inside(ui, |ui| {
                 self.render_metraj_listesi(ui);
             });
+    }
+
+    pub(crate) fn render_metraj_onaylari(&mut self, ctx: &egui::Context) {
+        if let Some(id) = self.silinecek_grup_id.clone() {
+            let (ad, kalem_sayisi) = grup_bul_ref(&self.is_gruplari, &id)
+                .map(|grup| (grup.ad.clone(), grup.tum_kalemler_duz().len()))
+                .unwrap_or_else(|| ("Seçili grup".into(), 0));
+            let mut sil = false;
+            let mut vazgec = false;
+            egui::Window::new("İş grubunu sil")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.set_width(420.0);
+                    ui.label(RichText::new(&ad).strong().size(15.0));
+                    ui.label(
+                        RichText::new(format!(
+                            "Bu grup, alt grupları ve içindeki {} metraj kalemi silinecek.",
+                            kalem_sayisi
+                        ))
+                        .color(tema::METIN_IKINCIL),
+                    );
+                    ui.add_space(6.0);
+                    ui.label(
+                        RichText::new("İşlemi hemen Ctrl+Z ile geri alabilirsiniz.")
+                            .color(tema::UYARI)
+                            .size(12.0),
+                    );
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        if tema::tehlike_buton(ui, "Grubu Sil").clicked() {
+                            sil = true;
+                        }
+                        if ui.button("Vazgeç").clicked() {
+                            vazgec = true;
+                        }
+                    });
+                });
+
+            if sil {
+                self.anlik_goruntu_al();
+                grup_sil(&mut self.is_gruplari, &id);
+                self.secili_grup_id = None;
+                self.metraj_kalemleri.clear();
+                if let Some(yeni_id) = ilk_yaprak_grup_id(&self.is_gruplari) {
+                    self.grup_sec(yeni_id);
+                }
+                self.degisiklik_var = true;
+                self.silinecek_grup_id = None;
+                self.basarili_mesaj = format!("'{}' grubu silindi.", ad);
+            } else if vazgec {
+                self.silinecek_grup_id = None;
+            }
+        }
+
+        if self.metraj_temizleme_onayi {
+            let kalem_sayisi = self.metraj_kalemleri.len();
+            let grup_adi = self
+                .secili_grup_id
+                .as_ref()
+                .and_then(|id| grup_bul_ref(&self.is_gruplari, id))
+                .map(|grup| grup.ad.clone())
+                .unwrap_or_else(|| "Seçili grup".into());
+            let mut temizle = false;
+            let mut vazgec = false;
+            egui::Window::new("Metraj grubunu temizle")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.set_width(420.0);
+                    ui.label(RichText::new(&grup_adi).strong().size(15.0));
+                    ui.label(
+                        RichText::new(format!(
+                            "Bu gruptaki {} metraj kaleminin tamamı kaldırılacak.",
+                            kalem_sayisi
+                        ))
+                        .color(tema::METIN_IKINCIL),
+                    );
+                    ui.add_space(6.0);
+                    ui.label(
+                        RichText::new("İşlemi hemen Ctrl+Z ile geri alabilirsiniz.")
+                            .color(tema::UYARI)
+                            .size(12.0),
+                    );
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        if tema::tehlike_buton(ui, "Tümünü Temizle").clicked() {
+                            temizle = true;
+                        }
+                        if ui.button("Vazgeç").clicked() {
+                            vazgec = true;
+                        }
+                    });
+                });
+
+            if temizle {
+                self.anlik_goruntu_al();
+                self.metraj_kalemleri.clear();
+                self.aktif_grubu_senkronize();
+                self.degisiklik_var = true;
+                self.metraj_temizleme_onayi = false;
+                self.basarili_mesaj = format!("'{}' grubu temizlendi.", grup_adi);
+            } else if vazgec {
+                self.metraj_temizleme_onayi = false;
+            }
+        }
     }
 
     pub(crate) fn render_is_gruplari_paneli(&mut self, ui: &mut Ui) {
@@ -157,14 +296,7 @@ impl MetrajApp {
                 }
                 if tema::tehlike_buton(ui, "🗑 Sil").clicked() {
                     if let Some(id) = self.secili_grup_id.clone() {
-                        self.anlik_goruntu_al();
-                        grup_sil(&mut self.is_gruplari, &id);
-                        self.secili_grup_id = None;
-                        self.metraj_kalemleri.clear();
-                        if let Some(yeni_id) = ilk_yaprak_grup_id(&self.is_gruplari) {
-                            self.grup_sec(yeni_id);
-                        }
-                        self.degisiklik_var = true;
+                        self.silinecek_grup_id = Some(id);
                     } else {
                         self.hata_mesaji = "Silinecek grubu seçin.".into();
                     }
@@ -474,8 +606,8 @@ impl MetrajApp {
             .and_then(|id| grup_bul_ref(&self.is_gruplari, id))
             .map(|g| g.ad.clone());
 
-        // Başlık satırı: başlık + aktif grup rozeti + dosya işlemleri
-        ui.horizontal(|ui| {
+        // Başlık ve bağlam
+        ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new("📋").size(17.0));
             ui.label(
                 RichText::new("Metraj Tablosu")
@@ -490,54 +622,52 @@ impl MetrajApp {
                 }
                 None => {}
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("🗑 Temizle").clicked() {
-                    self.anlik_goruntu_al();
-                    self.metraj_kalemleri.clear();
-                    self.aktif_grubu_senkronize();
-                    self.degisiklik_var = true;
-                    self.basarili_mesaj = "Temizlendi.".into();
+        });
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            if tema::basari_buton(ui, "💾 Kaydet").clicked() {
+                self.metraj_kaydet();
+            }
+            if ui.button("📂 Aç").clicked() {
+                self.metraj_yukle_diyalog();
+            }
+            ui.separator();
+            if ui.button("📊 Excel").clicked() {
+                self.metraj_excel_diyalog();
+            }
+            ui.menu_button("⇅ Aktar", |ui| {
+                if ui.button("📤 CSV dışa aktar").clicked() {
+                    self.metraj_csv_diyalog();
+                    ui.close_menu();
                 }
-                if ui
-                    .button("📋 Panoya")
-                    .on_hover_text("Metraj özetini metin olarak panoya kopyala")
-                    .clicked()
-                {
+                if ui.button("📥 CSV içe aktar").clicked() {
+                    self.metraj_csv_ice_aktar_diyalog();
+                    ui.close_menu();
+                }
+                if ui.button("📋 Özeti panoya kopyala").clicked() {
                     let m = self.proje_olustur();
                     let ozet = crate::export::metraj_metin_ozet(&m);
                     ui.ctx().copy_text(ozet);
                     self.basarili_mesaj = "Metraj özeti panoya kopyalandı.".into();
-                }
-                if ui.button("📊 Excel").clicked() {
-                    self.metraj_excel_diyalog();
-                }
-                if ui
-                    .button("📤 CSV")
-                    .on_hover_text("Metrajı CSV olarak dışa aktar (Excel'de açılır)")
-                    .clicked()
-                {
-                    self.metraj_csv_diyalog();
-                }
-                if ui
-                    .button("📥 CSV Al")
-                    .on_hover_text("CSV'den poz + miktar içe aktar")
-                    .clicked()
-                {
-                    self.metraj_csv_ice_aktar_diyalog();
-                }
-                if tema::basari_buton(ui, "💾 Kaydet").clicked() {
-                    self.metraj_kaydet();
-                }
-                if ui.button("📂 Aç").clicked() {
-                    self.metraj_yukle_diyalog();
+                    ui.close_menu();
                 }
             });
+            if ui
+                .add_enabled(
+                    !self.metraj_kalemleri.is_empty(),
+                    egui::Button::new("🗑 Grubu Temizle"),
+                )
+                .on_hover_text("Seçili gruptaki tüm metraj kalemlerini kaldırır")
+                .clicked()
+            {
+                self.metraj_temizleme_onayi = true;
+            }
         });
         ui.add_space(8.0);
 
         // Giriş kartı: metraj adı + hızlı poz ekleme + toplu fiyat
         tema::kart(ui, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(
                     RichText::new("Metraj Adı")
                         .color(tema::METIN_IKINCIL)
@@ -592,7 +722,7 @@ impl MetrajApp {
         self.render_metraj_ozetleri(ui);
         ui.add_space(8.0);
 
-        ScrollArea::vertical()
+        ScrollArea::both()
             .max_height(ui.available_height() - 64.0)
             .auto_shrink([false, false])
             .show(ui, |ui| {

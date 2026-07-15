@@ -331,7 +331,7 @@ impl MetrajApp {
         // Tablo: keşif kalemleri + editlenebilir kümülatif (yeşil defter)
         let mut degisti = false;
         let mut detay_ac: Option<usize> = None;
-        ScrollArea::vertical()
+        ScrollArea::both()
             .max_height((ui.available_height() - 230.0).max(140.0))
             .auto_shrink([false, false])
             .show(ui, |ui| {
