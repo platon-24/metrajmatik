@@ -40,13 +40,6 @@ enum Sekme {
     PdfYukle,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MetrajPaneli {
-    PozAra,
-    IsGruplari,
-    Metraj,
-}
-
 /// Miktar popup'ında bir detay satırının düzenlenebilir (metin) hali.
 #[derive(Default, Clone)]
 pub(crate) struct PopupDetaySatiri {
@@ -118,7 +111,6 @@ pub struct MetrajApp {
     pdf_yukleniyor: bool,
     import_profili: String, // PDF ayrıştırma profili: "Otomatik" | "Çevre ve Şehircilik" | "Genel"
     aktif_sekme: Sekme,
-    dar_metraj_paneli: MetrajPaneli,
     hata_mesaji: String,
     basarili_mesaj: String,
     son_hata_mesaji: String,
@@ -337,7 +329,6 @@ impl Default for MetrajApp {
             pdf_yukleniyor: false,
             import_profili: "Otomatik".into(),
             aktif_sekme: Sekme::Proje,
-            dar_metraj_paneli: MetrajPaneli::PozAra,
             hata_mesaji: String::new(),
             basarili_mesaj: String::new(),
             son_hata_mesaji: String::new(),
@@ -545,53 +536,102 @@ fn gezinti_butonu(
     aciklama: &str,
     kilitli: bool,
 ) -> bool {
-    let isaret = if kilitli { "  ·  KİLİTLİ" } else { "" };
-    let metin = format!("{}  {}{}\n     {}", ikon, baslik, isaret, aciklama);
-    ui.add_sized(
-        [ui.available_width(), 52.0],
-        egui::Button::new(RichText::new(metin).size(12.5).color(if aktif {
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 52.0), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let zemin = if aktif {
+            tema::VURGU_SOLUK
+        } else if response.hovered() {
+            tema::YUZEY_3
+        } else {
+            Color32::TRANSPARENT
+        };
+        let kenar = if aktif {
+            tema::VURGU
+        } else {
+            Color32::TRANSPARENT
+        };
+        ui.painter().rect(
+            rect,
+            egui::CornerRadius::same(tema::KOSE_KUCUK),
+            zemin,
+            egui::Stroke::new(1.0, kenar),
+            egui::StrokeKind::Inside,
+        );
+        let yazi = if aktif {
             Color32::WHITE
         } else {
             tema::METIN_IKINCIL
-        }))
-        .fill(if aktif {
-            tema::VURGU_SOLUK
-        } else {
-            Color32::TRANSPARENT
-        })
-        .stroke(egui::Stroke::new(
-            1.0,
-            if aktif {
-                tema::VURGU
-            } else {
-                Color32::TRANSPARENT
-            },
-        ))
-        .corner_radius(egui::CornerRadius::same(tema::KOSE_KUCUK)),
-    )
-    .clicked()
+        };
+        ui.painter().text(
+            egui::pos2(rect.left() + 20.0, rect.center().y),
+            egui::Align2::CENTER_CENTER,
+            ikon,
+            egui::FontId::new(18.0, tema::ikon_fontu()),
+            if aktif { tema::VURGU_HOVER } else { yazi },
+        );
+        ui.painter().text(
+            egui::pos2(rect.left() + 40.0, rect.top() + 18.0),
+            egui::Align2::LEFT_CENTER,
+            baslik,
+            egui::FontId::proportional(12.5),
+            yazi,
+        );
+        ui.painter().text(
+            egui::pos2(rect.left() + 40.0, rect.top() + 35.0),
+            egui::Align2::LEFT_CENTER,
+            aciklama,
+            egui::FontId::proportional(10.5),
+            tema::METIN_SOLUK,
+        );
+        if kilitli {
+            ui.painter().text(
+                egui::pos2(rect.right() - 15.0, rect.center().y),
+                egui::Align2::CENTER_CENTER,
+                tema::ikon::KILIT,
+                egui::FontId::new(13.0, tema::ikon_fontu()),
+                tema::UYARI,
+            );
+        }
+    }
+    response.on_hover_text(aciklama).clicked()
 }
 
 fn mobil_gezinti_butonu(ui: &mut egui::Ui, aktif: bool, ikon: &str, baslik: &str) -> bool {
-    ui.add(
-        egui::Button::new(
-            RichText::new(format!("{}  {}", ikon, baslik))
-                .size(12.5)
-                .strong()
-                .color(if aktif {
-                    Color32::WHITE
-                } else {
-                    tema::METIN_IKINCIL
-                }),
-        )
-        .fill(if aktif { tema::VURGU } else { tema::YUZEY_2 })
-        .stroke(egui::Stroke::new(
-            1.0,
-            if aktif { tema::VURGU } else { tema::KENAR },
-        ))
-        .corner_radius(egui::CornerRadius::same(tema::KOSE_KUCUK)),
-    )
-    .clicked()
+    let genislik = if baslik.len() > 8 { 118.0 } else { 98.0 };
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(genislik, 34.0), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        ui.painter().rect(
+            rect,
+            egui::CornerRadius::same(tema::KOSE_KUCUK),
+            if aktif { tema::VURGU } else { tema::YUZEY_2 },
+            egui::Stroke::new(1.0, if aktif { tema::VURGU } else { tema::KENAR }),
+            egui::StrokeKind::Inside,
+        );
+        ui.painter().text(
+            egui::pos2(rect.left() + 18.0, rect.center().y),
+            egui::Align2::CENTER_CENTER,
+            ikon,
+            egui::FontId::new(15.0, tema::ikon_fontu()),
+            if aktif {
+                Color32::WHITE
+            } else {
+                tema::METIN_IKINCIL
+            },
+        );
+        ui.painter().text(
+            egui::pos2(rect.left() + 34.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            baslik,
+            egui::FontId::proportional(12.0),
+            if aktif {
+                Color32::WHITE
+            } else {
+                tema::METIN_IKINCIL
+            },
+        );
+    }
+    response.clicked()
 }
 
 impl eframe::App for MetrajApp {
@@ -788,14 +828,14 @@ impl eframe::App for MetrajApp {
                     egui::ScrollArea::horizontal().show(ui, |ui| {
                         ui.horizontal(|ui| {
                             for (sekme, ikon, ad) in [
-                                (Sekme::Proje, "PR", "Proje"),
-                                (Sekme::MetrajTablosu, "MT", "Metraj"),
-                                (Sekme::Icmal, "IC", "İcmal"),
-                                (Sekme::Hakedis, "HK", "Hakediş"),
-                                (Sekme::IsProgrami, "IP", "Program"),
-                                (Sekme::Pozlar, "PZ", "Pozlar"),
-                                (Sekme::KitapYoneticisi, "FK", "Kitaplar"),
-                                (Sekme::PdfYukle, "PDF", "Aktar"),
+                                (Sekme::Proje, tema::ikon::PROJE, "Proje"),
+                                (Sekme::MetrajTablosu, tema::ikon::METRAJ, "Metraj"),
+                                (Sekme::Icmal, tema::ikon::ICMAL, "İcmal"),
+                                (Sekme::Hakedis, tema::ikon::HAKEDIS, "Hakediş"),
+                                (Sekme::IsProgrami, tema::ikon::IS_PROGRAMI, "Program"),
+                                (Sekme::Pozlar, tema::ikon::POZLAR, "Pozlar"),
+                                (Sekme::KitapYoneticisi, tema::ikon::KITAPLAR, "Kitaplar"),
+                                (Sekme::PdfYukle, tema::ikon::PDF_AKTAR, "Aktar"),
                             ] {
                                 if mobil_gezinti_butonu(ui, self.aktif_sekme == sekme, ikon, ad) {
                                     self.sekme_ac(sekme);
@@ -876,21 +916,21 @@ impl eframe::App for MetrajApp {
                             vec![
                                 (
                                     Sekme::Proje,
-                                    "PR",
+                                    tema::ikon::PROJE,
                                     "Proje Merkezi",
                                     "Künye ve genel durum",
                                     false,
                                 ),
                                 (
                                     Sekme::MetrajTablosu,
-                                    "MT",
+                                    tema::ikon::METRAJ,
                                     "Metraj",
                                     "Poz, grup ve miktarlar",
                                     false,
                                 ),
                                 (
                                     Sekme::Icmal,
-                                    "IC",
+                                    tema::ikon::ICMAL,
                                     "İcmal",
                                     "Maliyet ve genel toplam",
                                     false,
@@ -902,14 +942,14 @@ impl eframe::App for MetrajApp {
                             vec![
                                 (
                                     Sekme::Hakedis,
-                                    "HK",
+                                    tema::ikon::HAKEDIS,
                                     "Hakediş",
                                     "Sözleşme ve ödemeler",
                                     false,
                                 ),
                                 (
                                     Sekme::IsProgrami,
-                                    "IP",
+                                    tema::ikon::IS_PROGRAMI,
                                     "İş Programı",
                                     "Pursantaj ve zaman planı",
                                     self.proje_asamasi == ProjeAsamasi::Metraj,
@@ -921,21 +961,21 @@ impl eframe::App for MetrajApp {
                             vec![
                                 (
                                     Sekme::Pozlar,
-                                    "PZ",
+                                    tema::ikon::POZLAR,
                                     "Poz Kütüphanesi",
                                     "Birim fiyat verileri",
                                     false,
                                 ),
                                 (
                                     Sekme::KitapYoneticisi,
-                                    "FK",
+                                    tema::ikon::KITAPLAR,
                                     "Fiyat Kitapları",
                                     "Kurum ve dönemler",
                                     false,
                                 ),
                                 (
                                     Sekme::PdfYukle,
-                                    "PDF",
+                                    tema::ikon::PDF_AKTAR,
                                     "PDF'den Aktar",
                                     "Yeni veri kaynağı",
                                     false,

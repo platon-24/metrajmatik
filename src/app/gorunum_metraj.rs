@@ -12,7 +12,7 @@ use crate::is_grubu::{
 use crate::models::{IsGrubu, MetrajKalemi, MiktarDetay, ProjeAsamasi};
 use crate::tema;
 
-use super::{MetrajApp, MetrajPaneli, PopupDetaySatiri, Sekme};
+use super::{MetrajApp, PopupDetaySatiri, Sekme};
 
 impl MetrajApp {
     // ==================== METRAJ TABLOSU ====================
@@ -88,7 +88,7 @@ impl MetrajApp {
             );
         });
         ui.add_space(10.0);
-        let dar_duzen = ui.available_width() < 1320.0;
+        let kompakt_duzen = ui.available_width() < 1040.0;
         let kitap_genisligi = (ui.available_width() - 260.0).clamp(180.0, 360.0);
         tema::kart(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
@@ -123,7 +123,7 @@ impl MetrajApp {
                             }
                         }
                     });
-                if !dar_duzen {
+                if !kompakt_duzen {
                     ui.label(
                         RichText::new("Arama yapılacak fiyat kaynağı")
                             .color(tema::METIN_SOLUK)
@@ -134,32 +134,42 @@ impl MetrajApp {
         });
         ui.add_space(8.0);
 
-        if dar_duzen {
-            tema::kart(ui, |ui| {
-                ui.horizontal(|ui| {
-                    for (panel, ikon, ad) in [
-                        (MetrajPaneli::PozAra, "⌕", "Poz Ara"),
-                        (MetrajPaneli::IsGruplari, "▦", "İş Grupları"),
-                        (MetrajPaneli::Metraj, "▤", "Metraj Tablosu"),
-                    ] {
-                        if ui
-                            .selectable_label(
-                                self.dar_metraj_paneli == panel,
-                                format!("{}  {}", ikon, ad),
-                            )
-                            .clicked()
-                        {
-                            self.dar_metraj_paneli = panel;
-                        }
-                    }
+        if kompakt_duzen {
+            let panel_frame = egui::Frame::default()
+                .fill(tema::YUZEY)
+                .stroke(egui::Stroke::new(1.0, tema::KENAR_YUMUSAK))
+                .inner_margin(egui::Margin::same(9));
+            egui::SidePanel::left("grup_panel_kompakt")
+                .frame(panel_frame)
+                .resizable(true)
+                .default_width(235.0)
+                .min_width(205.0)
+                .max_width(300.0)
+                .show_inside(ui, |ui| {
+                    self.render_is_gruplari_paneli(ui);
                 });
-            });
-            ui.add_space(8.0);
-            match self.dar_metraj_paneli {
-                MetrajPaneli::PozAra => self.render_arama_paneli(ui),
-                MetrajPaneli::IsGruplari => self.render_is_gruplari_paneli(ui),
-                MetrajPaneli::Metraj => self.render_metraj_listesi(ui),
-            }
+            egui::TopBottomPanel::top("arama_panel_kompakt")
+                .frame(panel_frame)
+                .resizable(true)
+                .default_height(180.0)
+                .min_height(135.0)
+                .show_inside(ui, |ui| {
+                    self.render_arama_paneli(ui);
+                });
+            egui::CentralPanel::default()
+                .frame(
+                    egui::Frame::default()
+                        .fill(tema::ARKA_PLAN)
+                        .inner_margin(egui::Margin {
+                            left: 10,
+                            right: 0,
+                            top: 10,
+                            bottom: 0,
+                        }),
+                )
+                .show_inside(ui, |ui| {
+                    self.render_metraj_listesi(ui);
+                });
             return;
         }
 
@@ -169,7 +179,7 @@ impl MetrajApp {
         egui::SidePanel::left("sol_panel")
             .frame(panel_frame)
             .resizable(true)
-            .default_width(400.0)
+            .default_width(360.0)
             .min_width(300.0)
             .show_inside(ui, |ui| {
                 self.render_arama_paneli(ui);
@@ -177,7 +187,7 @@ impl MetrajApp {
         egui::SidePanel::left("grup_panel")
             .frame(panel_frame)
             .resizable(true)
-            .default_width(270.0)
+            .default_width(245.0)
             .min_width(210.0)
             .show_inside(ui, |ui| {
                 self.render_is_gruplari_paneli(ui);

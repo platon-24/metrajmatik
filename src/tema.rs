@@ -3,8 +3,10 @@
 
 use eframe::egui;
 use egui::{
-    Color32, CornerRadius, FontId, Margin, Response, RichText, Stroke, TextStyle, Ui, Widget,
+    Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Margin, Response,
+    RichText, Stroke, TextStyle, Ui, Widget,
 };
+use std::sync::Arc;
 
 // Graphite zemin + güven veren mavi + şantiye amberi.
 pub const ARKA_PLAN: Color32 = Color32::from_rgb(0x0B, 0x10, 0x16);
@@ -34,7 +36,38 @@ pub const UYARI_KOYU: Color32 = AKSAN_SOLUK;
 pub const KOSE: u8 = 10;
 pub const KOSE_KUCUK: u8 = 7;
 
+const IKON_FONTU: &str = "metrajmatik_icons";
+
+pub mod ikon {
+    pub const PROJE: &str = "\u{E80F}";
+    pub const METRAJ: &str = "\u{E8EF}";
+    pub const ICMAL: &str = "\u{E8A5}";
+    pub const HAKEDIS: &str = "\u{E9D5}";
+    pub const IS_PROGRAMI: &str = "\u{E787}";
+    pub const POZLAR: &str = "\u{E721}";
+    pub const KITAPLAR: &str = "\u{E8F1}";
+    pub const PDF_AKTAR: &str = "\u{E898}";
+    pub const KILIT: &str = "\u{E72E}";
+}
+
+pub fn ikon_fontu() -> FontFamily {
+    FontFamily::Name(IKON_FONTU.into())
+}
+
 pub fn uygula(ctx: &egui::Context) {
+    let mut fontlar = FontDefinitions::default();
+    let ikon_verisi = std::fs::read(r"C:\Windows\Fonts\SegoeIcons.ttf")
+        .or_else(|_| std::fs::read(r"C:\Windows\Fonts\segmdl2.ttf"));
+    if let Ok(veri) = ikon_verisi {
+        fontlar
+            .font_data
+            .insert(IKON_FONTU.to_owned(), Arc::new(FontData::from_owned(veri)));
+        fontlar
+            .families
+            .insert(ikon_fontu(), vec![IKON_FONTU.to_owned()]);
+        ctx.set_fonts(fontlar);
+    }
+
     let mut style = (*ctx.style()).clone();
     style.text_styles = [
         (TextStyle::Heading, FontId::proportional(22.0)),
@@ -117,19 +150,6 @@ pub fn kart<R>(ui: &mut Ui, ekle: impl FnOnce(&mut Ui) -> R) -> R {
         .stroke(Stroke::new(1.0, KENAR_YUMUSAK))
         .corner_radius(CornerRadius::same(KOSE))
         .inner_margin(Margin::same(14))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ekle(ui)
-        })
-        .inner
-}
-
-pub fn vurgu_karti<R>(ui: &mut Ui, ekle: impl FnOnce(&mut Ui) -> R) -> R {
-    egui::Frame::default()
-        .fill(VURGU_SOLUK)
-        .stroke(Stroke::new(1.0, VURGU))
-        .corner_radius(CornerRadius::same(KOSE))
-        .inner_margin(Margin::same(16))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ekle(ui)
