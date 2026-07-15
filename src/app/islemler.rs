@@ -87,7 +87,7 @@ impl MetrajApp {
             let mevcut = self.mevcut_anlik();
             self.yinele_yigini.push(mevcut);
             self.anlik_uygula(a);
-            self.basarili_mesaj = "↩ Geri alındı.".into();
+            self.basarili_mesaj = "Geri alındı.".into();
             self.hata_mesaji.clear();
         }
     }
@@ -97,7 +97,7 @@ impl MetrajApp {
             let mevcut = self.mevcut_anlik();
             self.geri_al_yigini.push(mevcut);
             self.anlik_uygula(a);
-            self.basarili_mesaj = "↪ Yinelendi.".into();
+            self.basarili_mesaj = "Yinelendi.".into();
             self.hata_mesaji.clear();
         }
     }
@@ -684,10 +684,10 @@ impl MetrajApp {
                         Ok(sayi) => {
                             self.poz_sayisi = db.poz_sayisi().unwrap_or(0);
                             self.basarili_mesaj = format!(
-                                "✅ {} kurumuna {}/{} dönemi için {} poz yuklendi!",
+                                "{} kurumuna {}/{} dönemi için {} poz yuklendi!",
                                 kitap.ad, ay, yil, sayi
                             );
-                            self.pdf_durumu = format!("✅ {} poz yüklendi.", sayi);
+                            self.pdf_durumu = format!("{} poz yüklendi.", sayi);
                             if let Ok(Some(yk)) = db.kitap_getir(kitap.id) {
                                 self.secili_kitap = Some(yk);
                             }
@@ -1144,7 +1144,7 @@ impl MetrajApp {
             self.degisiklik_var = true;
             self.fiyat_guncelle_acik = false;
             self.basarili_mesaj = format!(
-                "✅ {} kalem endeksle güncellendi (× {:.4}; Yİ-ÜFE {:.1} → {:.1}).",
+                "{} kalem endeksle güncellendi (× {:.4}; Yİ-ÜFE {:.1} → {:.1}).",
                 n, carpan, temel, guncel
             );
         } else {
@@ -1200,7 +1200,7 @@ impl MetrajApp {
                     format!("{}/{}", ta, ty)
                 };
                 self.basarili_mesaj = format!(
-                    "✅ {} kalem güncellendi (→ {} / {} rayiçleri). {} kalem bulunamadı.",
+                    "{} kalem güncellendi ({} / {} rayiçleri). {} kalem bulunamadı.",
                     guncellenen, hedef.ad, donem, bulunamayan
                 );
             }

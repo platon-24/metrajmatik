@@ -113,14 +113,13 @@ impl MetrajApp {
                 }
 
                 ui.add_space(14.0);
-                if ui
-                    .button("⚖ Eşit Dağıt")
+                if tema::ikincil_ikonlu_buton(ui, tema::ikon::ICMAL, "Eşit Dağıt")
                     .on_hover_text("Tüm ayları eşit yüzdeye böler")
                     .clicked()
                 {
                     esit_dagit = true;
                 }
-                if tema::basari_buton(ui, "⬇ Excel").clicked() {
+                if tema::basari_ikonlu_buton(ui, tema::ikon::ICMAL, "Excel").clicked() {
                     excel = true;
                 }
             });
@@ -161,7 +160,7 @@ impl MetrajApp {
         if (toplam_yuzde - 100.0).abs() > 0.05 {
             tema::bildirim_seridi(
                 ui,
-                &format!("⚠ Pursantaj toplamı % {:.2} (100 olmalı). 'Eşit Dağıt' ile sıfırlayabilir veya elle düzeltebilirsiniz.", toplam_yuzde),
+                &format!("Pursantaj toplamı % {:.2} (100 olmalı). 'Eşit Dağıt' ile sıfırlayabilir veya elle düzeltebilirsiniz.", toplam_yuzde),
                 tema::UYARI_KOYU, tema::UYARI, tema::UYARI,
             );
             ui.add_space(6.0);

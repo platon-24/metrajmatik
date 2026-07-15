@@ -101,7 +101,7 @@ impl MetrajApp {
         });
         ui.add_space(10.0);
 
-        tema::bolum_basligi(ui, "•", "Proje Künyesi");
+        tema::ikonlu_bolum_basligi(ui, tema::ikon::PROJE, "Proje Künyesi");
         ui.label(
             RichText::new(
                 "Bu bilgiler yaklaşık maliyet, hakediş ve teklif çıktılarının başlığına aktarılır.",
@@ -280,7 +280,7 @@ impl MetrajApp {
         let grup_say = self.is_gruplari.len();
         let hakedis_say = self.hakedisler.len();
         let sure = self.is_programi.sure_ay;
-        tema::bolum_basligi(ui, "📊", "Özet");
+        tema::ikonlu_bolum_basligi(ui, tema::ikon::ICMAL, "Özet");
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
             ozet_kutu(

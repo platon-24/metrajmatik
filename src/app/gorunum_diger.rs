@@ -2,7 +2,7 @@
 //! Maliyet, Pozlar (poz ekle/düzenle/sil form ve onayları) ve PDF yükleme.
 
 use eframe::egui;
-use egui::{Color32, RichText, ScrollArea, TextEdit, Ui, Vec2};
+use egui::{RichText, ScrollArea, TextEdit, Ui, Vec2};
 use std::path::PathBuf;
 
 use crate::bicim::{metni_kisalt, para_formatla, teklif_ortalamasi};
@@ -41,7 +41,7 @@ impl MetrajApp {
                         }
                     } else { self.hata_mesaji = "Veritabanı açık değil!".into(); }
                 }
-                if ui.button("📦 Paket İçe Aktar").on_hover_text(".mvp veri paketinden kurum + tüm dönem fiyatlarını içe al").clicked() { ice_aktar = true; }
+                if tema::ikincil_ikonlu_buton(ui, tema::ikon::ICE_AKTAR, "Paket İçe Aktar").on_hover_text(".mvp veri paketinden kurum + tüm dönem fiyatlarını içe al").clicked() { ice_aktar = true; }
             });
             ui.add_space(2.0);
             ui.label(RichText::new("Kurum bir kez eklenir; aynı kurumun aylık fiyatları (dönemleri) altına birikir. Veri paketi (.mvp) ile kurumları paylaşabilirsiniz.").color(tema::METIN_SOLUK).size(11.0));
@@ -57,22 +57,19 @@ impl MetrajApp {
         let mut geri_yukle = false;
         tema::kart(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new("💾 Yedekleme")
-                        .strong()
-                        .size(13.0)
-                        .color(tema::METIN),
-                );
+                ui.label(tema::ikonlu_metin_boyut(
+                    tema::ikon::KAYDET,
+                    "Yedekleme",
+                    13.0,
+                ));
                 ui.add_space(8.0);
-                if ui
-                    .button("⬆ Yedek Al")
+                if tema::ikincil_ikonlu_buton(ui, tema::ikon::PDF_AKTAR, "Yedek Al")
                     .on_hover_text("Tüm fiyat kitaplarını tek dosyaya kaydeder")
                     .clicked()
                 {
                     yedekle = true;
                 }
-                if ui
-                    .button("⬇ Yedeği Geri Yükle")
+                if tema::ikincil_ikonlu_buton(ui, tema::ikon::ICE_AKTAR, "Yedeği Geri Yükle")
                     .on_hover_text(
                         "Bir yedek dosyasını geri yükler (mevcut fiyat kitaplarının üzerine yazar)",
                     )
@@ -140,7 +137,15 @@ impl MetrajApp {
                     .inner_margin(egui::Margin::symmetric(12, 9))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new(if secili { "📗" } else { "📘" }).size(16.0));
+                            ui.label(
+                                RichText::new(tema::ikon::KITAPLAR)
+                                    .font(egui::FontId::new(16.0, tema::ikon_fontu()))
+                                    .color(if secili {
+                                        tema::VURGU_HOVER
+                                    } else {
+                                        tema::METIN_IKINCIL
+                                    }),
+                            );
                             if ui
                                 .selectable_label(
                                     secili,
@@ -158,27 +163,21 @@ impl MetrajApp {
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    if ui
-                                        .add(
-                                            egui::Button::new(
-                                                RichText::new("🗑").color(tema::TEHLIKE),
-                                            )
-                                            .fill(Color32::TRANSPARENT)
-                                            .stroke(egui::Stroke::new(1.0, tema::KENAR)),
-                                        )
+                                    if tema::tehlike_ikon_butonu(ui, tema::ikon::SIL)
                                         .on_hover_text("Kurumu ve tüm dönemlerini sil")
                                         .clicked()
                                     {
                                         silinecek = Some(kitap.clone());
                                     }
-                                    if ui
-                                        .button("📦")
+                                    if tema::ikincil_ikon_butonu(ui, tema::ikon::PDF_AKTAR)
                                         .on_hover_text("Veri paketi (.mvp) olarak dışa aktar")
                                         .clicked()
                                     {
                                         disa_aktar = Some(kitap.id);
                                     }
-                                    if ui.button("✏ Ad").clicked() {
+                                    if tema::ikincil_ikonlu_buton(ui, tema::ikon::DUZENLE, "Ad")
+                                        .clicked()
+                                    {
                                         duzenlenecek = Some(kitap.clone());
                                     }
                                 },
@@ -256,18 +255,18 @@ impl MetrajApp {
         };
         let mut sil = false;
         let mut iptal = false;
-        egui::Window::new("⚠ Kurumu Sil")
+        egui::Window::new(tema::ikonlu_metin(tema::ikon::UYARI, "Kurumu Sil"))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
                 ui.label(RichText::new(format!("'{}' kurumu silinecek.", kitap.ad)).strong().size(14.0).color(tema::METIN));
                 ui.add_space(4.0);
-                ui.label(RichText::new(format!("⚠ Bu işlem kurumun TÜM dönemlerini, {} pozunu ve bağlı analizleri kalıcı olarak siler.", kitap.poz_sayisi)).color(tema::UYARI));
+                ui.label(RichText::new(format!("Bu işlem kurumun TÜM dönemlerini, {} pozunu ve bağlı analizleri kalıcı olarak siler.", kitap.poz_sayisi)).color(tema::UYARI));
                 ui.label(RichText::new("Geri alınamaz. (Kaydedilmiş metrajlarınız etkilenmez — fiyatlar kalemlere kopyalanmıştır.)").color(tema::METIN_SOLUK).size(12.0));
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
-                    if tema::tehlike_buton(ui, "🗑 Evet, Sil").clicked() { sil = true; }
+                    if tema::tehlike_ikonlu_buton(ui, tema::ikon::SIL, "Evet, Sil").clicked() { sil = true; }
                     if ui.button("Vazgeç").clicked() { iptal = true; }
                 });
             });
@@ -533,10 +532,14 @@ impl MetrajApp {
         let mut teklif_bos = false;
         tema::kart(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("📝 İhale Çıktısı").strong().size(13.0).color(tema::METIN));
+                ui.label(tema::ikonlu_metin_boyut(
+                    tema::ikon::ICMAL,
+                    "İhale Çıktısı",
+                    13.0,
+                ));
                 ui.add_space(8.0);
                 if tema::basari_buton(ui, "Teklif Cetveli (Excel)").on_hover_text("Aynı metrajdan birim fiyat teklif cetveli + teklif mektubu (fiyatlarla dolu)").clicked() { teklif_dolu = true; }
-                if ui.button("📄 Boş Cetvel").on_hover_text("İsteklilere dağıtılacak boş birim fiyat teklif cetveli").clicked() { teklif_bos = true; }
+                if tema::ikincil_ikonlu_buton(ui, tema::ikon::ICMAL, "Boş Cetvel").on_hover_text("İsteklilere dağıtılacak boş birim fiyat teklif cetveli").clicked() { teklif_bos = true; }
             });
             ui.label(RichText::new("Birim fiyat teklif cetveli (KDV hariç). Teklif mektubu 2. sayfada, tutar yazı ile.").color(tema::METIN_SOLUK).size(11.0));
         });
@@ -677,11 +680,11 @@ impl MetrajApp {
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
                 if let Some(ref kitap) = self.secili_kitap {
-                    ui.label(
-                        RichText::new(format!("📚 {}", kitap.ad))
-                            .color(tema::METIN_IKINCIL)
-                            .size(12.0),
-                    );
+                    ui.label(tema::ikonlu_metin_boyut(
+                        tema::ikon::KITAPLAR,
+                        &kitap.ad,
+                        12.0,
+                    ));
                 }
                 ui.separator();
                 ui.horizontal(|ui| {
@@ -781,7 +784,7 @@ impl MetrajApp {
                 });
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
-                    if tema::basari_buton(ui, "💾 Kaydet").clicked() {
+                    if tema::basari_ikonlu_buton(ui, tema::ikon::KAYDET, "Kaydet").clicked() {
                         kaydet = true;
                     }
                     if ui.button("İptal").clicked() {
@@ -810,7 +813,7 @@ impl MetrajApp {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
-                ui.label(RichText::new("⚠  Bu poz kalıcı olarak silinecek.").color(tema::UYARI));
+                ui.label(RichText::new("Bu poz kalıcı olarak silinecek.").color(tema::UYARI));
                 ui.add_space(4.0);
                 ui.label(
                     RichText::new(&poz.poz_no)
@@ -821,7 +824,7 @@ impl MetrajApp {
                 ui.label(RichText::new(metni_kisalt(&poz.tanim, 90)).color(tema::METIN_IKINCIL));
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
-                    if tema::tehlike_buton(ui, "🗑 Sil").clicked() {
+                    if tema::tehlike_ikonlu_buton(ui, tema::ikon::SIL, "Sil").clicked() {
                         sil = true;
                     }
                     if ui.button("Vazgeç").clicked() {
@@ -935,7 +938,11 @@ impl MetrajApp {
             if self.secili_kitap.is_some() {
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("🔍").size(13.0));
+                    ui.label(
+                        RichText::new(tema::ikon::POZLAR)
+                            .font(egui::FontId::new(13.0, tema::ikon_fontu()))
+                            .color(tema::METIN_IKINCIL),
+                    );
                     if ui
                         .add_sized(
                             Vec2::new(340.0, 26.0),
@@ -957,7 +964,7 @@ impl MetrajApp {
                         tema::METIN_IKINCIL,
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if tema::birincil_buton(ui, "＋ Poz Ekle").clicked() {
+                        if tema::birincil_ikonlu_buton(ui, tema::ikon::EKLE, "Poz Ekle").clicked() {
                             self.poz_formunu_yeni_icin_ac();
                         }
                     });
@@ -1044,11 +1051,7 @@ impl MetrajApp {
                             };
                             let aciklama = metni_kisalt(&poz.tanim, 85);
                             let analizli = self.analizli_pozlar.contains(&poz.poz_no);
-                            let poz_no_goster = if analizli {
-                                format!("🧮 {}", poz.poz_no)
-                            } else {
-                                poz.poz_no.clone()
-                            };
+                            let poz_no_goster = poz.poz_no.clone();
                             let poz_lbl = ui.label(
                                 RichText::new(poz_no_goster)
                                     .monospace()
@@ -1081,23 +1084,18 @@ impl MetrajApp {
                                     .color(tema::METIN_SOLUK),
                             );
                             ui.horizontal(|ui| {
-                                if ui
-                                    .button("🧮 Analiz")
+                                if tema::ikincil_ikonlu_buton(ui, tema::ikon::METRAJ, "Analiz")
                                     .on_hover_text("Birim fiyat analizi yap / düzenle")
                                     .clicked()
                                 {
                                     self.analiz_popup_ac(poz.clone());
                                 }
-                                if ui.button("✏ Düzenle").clicked() {
-                                    self.poz_formunu_duzenleme_icin_ac(poz.clone());
-                                }
-                                if ui
-                                    .add(
-                                        egui::Button::new(RichText::new("🗑").color(tema::TEHLIKE))
-                                            .stroke(egui::Stroke::new(1.0, tema::KENAR)),
-                                    )
+                                if tema::ikincil_ikonlu_buton(ui, tema::ikon::DUZENLE, "Düzenle")
                                     .clicked()
                                 {
+                                    self.poz_formunu_duzenleme_icin_ac(poz.clone());
+                                }
+                                if tema::tehlike_ikon_butonu(ui, tema::ikon::SIL).clicked() {
                                     self.silinecek_poz = Some(poz.clone());
                                 }
                             });
@@ -1118,7 +1116,7 @@ impl MetrajApp {
         if self.kitaplar.is_empty() {
             tema::bildirim_seridi(
                 ui,
-                "⚠  Önce Kurum Yöneticisi'nden bir kurum ekleyin.",
+                "Önce Kurum Yöneticisi'nden bir kurum ekleyin.",
                 tema::TEHLIKE_KOYU,
                 tema::TEHLIKE,
                 tema::TEHLIKE,
@@ -1228,7 +1226,13 @@ impl MetrajApp {
                     ui.spinner();
                     ui.label(RichText::new("PDF işleniyor…").color(tema::METIN_IKINCIL));
                 });
-            } else if tema::birincil_buton(ui, "📂 PDF Dosyası Seç ve Yükle").clicked() {
+            } else if tema::birincil_ikonlu_buton(
+                ui,
+                tema::ikon::PDF_AKTAR,
+                "PDF Dosyası Seç ve Yükle",
+            )
+            .clicked()
+            {
                 self.pdf_sec_ve_yukle();
             }
             if !self.pdf_durumu.is_empty() {
@@ -1245,7 +1249,10 @@ impl MetrajApp {
                         .color(tema::METIN_SOLUK)
                         .size(12.0),
                 );
-                if ui.button("📄 20206-05-BF.pdf").clicked() {
+                if ui
+                    .button(tema::ikonlu_metin(tema::ikon::ICMAL, "20206-05-BF.pdf"))
+                    .clicked()
+                {
                     self.pdf_yukle(alt);
                 }
             });

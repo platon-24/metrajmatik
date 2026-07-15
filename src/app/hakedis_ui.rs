@@ -342,11 +342,7 @@ impl MetrajApp {
     fn render_sozlesme_ozeti(&mut self, ui: &mut Ui) {
         tema::kart(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.label(
-                    RichText::new("🔒 Metraj donduruldu")
-                        .color(tema::UYARI)
-                        .strong(),
-                );
+                ui.label(tema::ikonlu_metin(tema::ikon::KILIT, "Metraj donduruldu"));
                 ui.separator();
                 ui.label(format!("Yüklenici: {}", self.proje_bilgi.yuklenici));
                 ui.label(format!(
@@ -432,10 +428,10 @@ impl MetrajApp {
                     yeni = true;
                 }
                 if self.secili_hakedis.is_some() {
-                    if ui.button("📊 Excel").clicked() {
+                    if tema::ikincil_ikonlu_buton(ui, tema::ikon::ICMAL, "Excel").clicked() {
                         excel = true;
                     }
-                    if tema::tehlike_buton(ui, "🗑 Sil").clicked() {
+                    if tema::tehlike_ikonlu_buton(ui, tema::ikon::SIL, "Sil").clicked() {
                         sil = self.secili_hakedis;
                     }
                 }
@@ -830,8 +826,7 @@ impl MetrajApp {
                                 {
                                     degisti = true;
                                 }
-                                if ui
-                                    .small_button("📐")
+                                if tema::ikincil_ikon_butonu(ui, tema::ikon::METRAJ)
                                     .on_hover_text(if kilitli {
                                         "Ölçü kırılımı var — düzenle"
                                     } else {
@@ -1066,128 +1061,131 @@ impl MetrajApp {
             .unwrap_or_default();
         let mut tamam = false;
         let mut iptal = false;
-        egui::Window::new("📐 Yeşil Defter — Ölçü Kırılımı")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .default_width(520.0)
-            .show(ctx, |ui| {
+        egui::Window::new(tema::ikonlu_metin(
+            tema::ikon::METRAJ,
+            "Yeşil Defter — Ölçü Kırılımı",
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .default_width(520.0)
+        .show(ctx, |ui| {
+            ui.label(
+                RichText::new(format!("Poz: {}", poz_no))
+                    .monospace()
+                    .strong()
+                    .size(14.0),
+            );
+            ui.label(
+                RichText::new("Boş boyut 1 sayılır · “çıkan” işaretli satır düşülür")
+                    .size(11.0)
+                    .color(tema::METIN_SOLUK),
+            );
+            ui.add_space(3.0);
+            let bsl = |ui: &mut egui::Ui, t: &str| {
                 ui.label(
-                    RichText::new(format!("Poz: {}", poz_no))
-                        .monospace()
+                    RichText::new(t)
                         .strong()
-                        .size(14.0),
-                );
-                ui.label(
-                    RichText::new("Boş boyut 1 sayılır · “çıkan” işaretli satır düşülür")
                         .size(11.0)
-                        .color(tema::METIN_SOLUK),
+                        .color(tema::METIN_IKINCIL),
                 );
-                ui.add_space(3.0);
-                let bsl = |ui: &mut egui::Ui, t: &str| {
-                    ui.label(
-                        RichText::new(t)
-                            .strong()
-                            .size(11.0)
-                            .color(tema::METIN_IKINCIL),
-                    );
-                };
-                egui::Grid::new("hakedis_detay_grid")
-                    .num_columns(8)
-                    .spacing(egui::vec2(7.0, 6.0))
-                    .striped(true)
-                    .show(ui, |ui| {
-                        bsl(ui, "Açıklama");
-                        bsl(ui, "Adet");
-                        bsl(ui, "En");
-                        bsl(ui, "Boy");
-                        bsl(ui, "Yük.");
-                        bsl(ui, "Çıkan");
-                        bsl(ui, "= Miktar");
-                        bsl(ui, "");
+            };
+            egui::Grid::new("hakedis_detay_grid")
+                .num_columns(8)
+                .spacing(egui::vec2(7.0, 6.0))
+                .striped(true)
+                .show(ui, |ui| {
+                    bsl(ui, "Açıklama");
+                    bsl(ui, "Adet");
+                    bsl(ui, "En");
+                    bsl(ui, "Boy");
+                    bsl(ui, "Yük.");
+                    bsl(ui, "Çıkan");
+                    bsl(ui, "= Miktar");
+                    bsl(ui, "");
+                    ui.end_row();
+                    let mut sil: Option<usize> = None;
+                    for (i, satir) in self.popup_detaylar.iter_mut().enumerate() {
+                        ui.add(
+                            TextEdit::singleline(&mut satir.aciklama)
+                                .desired_width(150.0)
+                                .hint_text(tema::alan_ipucu("açıklama")),
+                        );
+                        ui.add(TextEdit::singleline(&mut satir.adet).desired_width(46.0));
+                        ui.add(TextEdit::singleline(&mut satir.en).desired_width(46.0));
+                        ui.add(TextEdit::singleline(&mut satir.boy).desired_width(46.0));
+                        ui.add(TextEdit::singleline(&mut satir.yukseklik).desired_width(46.0));
+                        ui.checkbox(&mut satir.cikan, "");
+                        let m = satir_miktar(satir).unwrap_or(0.0);
+                        ui.label(
+                            RichText::new(format!("{:.3}", m))
+                                .size(11.0)
+                                .strong()
+                                .color(if m < 0.0 { tema::UYARI } else { tema::BASARI }),
+                        );
+                        if tema::tehlike_ikon_butonu(ui, tema::ikon::SIL).clicked() {
+                            sil = Some(i);
+                        }
                         ui.end_row();
-                        let mut sil: Option<usize> = None;
-                        for (i, satir) in self.popup_detaylar.iter_mut().enumerate() {
-                            ui.add(
-                                TextEdit::singleline(&mut satir.aciklama)
-                                    .desired_width(150.0)
-                                    .hint_text(tema::alan_ipucu("açıklama")),
-                            );
-                            ui.add(TextEdit::singleline(&mut satir.adet).desired_width(46.0));
-                            ui.add(TextEdit::singleline(&mut satir.en).desired_width(46.0));
-                            ui.add(TextEdit::singleline(&mut satir.boy).desired_width(46.0));
-                            ui.add(TextEdit::singleline(&mut satir.yukseklik).desired_width(46.0));
-                            ui.checkbox(&mut satir.cikan, "");
-                            let m = satir_miktar(satir).unwrap_or(0.0);
-                            ui.label(
-                                RichText::new(format!("{:.3}", m))
-                                    .size(11.0)
-                                    .strong()
-                                    .color(if m < 0.0 { tema::UYARI } else { tema::BASARI }),
-                            );
-                            if ui.small_button("🗑").clicked() {
-                                sil = Some(i);
-                            }
-                            ui.end_row();
-                        }
-                        if let Some(s) = sil {
-                            self.popup_detaylar.remove(s);
-                        }
-                    });
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Yeni").size(11.0).color(tema::METIN_IKINCIL));
-                    ui.add(
-                        TextEdit::singleline(&mut self.popup_yeni.aciklama)
-                            .hint_text(tema::alan_ipucu("açıklama"))
-                            .desired_width(140.0),
-                    );
-                    ui.add(
-                        TextEdit::singleline(&mut self.popup_yeni.adet)
-                            .hint_text(tema::alan_ipucu("adet"))
-                            .desired_width(46.0),
-                    );
-                    ui.add(
-                        TextEdit::singleline(&mut self.popup_yeni.en)
-                            .hint_text(tema::alan_ipucu("en"))
-                            .desired_width(46.0),
-                    );
-                    ui.add(
-                        TextEdit::singleline(&mut self.popup_yeni.boy)
-                            .hint_text(tema::alan_ipucu("boy"))
-                            .desired_width(46.0),
-                    );
-                    ui.add(
-                        TextEdit::singleline(&mut self.popup_yeni.yukseklik)
-                            .hint_text(tema::alan_ipucu("yük."))
-                            .desired_width(46.0),
-                    );
-                    ui.checkbox(&mut self.popup_yeni.cikan, "çıkan");
-                    let ekle = tema::birincil_buton(ui, "＋ Ekle").clicked();
-                    let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    if (ekle || enter) && satir_miktar(&self.popup_yeni).is_some() {
-                        self.popup_detaylar
-                            .push(std::mem::take(&mut self.popup_yeni));
+                    }
+                    if let Some(s) = sil {
+                        self.popup_detaylar.remove(s);
                     }
                 });
-                ui.separator();
-                let toplam: f64 = self.popup_detaylar.iter().filter_map(satir_miktar).sum();
-                ui.label(
-                    RichText::new(format!("Kümülatif miktar = {:.3}", toplam))
-                        .size(14.0)
-                        .strong()
-                        .color(tema::BASARI),
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Yeni").size(11.0).color(tema::METIN_IKINCIL));
+                ui.add(
+                    TextEdit::singleline(&mut self.popup_yeni.aciklama)
+                        .hint_text(tema::alan_ipucu("açıklama"))
+                        .desired_width(140.0),
                 );
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    if tema::basari_buton(ui, "✓ Tamam").clicked() {
-                        tamam = true;
-                    }
-                    if ui.button("❌ İptal").clicked() {
-                        iptal = true;
-                    }
-                });
+                ui.add(
+                    TextEdit::singleline(&mut self.popup_yeni.adet)
+                        .hint_text(tema::alan_ipucu("adet"))
+                        .desired_width(46.0),
+                );
+                ui.add(
+                    TextEdit::singleline(&mut self.popup_yeni.en)
+                        .hint_text(tema::alan_ipucu("en"))
+                        .desired_width(46.0),
+                );
+                ui.add(
+                    TextEdit::singleline(&mut self.popup_yeni.boy)
+                        .hint_text(tema::alan_ipucu("boy"))
+                        .desired_width(46.0),
+                );
+                ui.add(
+                    TextEdit::singleline(&mut self.popup_yeni.yukseklik)
+                        .hint_text(tema::alan_ipucu("yük."))
+                        .desired_width(46.0),
+                );
+                ui.checkbox(&mut self.popup_yeni.cikan, "çıkan");
+                let ekle = tema::birincil_ikonlu_buton(ui, tema::ikon::EKLE, "Ekle").clicked();
+                let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if (ekle || enter) && satir_miktar(&self.popup_yeni).is_some() {
+                    self.popup_detaylar
+                        .push(std::mem::take(&mut self.popup_yeni));
+                }
             });
+            ui.separator();
+            let toplam: f64 = self.popup_detaylar.iter().filter_map(satir_miktar).sum();
+            ui.label(
+                RichText::new(format!("Kümülatif miktar = {:.3}", toplam))
+                    .size(14.0)
+                    .strong()
+                    .color(tema::BASARI),
+            );
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if tema::basari_ikonlu_buton(ui, tema::ikon::ONAY, "Tamam").clicked() {
+                    tamam = true;
+                }
+                if tema::ikincil_ikonlu_buton(ui, tema::ikon::KAPAT, "İptal").clicked() {
+                    iptal = true;
+                }
+            });
+        });
         if tamam {
             let detaylar: Vec<MiktarDetay> = self
                 .popup_detaylar

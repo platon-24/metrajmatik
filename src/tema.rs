@@ -65,6 +65,12 @@ pub mod ikon {
     pub const PROJE_AC: &str = "\u{E8E5}";
     pub const KAYDET: &str = "\u{E74E}";
     pub const FARKLI_KAYDET: &str = "\u{E792}";
+    pub const DUZENLE: &str = "\u{E70F}";
+    pub const YENILE: &str = "\u{E72C}";
+    pub const NAKLIYE: &str = "\u{E7C0}";
+    pub const PANO: &str = "\u{E8C8}";
+    pub const ICE_AKTAR: &str = "\u{E896}";
+    pub const SABITLE: &str = "\u{E718}";
 }
 
 pub fn ikon_fontu() -> FontFamily {
@@ -80,13 +86,17 @@ pub fn alan_ipucu(metin: impl Into<String>) -> RichText {
 }
 
 pub fn ikonlu_metin_boyut(ikon: &str, metin: &str, boyut: f32) -> WidgetText {
+    ikonlu_metin_renk_boyut(ikon, metin, boyut, Color32::PLACEHOLDER)
+}
+
+fn ikonlu_metin_renk_boyut(ikon: &str, metin: &str, boyut: f32, renk: Color32) -> WidgetText {
     let mut duzen = LayoutJob::default();
     duzen.append(
         ikon,
         0.0,
         TextFormat {
             font_id: FontId::new(boyut + 1.5, ikon_fontu()),
-            color: Color32::PLACEHOLDER,
+            color: renk,
             ..Default::default()
         },
     );
@@ -95,7 +105,7 @@ pub fn ikonlu_metin_boyut(ikon: &str, metin: &str, boyut: f32) -> WidgetText {
         5.0,
         TextFormat {
             font_id: FontId::proportional(boyut),
-            color: Color32::PLACEHOLDER,
+            color: renk,
             ..Default::default()
         },
     );
@@ -219,14 +229,6 @@ pub fn sayfa_basligi(ui: &mut Ui, ust: &str, baslik: &str, aciklama: &str) {
     ui.add_space(6.0);
 }
 
-pub fn bolum_basligi(ui: &mut Ui, ikon: &str, baslik: &str) {
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(ikon).size(16.0).color(AKSAN));
-        ui.label(RichText::new(baslik).size(15.5).strong().color(METIN));
-    });
-    ui.add_space(2.0);
-}
-
 pub fn ikonlu_bolum_basligi(ui: &mut Ui, ikon: &str, baslik: &str) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -242,6 +244,20 @@ pub fn ikonlu_bolum_basligi(ui: &mut Ui, ikon: &str, baslik: &str) {
 
 fn renkli_buton(ui: &mut Ui, metin: &str, zemin: Color32, yazi: Color32) -> Response {
     egui::Button::new(RichText::new(metin).color(yazi).strong())
+        .fill(zemin)
+        .min_size(egui::vec2(0.0, 32.0))
+        .corner_radius(CornerRadius::same(KOSE_KUCUK))
+        .ui(ui)
+}
+
+fn renkli_ikonlu_buton(
+    ui: &mut Ui,
+    ikon: &str,
+    metin: &str,
+    zemin: Color32,
+    yazi: Color32,
+) -> Response {
+    egui::Button::new(ikonlu_metin_renk_boyut(ikon, metin, 13.0, yazi))
         .fill(zemin)
         .min_size(egui::vec2(0.0, 32.0))
         .corner_radius(CornerRadius::same(KOSE_KUCUK))
@@ -282,8 +298,29 @@ pub fn basari_buton(ui: &mut Ui, metin: &str) -> Response {
     renkli_buton(ui, metin, BASARI, Color32::from_rgb(0x07, 0x2A, 0x1D))
 }
 
+pub fn basari_ikonlu_buton(ui: &mut Ui, ikon: &str, metin: &str) -> Response {
+    renkli_ikonlu_buton(ui, ikon, metin, BASARI, Color32::from_rgb(0x07, 0x2A, 0x1D))
+}
+
 pub fn tehlike_buton(ui: &mut Ui, metin: &str) -> Response {
     renkli_buton(ui, metin, TEHLIKE, Color32::WHITE)
+}
+
+pub fn tehlike_ikonlu_buton(ui: &mut Ui, ikon: &str, metin: &str) -> Response {
+    renkli_ikonlu_buton(ui, ikon, metin, TEHLIKE, Color32::WHITE)
+}
+
+pub fn ikincil_ikon_butonu(ui: &mut Ui, ikon: &str) -> Response {
+    egui::Button::new(
+        RichText::new(ikon)
+            .font(FontId::new(13.0, ikon_fontu()))
+            .color(METIN_IKINCIL),
+    )
+    .fill(YUZEY_3)
+    .stroke(Stroke::new(1.0, KENAR))
+    .min_size(egui::vec2(28.0, 28.0))
+    .corner_radius(CornerRadius::same(KOSE_KUCUK))
+    .ui(ui)
 }
 
 pub fn tehlike_ikon_butonu(ui: &mut Ui, ikon: &str) -> Response {

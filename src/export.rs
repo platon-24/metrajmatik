@@ -272,7 +272,7 @@ pub fn metraj_excel_aktar(
             0,
             ust,
             6,
-            "⚠ GİZLİDİR — İhale onay belgesine esas yaklaşık maliyettir; isteklilere açıklanmaz.",
+            "GİZLİDİR — İhale onay belgesine esas yaklaşık maliyettir; isteklilere açıklanmaz.",
             &gizli_format,
         )
         .map_err(|e| e.to_string())?;

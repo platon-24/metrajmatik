@@ -684,7 +684,7 @@ impl eframe::App for MetrajApp {
 
         // Kitap düzenleme modal'ı
         if self.duzenlenen_kitap.is_some() {
-            egui::Window::new("✏️ Kitap Düzenle")
+            egui::Window::new(tema::ikonlu_metin(tema::ikon::DUZENLE, "Kitap Düzenle"))
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -693,7 +693,7 @@ impl eframe::App for MetrajApp {
                     ui.add(TextEdit::singleline(&mut self.duzenleme_adi).desired_width(320.0));
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        if tema::basari_buton(ui, "✓ Kaydet").clicked() {
+                        if tema::basari_ikonlu_buton(ui, tema::ikon::KAYDET, "Kaydet").clicked() {
                             if let Some(ref db) = self.db {
                                 let kitap_id = self.duzenlenen_kitap.as_ref().unwrap().id;
                                 let _ = db.kitap_guncelle(kitap_id, &self.duzenleme_adi);
@@ -708,7 +708,7 @@ impl eframe::App for MetrajApp {
                                 }
                             }
                         }
-                        if ui.button("❌ İptal").clicked() {
+                        if tema::ikincil_ikonlu_buton(ui, tema::ikon::KAPAT, "İptal").clicked() {
                             self.duzenlenen_kitap = None;
                         }
                     });
@@ -1058,52 +1058,61 @@ impl eframe::App for MetrajApp {
                     .inner_margin(egui::Margin::same(if genis_pencere { 18 } else { 10 })),
             )
             .show(ctx, |ui| {
-            // Kurtarma şeridi: otomatik kayıt dosyası varsa
-            if self.kurtarma_mevcut {
-                let mut kurtar = false;
-                let mut autosave_sil = false;
-                egui::Frame::default()
-                    .fill(tema::UYARI_KOYU)
-                    .stroke(egui::Stroke::new(1.0, tema::UYARI))
-                    .corner_radius(egui::CornerRadius::same(tema::KOSE_KUCUK))
-                    .inner_margin(egui::Margin::symmetric(10, 7))
-                    .show(ui, |ui| {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(RichText::new("⟲  Önceki oturumdan kurtarılabilir otomatik kayıt bulundu.").color(tema::UYARI));
-                            if tema::birincil_buton(ui, "Kurtar").clicked() { kurtar = true; }
-                            if tema::tehlike_buton(ui, "🗑 Otomatik Kaydı Sil")
+                // Kurtarma şeridi: otomatik kayıt dosyası varsa
+                if self.kurtarma_mevcut {
+                    let mut kurtar = false;
+                    let mut autosave_sil = false;
+                    egui::Frame::default()
+                        .fill(tema::UYARI_KOYU)
+                        .stroke(egui::Stroke::new(1.0, tema::UYARI))
+                        .corner_radius(egui::CornerRadius::same(tema::KOSE_KUCUK))
+                        .inner_margin(egui::Margin::symmetric(10, 7))
+                        .show(ui, |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(tema::ikonlu_metin(
+                                    tema::ikon::YENILE,
+                                    "Önceki oturumdan kurtarılabilir otomatik kayıt bulundu.",
+                                ));
+                                if tema::birincil_buton(ui, "Kurtar").clicked() {
+                                    kurtar = true;
+                                }
+                                if tema::tehlike_ikonlu_buton(
+                                    ui,
+                                    tema::ikon::SIL,
+                                    "Otomatik Kaydı Sil",
+                                )
                                 .on_hover_text("Bu kurtarma dosyasını kalıcı olarak siler")
                                 .clicked()
-                            {
-                                autosave_sil = true;
-                            }
+                                {
+                                    autosave_sil = true;
+                                }
+                            });
                         });
-                    });
-                ui.add_space(6.0);
-                if kurtar {
-                    let yol = self.autosave_yolu.clone();
-                    self.metraj_dosyadan_yukle(&yol, false);
-                    self.kurtarma_mevcut = false;
+                    ui.add_space(6.0);
+                    if kurtar {
+                        let yol = self.autosave_yolu.clone();
+                        self.metraj_dosyadan_yukle(&yol, false);
+                        self.kurtarma_mevcut = false;
+                    }
+                    if autosave_sil {
+                        self.autosave_dosyasini_sil(true);
+                    }
                 }
-                if autosave_sil {
-                    self.autosave_dosyasini_sil(true);
+                match self.aktif_sekme {
+                    Sekme::MetrajTablosu => self.render_metraj_tablosu(ui),
+                    Sekme::Icmal => self.render_icmal(ui),
+                    Sekme::Proje => {
+                        egui::ScrollArea::vertical()
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| self.render_proje(ui));
+                    }
+                    Sekme::Hakedis => self.render_hakedis(ui),
+                    Sekme::IsProgrami => self.render_is_programi(ui),
+                    Sekme::Pozlar => self.render_pozlar_tablosu(ui),
+                    Sekme::KitapYoneticisi => self.render_kitap_yoneticisi(ui),
+                    Sekme::PdfYukle => self.render_pdf_yukle(ui),
                 }
-            }
-            match self.aktif_sekme {
-                Sekme::MetrajTablosu => self.render_metraj_tablosu(ui),
-                Sekme::Icmal => self.render_icmal(ui),
-                Sekme::Proje => {
-                    egui::ScrollArea::vertical()
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| self.render_proje(ui));
-                }
-                Sekme::Hakedis => self.render_hakedis(ui),
-                Sekme::IsProgrami => self.render_is_programi(ui),
-                Sekme::Pozlar => self.render_pozlar_tablosu(ui),
-                Sekme::KitapYoneticisi => self.render_kitap_yoneticisi(ui),
-                Sekme::PdfYukle => self.render_pdf_yukle(ui),
-            }
-        });
+            });
         self.render_bildirimler(ctx);
     }
 }

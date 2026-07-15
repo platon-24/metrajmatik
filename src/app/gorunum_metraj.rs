@@ -362,7 +362,7 @@ impl MetrajApp {
             });
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                if ui.button("✏ Adlandır").clicked() {
+                if tema::ikincil_ikonlu_buton(ui, tema::ikon::DUZENLE, "Adlandır").clicked() {
                     let ad = self.yeni_grup_adi.trim().to_string();
                     match (self.secili_grup_id.clone(), ad.is_empty()) {
                         (None, _) => self.hata_mesaji = "Önce bir grup seçin.".into(),
@@ -378,7 +378,7 @@ impl MetrajApp {
                         }
                     }
                 }
-                if tema::tehlike_buton(ui, "🗑 Sil").clicked() {
+                if tema::tehlike_ikonlu_buton(ui, tema::ikon::SIL, "Sil").clicked() {
                     if let Some(id) = self.secili_grup_id.clone() {
                         self.silinecek_grup_id = Some(id);
                     } else {
@@ -421,7 +421,7 @@ impl MetrajApp {
         tema::kart(ui, |ui| {
             ui.add(
                 TextEdit::singleline(&mut self.akilli_arama_metni)
-                    .hint_text(tema::alan_ipucu("⚡ Hızlı ara: 15.180 veya plywood kalıp"))
+                    .hint_text(tema::alan_ipucu("Hızlı ara: 15.180 veya plywood kalıp"))
                     .desired_width(f32::INFINITY),
             )
             .changed()
@@ -515,7 +515,7 @@ impl MetrajApp {
             );
         } else {
             ui.label(
-                RichText::new("👆 Yukarıdan arama yapın")
+                RichText::new("Yukarıdan arama yapın")
                     .color(tema::METIN_SOLUK)
                     .size(12.0),
             );
@@ -622,12 +622,11 @@ impl MetrajApp {
             ui.add_space(6.0);
             tema::kart(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new("📌 Seçili Poz")
-                            .color(tema::METIN_IKINCIL)
-                            .size(12.0)
-                            .strong(),
-                    );
+                    ui.label(tema::ikonlu_metin_boyut(
+                        tema::ikon::SABITLE,
+                        "Seçili Poz",
+                        12.0,
+                    ));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         match poz.fiyat {
                             Some(f) => ui.label(
@@ -664,11 +663,10 @@ impl MetrajApp {
                 );
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    if tema::birincil_buton(ui, "＋ Metraja Ekle").clicked() {
+                    if tema::birincil_ikonlu_buton(ui, tema::ikon::EKLE, "Metraja Ekle").clicked() {
                         secili_poz_ekle = true;
                     }
-                    if ui
-                        .button("🚚 Nakliye")
+                    if tema::ikincil_ikonlu_buton(ui, tema::ikon::NAKLIYE, "Nakliye")
                         .on_hover_text("Taşıma bedeli hesapla: birim fiyat × miktar × mesafe")
                         .clicked()
                     {
@@ -729,26 +727,35 @@ impl MetrajApp {
         });
         ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
-            if tema::basari_buton(ui, "💾 Kaydet").clicked() {
+            if tema::basari_ikonlu_buton(ui, tema::ikon::KAYDET, "Kaydet").clicked() {
                 self.metraj_kaydet();
             }
-            if ui.button("📂 Aç").clicked() {
+            if tema::ikincil_ikonlu_buton(ui, tema::ikon::PROJE_AC, "Aç").clicked() {
                 self.metraj_yukle_diyalog();
             }
             ui.separator();
-            if ui.button("📊 Excel").clicked() {
+            if tema::ikincil_ikonlu_buton(ui, tema::ikon::ICMAL, "Excel").clicked() {
                 self.metraj_excel_diyalog();
             }
             ui.menu_button(tema::ikonlu_metin(tema::ikon::AKTAR, "Aktar"), |ui| {
-                if ui.button("📤 CSV dışa aktar").clicked() {
+                if ui
+                    .button(tema::ikonlu_metin(tema::ikon::PDF_AKTAR, "CSV dışa aktar"))
+                    .clicked()
+                {
                     self.metraj_csv_diyalog();
                     ui.close_menu();
                 }
-                if ui.button("📥 CSV içe aktar").clicked() {
+                if ui
+                    .button(tema::ikonlu_metin(tema::ikon::ICE_AKTAR, "CSV içe aktar"))
+                    .clicked()
+                {
                     self.metraj_csv_ice_aktar_diyalog();
                     ui.close_menu();
                 }
-                if ui.button("📋 Özeti panoya kopyala").clicked() {
+                if ui
+                    .button(tema::ikonlu_metin(tema::ikon::PANO, "Özeti panoya kopyala"))
+                    .clicked()
+                {
                     let m = self.proje_olustur();
                     let ozet = crate::export::metraj_metin_ozet(&m);
                     ui.ctx().copy_text(ozet);
@@ -759,7 +766,7 @@ impl MetrajApp {
             if ui
                 .add_enabled(
                     !self.metraj_kalemleri.is_empty(),
-                    egui::Button::new("🗑 Grubu Temizle"),
+                    egui::Button::new(tema::ikonlu_metin(tema::ikon::SIL, "Grubu Temizle")),
                 )
                 .on_hover_text("Seçili gruptaki tüm metraj kalemlerini kaldırır")
                 .clicked()
@@ -805,7 +812,7 @@ impl MetrajApp {
                     self.poz_sorgula();
                     self.kalem_ekle();
                 }
-                if tema::birincil_buton(ui, "＋ Kalem Ekle").clicked() {
+                if tema::birincil_ikonlu_buton(ui, tema::ikon::EKLE, "Kalem Ekle").clicked() {
                     self.poz_sorgula();
                     self.kalem_ekle();
                 }
@@ -814,7 +821,7 @@ impl MetrajApp {
             if !self.metraj_kalemleri.is_empty() || !self.is_gruplari.is_empty() {
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    if ui.button("🔄 Rayiç Güncelle").on_hover_text("Tüm kalemleri kuruma/döneme göre veya Yİ-ÜFE endeksiyle topluca güncelle").clicked() {
+                    if tema::ikincil_ikonlu_buton(ui, tema::ikon::YENILE, "Rayiç Güncelle").on_hover_text("Tüm kalemleri kuruma/döneme göre veya Yİ-ÜFE endeksiyle topluca güncelle").clicked() {
                         self.fiyat_guncelle_acik = true;
                     }
                     ui.label(RichText::new("İhale tarihine göre rayiç veya endeks güncellemesi").color(tema::METIN_SOLUK).size(11.0));
@@ -881,167 +888,172 @@ impl MetrajApp {
         }
         let mut uygula = false;
         let mut kapat = false;
-        egui::Window::new("🔄 Rayiç / Fiyat Güncelleme")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(ctx, |ui| {
-                ui.set_width(460.0);
+        egui::Window::new(tema::ikonlu_metin(
+            tema::ikon::YENILE,
+            "Rayiç / Fiyat Güncelleme",
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.set_width(460.0);
+            ui.label(
+                RichText::new("Metrajdaki tüm kalemlerin birim fiyatlarını topluca günceller.")
+                    .color(tema::METIN_SOLUK)
+                    .size(11.5),
+            );
+            ui.add_space(8.0);
+
+            // Kip seçimi
+            ui.horizontal(|ui| {
+                if ui
+                    .selectable_label(
+                        !self.fiyat_guncelle_endeks_mod,
+                        tema::ikonlu_metin(tema::ikon::KAMU, "Kuruma göre"),
+                    )
+                    .clicked()
+                {
+                    self.fiyat_guncelle_endeks_mod = false;
+                }
+                if ui
+                    .selectable_label(
+                        self.fiyat_guncelle_endeks_mod,
+                        tema::ikonlu_metin(tema::ikon::ICMAL, "Endekse göre (Yİ-ÜFE)"),
+                    )
+                    .clicked()
+                {
+                    self.fiyat_guncelle_endeks_mod = true;
+                }
+            });
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(8.0);
+
+            if self.fiyat_guncelle_endeks_mod {
                 ui.label(
-                    RichText::new("Metrajdaki tüm kalemlerin birim fiyatlarını topluca günceller.")
-                        .color(tema::METIN_SOLUK)
-                        .size(11.5),
+                    RichText::new("Fiyatları Yİ-ÜFE oranıyla güncelle (güncel ÷ temel).")
+                        .size(12.5)
+                        .color(tema::METIN),
                 );
-                ui.add_space(8.0);
-
-                // Kip seçimi
-                ui.horizontal(|ui| {
-                    if ui
-                        .selectable_label(!self.fiyat_guncelle_endeks_mod, "🏛 Kuruma göre")
-                        .clicked()
-                    {
-                        self.fiyat_guncelle_endeks_mod = false;
-                    }
-                    if ui
-                        .selectable_label(
-                            self.fiyat_guncelle_endeks_mod,
-                            "📈 Endekse göre (Yİ-ÜFE)",
-                        )
-                        .clicked()
-                    {
-                        self.fiyat_guncelle_endeks_mod = true;
-                    }
-                });
-                ui.add_space(8.0);
-                ui.separator();
-                ui.add_space(8.0);
-
-                if self.fiyat_guncelle_endeks_mod {
-                    ui.label(
-                        RichText::new("Fiyatları Yİ-ÜFE oranıyla güncelle (güncel ÷ temel).")
-                            .size(12.5)
-                            .color(tema::METIN),
-                    );
-                    ui.add_space(6.0);
-                    egui::Grid::new("fg_endeks_grid")
-                        .num_columns(2)
-                        .spacing(egui::vec2(12.0, 8.0))
-                        .show(ui, |ui| {
-                            ui.label(
-                                RichText::new("Temel endeks (sözleşme/eski)")
-                                    .color(tema::METIN_IKINCIL)
-                                    .size(12.5),
-                            );
-                            ui.add(
-                                egui::DragValue::new(&mut self.fiyat_endeks_temel)
-                                    .speed(0.1)
-                                    .range(0.01..=1_000_000.0),
-                            );
-                            ui.end_row();
-                            ui.label(
-                                RichText::new("Güncel endeks (yeni)")
-                                    .color(tema::METIN_IKINCIL)
-                                    .size(12.5),
-                            );
-                            ui.add(
-                                egui::DragValue::new(&mut self.fiyat_endeks_guncel)
-                                    .speed(0.1)
-                                    .range(0.01..=1_000_000.0),
-                            );
-                            ui.end_row();
-                        });
-                    let carpan = if self.fiyat_endeks_temel > 0.0 {
-                        self.fiyat_endeks_guncel / self.fiyat_endeks_temel
-                    } else {
-                        0.0
-                    };
-                    ui.add_space(4.0);
-                    ui.label(
-                        RichText::new(format!(
-                            "Çarpan: × {:.4}   (% {:+.1})",
-                            carpan,
-                            (carpan - 1.0) * 100.0
-                        ))
-                        .color(tema::VURGU_HOVER)
-                        .strong(),
-                    );
-                } else {
-                    let hedef_metni = self
-                        .fiyat_guncelle_hedef
-                        .as_ref()
-                        .map(|k| k.ad.clone())
-                        .unwrap_or_else(|| "Kurum seçin".into());
-                    ui.horizontal(|ui| {
+                ui.add_space(6.0);
+                egui::Grid::new("fg_endeks_grid")
+                    .num_columns(2)
+                    .spacing(egui::vec2(12.0, 8.0))
+                    .show(ui, |ui| {
                         ui.label(
-                            RichText::new("Hedef kurum")
+                            RichText::new("Temel endeks (sözleşme/eski)")
                                 .color(tema::METIN_IKINCIL)
                                 .size(12.5),
                         );
-                        egui::ComboBox::from_id_salt("fg_kurum")
-                            .selected_text(&hedef_metni)
-                            .width(260.0)
-                            .show_ui(ui, |ui| {
-                                for k in &self.kitaplar.clone() {
-                                    let secili = self
-                                        .fiyat_guncelle_hedef
-                                        .as_ref()
-                                        .map(|h| h.id == k.id)
-                                        .unwrap_or(false);
-                                    if ui.selectable_label(secili, &k.ad).clicked() {
-                                        self.fiyat_guncelle_hedef = Some(k.clone());
-                                    }
-                                }
-                            });
-                    });
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        if ui
-                            .selectable_label(self.fiyat_guncelle_en_son, "En son fiyat")
-                            .clicked()
-                        {
-                            self.fiyat_guncelle_en_son = true;
-                        }
-                        if ui
-                            .selectable_label(!self.fiyat_guncelle_en_son, "İhale tarihine göre")
-                            .clicked()
-                        {
-                            self.fiyat_guncelle_en_son = false;
-                        }
-                    });
-                    if !self.fiyat_guncelle_en_son {
-                        ui.add_space(4.0);
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new("Dönem").color(tema::METIN_IKINCIL).size(12.5));
-                            ui.add(
-                                egui::DragValue::new(&mut self.fiyat_guncelle_ay)
-                                    .range(1..=12)
-                                    .prefix("Ay "),
-                            );
-                            ui.add(
-                                egui::DragValue::new(&mut self.fiyat_guncelle_yil)
-                                    .range(2000..=2100),
-                            );
-                        });
-                        ui.label(
-                            RichText::new(
-                                "O tarihte geçerli (tarih ve öncesindeki en son) rayiç uygulanır.",
-                            )
-                            .color(tema::METIN_SOLUK)
-                            .size(10.5),
+                        ui.add(
+                            egui::DragValue::new(&mut self.fiyat_endeks_temel)
+                                .speed(0.1)
+                                .range(0.01..=1_000_000.0),
                         );
-                    }
-                }
-
-                ui.add_space(12.0);
+                        ui.end_row();
+                        ui.label(
+                            RichText::new("Güncel endeks (yeni)")
+                                .color(tema::METIN_IKINCIL)
+                                .size(12.5),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut self.fiyat_endeks_guncel)
+                                .speed(0.1)
+                                .range(0.01..=1_000_000.0),
+                        );
+                        ui.end_row();
+                    });
+                let carpan = if self.fiyat_endeks_temel > 0.0 {
+                    self.fiyat_endeks_guncel / self.fiyat_endeks_temel
+                } else {
+                    0.0
+                };
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new(format!(
+                        "Çarpan: × {:.4}   (% {:+.1})",
+                        carpan,
+                        (carpan - 1.0) * 100.0
+                    ))
+                    .color(tema::VURGU_HOVER)
+                    .strong(),
+                );
+            } else {
+                let hedef_metni = self
+                    .fiyat_guncelle_hedef
+                    .as_ref()
+                    .map(|k| k.ad.clone())
+                    .unwrap_or_else(|| "Kurum seçin".into());
                 ui.horizontal(|ui| {
-                    if tema::basari_buton(ui, "✓ Güncelle").clicked() {
-                        uygula = true;
+                    ui.label(
+                        RichText::new("Hedef kurum")
+                            .color(tema::METIN_IKINCIL)
+                            .size(12.5),
+                    );
+                    egui::ComboBox::from_id_salt("fg_kurum")
+                        .selected_text(&hedef_metni)
+                        .width(260.0)
+                        .show_ui(ui, |ui| {
+                            for k in &self.kitaplar.clone() {
+                                let secili = self
+                                    .fiyat_guncelle_hedef
+                                    .as_ref()
+                                    .map(|h| h.id == k.id)
+                                    .unwrap_or(false);
+                                if ui.selectable_label(secili, &k.ad).clicked() {
+                                    self.fiyat_guncelle_hedef = Some(k.clone());
+                                }
+                            }
+                        });
+                });
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui
+                        .selectable_label(self.fiyat_guncelle_en_son, "En son fiyat")
+                        .clicked()
+                    {
+                        self.fiyat_guncelle_en_son = true;
                     }
-                    if ui.button("İptal").clicked() {
-                        kapat = true;
+                    if ui
+                        .selectable_label(!self.fiyat_guncelle_en_son, "İhale tarihine göre")
+                        .clicked()
+                    {
+                        self.fiyat_guncelle_en_son = false;
                     }
                 });
+                if !self.fiyat_guncelle_en_son {
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Dönem").color(tema::METIN_IKINCIL).size(12.5));
+                        ui.add(
+                            egui::DragValue::new(&mut self.fiyat_guncelle_ay)
+                                .range(1..=12)
+                                .prefix("Ay "),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut self.fiyat_guncelle_yil).range(2000..=2100),
+                        );
+                    });
+                    ui.label(
+                        RichText::new(
+                            "O tarihte geçerli (tarih ve öncesindeki en son) rayiç uygulanır.",
+                        )
+                        .color(tema::METIN_SOLUK)
+                        .size(10.5),
+                    );
+                }
+            }
+
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if tema::basari_ikonlu_buton(ui, tema::ikon::YENILE, "Güncelle").clicked() {
+                    uygula = true;
+                }
+                if ui.button("İptal").clicked() {
+                    kapat = true;
+                }
             });
+        });
         if uygula {
             self.fiyatlari_guncelle();
         }
@@ -1054,7 +1066,11 @@ impl MetrajApp {
         if self.metraj_kalemleri.is_empty() {
             ui.add_space(30.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("📋").size(32.0));
+                ui.label(
+                    RichText::new(tema::ikon::METRAJ_TABLOSU)
+                        .font(egui::FontId::new(32.0, tema::ikon_fontu()))
+                        .color(tema::METIN_IKINCIL),
+                );
                 ui.add_space(6.0);
                 ui.label(
                     RichText::new("Bu grupta henüz kalem yok")
@@ -1148,18 +1164,20 @@ impl MetrajApp {
                     } else {
                         tema::UYARI
                     };
-                    let miktar_metni = if kalem.detaylar.is_empty() {
-                        format!("{:.2}", kalem.miktar)
-                    } else {
-                        format!("📐 {:.2}", kalem.miktar)
-                    };
                     let miktar_response = ui
-                        .label(
-                            RichText::new(miktar_metni)
+                        .label(if kalem.detaylar.is_empty() {
+                            RichText::new(format!("{:.2}", kalem.miktar))
                                 .size(11.5)
                                 .strong()
-                                .color(miktar_renk),
-                        )
+                                .color(miktar_renk)
+                                .into()
+                        } else {
+                            tema::ikonlu_metin_boyut(
+                                tema::ikon::METRAJ,
+                                &format!("{:.2}", kalem.miktar),
+                                11.5,
+                            )
+                        })
                         .on_hover_text(if kalem.detaylar.is_empty() {
                             "Ölçü detayı yok — düzenlemek için tıkla"
                         } else {
@@ -1171,12 +1189,7 @@ impl MetrajApp {
                             .strong()
                             .color(tema::BASARI),
                     );
-                    if ui
-                        .add(
-                            egui::Button::new(RichText::new("✕").color(tema::TEHLIKE).size(11.0))
-                                .fill(Color32::TRANSPARENT)
-                                .stroke(egui::Stroke::NONE),
-                        )
+                    if tema::tehlike_ikon_butonu(ui, tema::ikon::SIL)
                         .on_hover_text("Kalemi sil")
                         .clicked()
                     {
@@ -1230,7 +1243,10 @@ impl MetrajApp {
         let birim_fiyat = kalem.birim_fiyat;
         let kitap_adi = kalem.kitap_adi.clone();
 
-        egui::Window::new("📐 Miktar Detayları")
+        egui::Window::new(tema::ikonlu_metin(
+            tema::ikon::METRAJ,
+            "Miktar Detayları",
+        ))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -1243,7 +1259,11 @@ impl MetrajApp {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(format!("Birim: {}", birim)).color(tema::METIN_IKINCIL));
                     ui.label(RichText::new(format!("Birim Fiyat: {} TL", para_formatla(birim_fiyat))).color(tema::BASARI));
-                    ui.label(RichText::new(format!("· 📅 {}", kitap_adi)).color(tema::METIN_SOLUK).size(12.0));
+                    ui.label(tema::ikonlu_metin_boyut(
+                        tema::ikon::IS_PROGRAMI,
+                        &kitap_adi,
+                        12.0,
+                    ));
                 });
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("İmalat cinsi").size(12.0).color(tema::METIN_IKINCIL));
@@ -1270,7 +1290,7 @@ impl MetrajApp {
                         let m = satir_miktar(satir).unwrap_or(0.0);
                         let renk = if m < 0.0 { tema::UYARI } else { tema::BASARI };
                         ui.label(RichText::new(format!("{:.3}", m)).size(11.5).strong().color(renk));
-                        if ui.add(egui::Button::new(RichText::new("🗑").color(tema::TEHLIKE).size(11.0)).fill(Color32::TRANSPARENT).stroke(egui::Stroke::NONE)).clicked() {
+                        if tema::tehlike_ikon_butonu(ui, tema::ikon::SIL).clicked() {
                             silinecek_satir = Some(d_idx);
                         }
                         ui.end_row();
@@ -1287,7 +1307,7 @@ impl MetrajApp {
                     ui.add(TextEdit::singleline(&mut self.popup_yeni.boy).hint_text(tema::alan_ipucu("boy")).desired_width(48.0));
                     ui.add(TextEdit::singleline(&mut self.popup_yeni.yukseklik).hint_text(tema::alan_ipucu("yük.")).desired_width(48.0));
                     ui.checkbox(&mut self.popup_yeni.cikan, "çıkan");
-                    let ekle = tema::birincil_buton(ui, "＋ Ekle").clicked();
+                    let ekle = tema::birincil_ikonlu_buton(ui, tema::ikon::EKLE, "Ekle").clicked();
                     let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
                     if (ekle || enter) && satir_miktar(&self.popup_yeni).is_some() {
                         self.popup_detaylar.push(std::mem::take(&mut self.popup_yeni));
@@ -1304,7 +1324,7 @@ impl MetrajApp {
                 });
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    if tema::basari_buton(ui, "✓ Tamam").clicked() {
+                    if tema::basari_ikonlu_buton(ui, tema::ikon::ONAY, "Tamam").clicked() {
                         let detaylar: Vec<MiktarDetay> = self.popup_detaylar.iter()
                             .filter_map(satir_to_detay)
                             .collect();
@@ -1323,7 +1343,7 @@ impl MetrajApp {
                         self.aktif_grubu_senkronize();
                         self.miktar_popup_acik = false;
                     }
-                    if ui.button("❌ İptal").clicked() {
+                    if tema::ikincil_ikonlu_buton(ui, tema::ikon::KAPAT, "İptal").clicked() {
                         self.miktar_popup_acik = false;
                     }
                 });
@@ -1353,7 +1373,7 @@ impl MetrajApp {
         let birim_fiyat = poz.fiyat.unwrap_or(0.0);
         let mut ekle = false;
         let mut kapat = false;
-        egui::Window::new("🚚 Nakliye Hesabı")
+        egui::Window::new(tema::ikonlu_metin(tema::ikon::NAKLIYE, "Nakliye Hesabı"))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -1425,10 +1445,10 @@ impl MetrajApp {
                 );
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    if tema::basari_buton(ui, "＋ Metraja Ekle").clicked() {
+                    if tema::basari_ikonlu_buton(ui, tema::ikon::EKLE, "Metraja Ekle").clicked() {
                         ekle = true;
                     }
-                    if ui.button("❌ İptal").clicked() {
+                    if tema::ikincil_ikonlu_buton(ui, tema::ikon::KAPAT, "İptal").clicked() {
                         kapat = true;
                     }
                 });
@@ -1472,19 +1492,22 @@ impl MetrajApp {
         }
 
         ui.horizontal_wrapped(|ui| {
-            tema::rozet(
+            tema::ikonlu_rozet(
                 ui,
-                &format!("📋 {} kalem", toplam_kalem),
+                tema::ikon::METRAJ_TABLOSU,
+                &format!("{} kalem", toplam_kalem),
                 tema::METIN_IKINCIL,
             );
-            tema::rozet(
+            tema::ikonlu_rozet(
                 ui,
-                &format!("📚 {} kitap", kitap_sayisi.len()),
+                tema::ikon::KITAPLAR,
+                &format!("{} kitap", kitap_sayisi.len()),
                 tema::METIN_IKINCIL,
             );
-            tema::rozet(
+            tema::ikonlu_rozet(
                 ui,
-                &format!("⚠ {} fiyatsız", fiyatsiz),
+                tema::ikon::UYARI,
+                &format!("{} fiyatsız", fiyatsiz),
                 if fiyatsiz > 0 {
                     tema::UYARI
                 } else {
@@ -1547,7 +1570,11 @@ fn is_grubu_agac_ciz(
         let secili = secili_id == Some(g.id.as_str());
         let toplam = grup_canli_toplam(g, secili_id, aktif_kalemler);
         let yaprak = g.alt_gruplar.is_empty();
-        let ikon = if yaprak { "📄" } else { "📁" };
+        let ikon = if yaprak {
+            tema::ikon::ALT_GRUP
+        } else {
+            tema::ikon::ANA_GRUP
+        };
         let ad_rengi = if secili { Color32::WHITE } else { tema::METIN };
         let tutar_rengi = if toplam > 0.0 {
             tema::BASARI
@@ -1557,14 +1584,15 @@ fn is_grubu_agac_ciz(
 
         let mut job = egui::text::LayoutJob::default();
         job.append(
-            &format!("{} ", ikon),
+            ikon,
             0.0,
             egui::TextFormat {
-                font_id: egui::FontId::proportional(13.5),
+                font_id: egui::FontId::new(13.5, tema::ikon_fontu()),
                 color: ad_rengi,
                 ..Default::default()
             },
         );
+        job.append(" ", 0.0, egui::TextFormat::default());
         job.append(
             &g.ad,
             0.0,
