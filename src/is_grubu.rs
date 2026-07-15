@@ -5,7 +5,10 @@
 use crate::models::{IsGrubu, MetrajKalemi};
 
 /// Ağaçta verilen id'ye sahip grubu bulup değiştirilebilir referans döndürür.
-pub(crate) fn grup_bul_mut<'a>(gruplar: &'a mut [IsGrubu], hedef_id: &str) -> Option<&'a mut IsGrubu> {
+pub(crate) fn grup_bul_mut<'a>(
+    gruplar: &'a mut [IsGrubu],
+    hedef_id: &str,
+) -> Option<&'a mut IsGrubu> {
     for g in gruplar.iter_mut() {
         if g.id == hedef_id {
             return Some(g);
@@ -59,7 +62,11 @@ pub(crate) fn ilk_yaprak_grup_id(gruplar: &[IsGrubu]) -> Option<String> {
 
 /// Bir grubun canlı toplamı: aktif grubun kalemleri düzenleme tamponundan
 /// (`aktif_kalemler`) okunur, diğer grupların kalemleri ağaçtaki halinden.
-pub(crate) fn grup_canli_toplam(grup: &IsGrubu, secili_id: Option<&str>, aktif_kalemler: &[MetrajKalemi]) -> f64 {
+pub(crate) fn grup_canli_toplam(
+    grup: &IsGrubu,
+    secili_id: Option<&str>,
+    aktif_kalemler: &[MetrajKalemi],
+) -> f64 {
     let kalemler_toplam: f64 = if secili_id == Some(grup.id.as_str()) {
         aktif_kalemler.iter().map(|k| k.tutar).sum()
     } else {

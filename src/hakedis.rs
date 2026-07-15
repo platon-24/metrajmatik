@@ -31,30 +31,38 @@ pub struct HakedisIcmal {
     pub sgk: f64,
     pub avans_mahsup: f64,
     pub kesinti_toplam: f64,
-    pub net_odeme: f64,
-    pub kdv: f64,      // tahakkuk × KDV oranı (bilgi)
-    pub tevkifat: f64, // KDV × tevkifat oranı (bilgi)
+    pub net_odeme: f64,      // KDV hariç tahakkuk − kesintiler
+    pub kdv: f64,            // tahakkuk × KDV oranı (bilgi)
+    pub tevkifat: f64,       // KDV × tevkifat oranı (bilgi)
+    pub odenecek_tutar: f64, // KDV hariç net + KDV − KDV tevkifatı
 }
 
 /// Keşif kalemleri + hakediş + önceki hakediş → poz bazında satır hesapları.
-pub fn poz_hesaplari(kesif: &[MetrajKalemi], hakedis: &Hakedis, onceki: Option<&Hakedis>) -> Vec<HakedisPozHesap> {
-    kesif.iter().map(|k| {
-        let kumulatif = hakedis.kumulatif(&k.poz_no);
-        let onceki_kumulatif = onceki.map(|h| h.kumulatif(&k.poz_no)).unwrap_or(0.0);
-        let bu_miktar = kumulatif - onceki_kumulatif;
-        HakedisPozHesap {
-            poz_no: k.poz_no.clone(),
-            tanim: k.tanim.clone(),
-            birim: k.birim.clone(),
-            birim_fiyat: k.birim_fiyat,
-            sozlesme_miktar: k.miktar,
-            onceki_kumulatif,
-            kumulatif,
-            bu_hakedis_miktar: bu_miktar,
-            bu_hakedis_tutar: kurus_yuvarla(k.birim_fiyat * bu_miktar),
-            kumulatif_tutar: kurus_yuvarla(k.birim_fiyat * kumulatif),
-        }
-    }).collect()
+pub fn poz_hesaplari(
+    kesif: &[MetrajKalemi],
+    hakedis: &Hakedis,
+    onceki: Option<&Hakedis>,
+) -> Vec<HakedisPozHesap> {
+    kesif
+        .iter()
+        .map(|k| {
+            let kumulatif = hakedis.kumulatif(&k.id, &k.poz_no);
+            let onceki_kumulatif = onceki.map(|h| h.kumulatif(&k.id, &k.poz_no)).unwrap_or(0.0);
+            let bu_miktar = kumulatif - onceki_kumulatif;
+            HakedisPozHesap {
+                poz_no: k.poz_no.clone(),
+                tanim: k.tanim.clone(),
+                birim: k.birim.clone(),
+                birim_fiyat: k.birim_fiyat,
+                sozlesme_miktar: k.miktar,
+                onceki_kumulatif,
+                kumulatif,
+                bu_hakedis_miktar: bu_miktar,
+                bu_hakedis_tutar: kurus_yuvarla(k.birim_fiyat * bu_miktar),
+                kumulatif_tutar: kurus_yuvarla(k.birim_fiyat * kumulatif),
+            }
+        })
+        .collect()
 }
 
 /// Poz hesaplarından + hakediş oranlarından icmal (kesintiler + net ödeme).
@@ -64,7 +72,11 @@ pub fn icmal(hesaplar: &[HakedisPozHesap], hakedis: &Hakedis) -> HakedisIcmal {
     let onceki_brut = kurus_yuvarla(kumulatif_brut - bu_hakedis_brut);
     // Fiyat farkı: Yİ-ÜFE otomatik (F = An × B × (güncel/temel − 1)) ya da elle.
     let fiyat_farki = if hakedis.ff_uygula && hakedis.ff_temel_endeks > 0.0 {
-        kurus_yuvarla(bu_hakedis_brut * hakedis.ff_b * (hakedis.ff_guncel_endeks / hakedis.ff_temel_endeks - 1.0))
+        kurus_yuvarla(
+            bu_hakedis_brut
+                * hakedis.ff_b
+                * (hakedis.ff_guncel_endeks / hakedis.ff_temel_endeks - 1.0),
+        )
     } else {
         hakedis.fiyat_farki
     };
@@ -77,10 +89,22 @@ pub fn icmal(hesaplar: &[HakedisPozHesap], hakedis: &Hakedis) -> HakedisIcmal {
     let net_odeme = kurus_yuvarla(tahakkuk - kesinti_toplam);
     let kdv = kurus_yuvarla(tahakkuk * hakedis.kdv_orani / 100.0);
     let tevkifat = kurus_yuvarla(kdv * hakedis.tevkifat_orani);
+    let odenecek_tutar = kurus_yuvarla(net_odeme + kdv - tevkifat);
     HakedisIcmal {
-        kumulatif_brut, onceki_brut, bu_hakedis_brut,
-        fiyat_farki, tahakkuk,
-        damga, teminat, sgk, avans_mahsup, kesinti_toplam, net_odeme, kdv, tevkifat,
+        kumulatif_brut,
+        onceki_brut,
+        bu_hakedis_brut,
+        fiyat_farki,
+        tahakkuk,
+        damga,
+        teminat,
+        sgk,
+        avans_mahsup,
+        kesinti_toplam,
+        net_odeme,
+        kdv,
+        tevkifat,
+        odenecek_tutar,
     }
 }
 
@@ -91,14 +115,30 @@ mod testler {
 
     fn kalem(poz: &str, bf: f64, sozlesme: f64) -> MetrajKalemi {
         MetrajKalemi {
-            poz_no: poz.into(), tanim: "t".into(), birim: "m3".into(),
-            birim_fiyat: bf, miktar: sozlesme, tutar: bf * sozlesme, kitap_adi: "K".into(),
-            detaylar: vec![], imalat_cinsi: String::new(), kitap_id: 0,
+            id: crate::models::yeni_kalem_id(),
+            poz_no: poz.into(),
+            tanim: "t".into(),
+            birim: "m3".into(),
+            birim_fiyat: bf,
+            miktar: sozlesme,
+            tutar: bf * sozlesme,
+            kitap_adi: "K".into(),
+            detaylar: vec![],
+            imalat_cinsi: String::new(),
+            kitap_id: 0,
         }
     }
     fn hakedis(no: u32, kumler: &[(&str, f64)]) -> Hakedis {
         let mut h = Hakedis::yeni(no, "Ara", "2026-01-01".into());
-        h.satirlar = kumler.iter().map(|(p, m)| HakedisSatiri { poz_no: p.to_string(), kumulatif_miktar: *m, detaylar: vec![] }).collect();
+        h.satirlar = kumler
+            .iter()
+            .map(|(p, m)| HakedisSatiri {
+                kalem_id: String::new(),
+                poz_no: p.to_string(),
+                kumulatif_miktar: *m,
+                detaylar: vec![],
+            })
+            .collect();
         h
     }
 
@@ -130,6 +170,7 @@ mod testler {
         assert_eq!(ic.teminat, 500.0);
         assert_eq!(ic.kesinti_toplam, 1594.80); // 94.80 + 500 + 1000
         assert_eq!(ic.net_odeme, 8405.20); // 10000 - 1594.80
+        assert_eq!(ic.odenecek_tutar, 10405.20); // KDV hariç net + %20 KDV
     }
 
     #[test]
@@ -144,5 +185,47 @@ mod testler {
         let ic = icmal(&poz_hesaplari(&kesif, &h, None), &h);
         assert_eq!(ic.fiyat_farki, 1800.0);
         assert_eq!(ic.tahakkuk, 11800.0);
+    }
+
+    #[test]
+    fn ayni_pozlu_farkli_kalemler_kimlikle_ayri_hesaplanir() {
+        let mut a = kalem("15.100.1001", 100.0, 10.0);
+        let mut b = kalem("15.100.1001", 250.0, 20.0);
+        a.id = "kalem-a".into();
+        b.id = "kalem-b".into();
+        let kesif = vec![a, b];
+        let mut h = Hakedis::yeni(1, "İlk", "2026-01-01".into());
+        h.satirlar = vec![
+            HakedisSatiri {
+                kalem_id: "kalem-a".into(),
+                poz_no: "15.100.1001".into(),
+                kumulatif_miktar: 2.0,
+                detaylar: vec![],
+            },
+            HakedisSatiri {
+                kalem_id: "kalem-b".into(),
+                poz_no: "15.100.1001".into(),
+                kumulatif_miktar: 3.0,
+                detaylar: vec![],
+            },
+        ];
+
+        let hesaplar = poz_hesaplari(&kesif, &h, None);
+        assert_eq!(hesaplar[0].bu_hakedis_tutar, 200.0);
+        assert_eq!(hesaplar[1].bu_hakedis_tutar, 750.0);
+    }
+
+    #[test]
+    fn odenecek_tutar_kdv_ve_tevkifati_acikca_hesaplar() {
+        let kesif = vec![kalem("A", 1000.0, 100.0)];
+        let mut h = hakedis(1, &[("A", 10.0)]);
+        h.damga_orani = 0.0;
+        h.kdv_orani = 20.0;
+        h.tevkifat_orani = 0.40;
+        let ic = icmal(&poz_hesaplari(&kesif, &h, None), &h);
+        assert_eq!(ic.net_odeme, 10000.0);
+        assert_eq!(ic.kdv, 2000.0);
+        assert_eq!(ic.tevkifat, 800.0);
+        assert_eq!(ic.odenecek_tutar, 11200.0);
     }
 }

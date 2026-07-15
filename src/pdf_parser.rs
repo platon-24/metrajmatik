@@ -5,8 +5,7 @@ use crate::models::Poz;
 
 pub fn pdf_metin_cikar(pdf_yolu: &Path) -> Result<String, String> {
     let bytes = std::fs::read(pdf_yolu).map_err(|e| format!("PDF okunamadı: {}", e))?;
-    pdf_extract::extract_text_from_mem(&bytes)
-        .map_err(|e| format!("PDF metin çıkarılamadı: {}", e))
+    pdf_extract::extract_text_from_mem(&bytes).map_err(|e| format!("PDF metin çıkarılamadı: {}", e))
 }
 
 /// Bir kurumun birim fiyat PDF'ini ayrıştırma profili. Poz numarası deseni, kategori
@@ -33,10 +32,26 @@ impl AyristirmaProfili {
             poz_deseni: r"^(\d{2}\.\d{3}\.\d{4})\s*(.*)".into(),
             kategori_anahtarlari: csb_kategorileri(),
             atlama_anahtarlari: [
-                "Poz No", "TÜİK", "Endeksleriyle", "Güncel Fiyatlar",
-                "OCAK", "ŞUBAT", "MART", "NİSAN", "MAYIS", "HAZİRAN",
-                "TEMMUZ", "AĞUSTOS", "EYLÜL", "EKİM", "KASIM", "ARALIK",
-            ].iter().map(|s| s.to_string()).collect(),
+                "Poz No",
+                "TÜİK",
+                "Endeksleriyle",
+                "Güncel Fiyatlar",
+                "OCAK",
+                "ŞUBAT",
+                "MART",
+                "NİSAN",
+                "MAYIS",
+                "HAZİRAN",
+                "TEMMUZ",
+                "AĞUSTOS",
+                "EYLÜL",
+                "EKİM",
+                "KASIM",
+                "ARALIK",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
         }
     }
 
@@ -46,7 +61,10 @@ impl AyristirmaProfili {
             ad: "Vakıflar / Restorasyon".into(),
             poz_deseni: r"^(\d{2}\.[A-ZÇĞİÖŞÜ]\d{1,4}(?:\.\d{1,4})?)\s*(.*)".into(),
             kategori_anahtarlari: Vec::new(),
-            atlama_anahtarlari: ["Poz No", "Sıra No", "Birim Fiyat", "Sayfa"].iter().map(|s| s.to_string()).collect(),
+            atlama_anahtarlari: ["Poz No", "Sıra No", "Birim Fiyat", "Sayfa"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         }
     }
 
@@ -56,7 +74,10 @@ impl AyristirmaProfili {
             ad: "Karayolları (Ar-Ge)".into(),
             poz_deseni: r"^([A-ZÇĞİÖŞÜ]{1,3}[-.]\d+(?:[-./]\d+)*)\s+(.*)".into(),
             kategori_anahtarlari: Vec::new(),
-            atlama_anahtarlari: ["Poz No", "Sayfa", "Birim Fiyat", "İÇİNDEKİLER"].iter().map(|s| s.to_string()).collect(),
+            atlama_anahtarlari: ["Poz No", "Sayfa", "Birim Fiyat", "İÇİNDEKİLER"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         }
     }
 
@@ -72,12 +93,19 @@ impl AyristirmaProfili {
 
     /// Otomatik seçimde denenen profiller. (Genel elle seçilir.)
     pub fn hepsi() -> Vec<AyristirmaProfili> {
-        vec![AyristirmaProfili::csb(), AyristirmaProfili::vakiflar(), AyristirmaProfili::kgm()]
+        vec![
+            AyristirmaProfili::csb(),
+            AyristirmaProfili::vakiflar(),
+            AyristirmaProfili::kgm(),
+        ]
     }
 }
 
 fn csb_kategorileri() -> Vec<(String, String)> {
-    KATEGORI_ANAHATLARI.iter().map(|(a, k)| (a.to_string(), k.to_string())).collect()
+    KATEGORI_ANAHATLARI
+        .iter()
+        .map(|(a, k)| (a.to_string(), k.to_string()))
+        .collect()
 }
 
 /// Metne en uygun profili otomatik seçer: en çok poz satırı eşleşen profil.
@@ -96,7 +124,10 @@ pub fn profil_otomatik_sec(metin: &str) -> AyristirmaProfili {
 }
 
 fn poz_eslesme_sayisi(metin: &str, profil: &AyristirmaProfili) -> usize {
-    let re = match Regex::new(&profil.poz_deseni) { Ok(r) => r, Err(_) => return 0 };
+    let re = match Regex::new(&profil.poz_deseni) {
+        Ok(r) => r,
+        Err(_) => return 0,
+    };
     metin.lines().filter(|l| re.is_match(l.trim())).count()
 }
 
@@ -135,14 +166,26 @@ const KATEGORI_ANAHATLARI: &[(&str, &str)] = &[
 ];
 
 fn atlanir_mi(satir: &str, atlama: &[String]) -> bool {
-    if satir == "TL" || satir == "(TL)" { return true; }
+    if satir == "TL" || satir == "(TL)" {
+        return true;
+    }
     atlama.iter().any(|a| satir.contains(a.as_str()))
 }
 
-pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str, yil: u32, ay: u32, profil: &AyristirmaProfili) -> Vec<Poz> {
+pub fn pozlari_ayristir(
+    metin: &str,
+    kitap_id: i64,
+    kitap_adi: &str,
+    yil: u32,
+    ay: u32,
+    profil: &AyristirmaProfili,
+) -> Vec<Poz> {
     let poz_re = match Regex::new(&profil.poz_deseni) {
         Ok(r) => r,
-        Err(e) => { log::error!("Geçersiz poz deseni ({}): {}", profil.ad, e); return Vec::new(); }
+        Err(e) => {
+            log::error!("Geçersiz poz deseni ({}): {}", profil.ad, e);
+            return Vec::new();
+        }
     };
     let fiyat_sonda_re = Regex::new(r"([\d]{1,3}(?:\.[\d]{3})*(?:,\d{2}))\s*$").unwrap();
     let fiyat_re = Regex::new(r"([\d]{1,3}(?:\.[\d]{3})*(?:,\d{2}))").unwrap();
@@ -151,7 +194,8 @@ pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str, yil: u32, a
     let birim_sonda_re = Regex::new(r"(?i)(?:^|\s)(1000\s*ad|1000\s*m\s*[²2]|100\s*m\s*[²2]|m\s*[³3]|m\s*[²2]|metre|adet|saat|ton|kg|km|sa|ad|mt|m|[³²])\s*(?:₺|tl)?\s*$").unwrap();
     // Yapışık birim (ör. DSİ "bedelimetre"): boşluk ŞARTI YOK, yalnız çok-harfli
     // yazılı birimler. Sadece normal (boşluklu) tespit başarısız olunca son çare olarak.
-    let birim_bitisik_re = Regex::new(r"(?i)(metre|adet|saat|ton|kg|m\s*[³3]|m\s*[²2])\s*(?:₺|tl)?\s*$").unwrap();
+    let birim_bitisik_re =
+        Regex::new(r"(?i)(metre|adet|saat|ton|kg|m\s*[³3]|m\s*[²2])\s*(?:₺|tl)?\s*$").unwrap();
     let sayfa_no_re = Regex::new(r"^\s*\d+\s*$").unwrap();
 
     let mut pozlar: Vec<Poz> = Vec::new();
@@ -161,31 +205,47 @@ pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str, yil: u32, a
 
     while i < satirlar.len() {
         let satir = satirlar[i].trim();
-        if satir.is_empty() { i += 1; continue; }
-        if sayfa_no_re.is_match(satir) && satir.len() <= 3 { i += 1; continue; }
+        if satir.is_empty() {
+            i += 1;
+            continue;
+        }
+        if sayfa_no_re.is_match(satir) && satir.len() <= 3 {
+            i += 1;
+            continue;
+        }
 
         // Poz satırlarını başlık/kategori filtrelerinden ÖNCE koru: bir poz asla atlanmaz.
         let poz_caps = poz_re.captures(satir);
         if poz_caps.is_none() {
-            if atlanir_mi(satir, &profil.atlama_anahtarlari) { i += 1; continue; }
+            if atlanir_mi(satir, &profil.atlama_anahtarlari) {
+                i += 1;
+                continue;
+            }
             let mut yeni_kategori = None;
             for (anahtar, kategori_adi) in &profil.kategori_anahtarlari {
                 let kontrol_metni = if i + 1 < satirlar.len() {
                     format!("{} {}", satir, satirlar[i + 1].trim())
-                } else { satir.to_string() };
+                } else {
+                    satir.to_string()
+                };
                 if kontrol_metni.to_uppercase().contains(anahtar.as_str()) {
                     yeni_kategori = Some(kategori_adi.clone());
                     break;
                 }
             }
-            if let Some(kat) = yeni_kategori { mevcut_kategori = kat; }
+            if let Some(kat) = yeni_kategori {
+                mevcut_kategori = kat;
+            }
             i += 1;
             continue;
         }
 
         let caps = poz_caps.unwrap();
         let poz_no = caps[1].to_string();
-        let kalan = caps.get(2).map(|m| m.as_str().to_string()).unwrap_or_default();
+        let kalan = caps
+            .get(2)
+            .map(|m| m.as_str().to_string())
+            .unwrap_or_default();
         let mut tanim_parcalari = vec![kalan];
         let mut fiyat: Option<f64> = None;
         let mut birim = String::new();
@@ -193,12 +253,23 @@ pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str, yil: u32, a
 
         while j < satirlar.len() && j < i + 20 {
             let sonraki = satirlar[j].trim();
-            if sonraki.is_empty() || sayfa_no_re.is_match(sonraki) { j += 1; continue; }
-            if poz_re.is_match(sonraki) { break; }
+            if sonraki.is_empty() || sayfa_no_re.is_match(sonraki) {
+                j += 1;
+                continue;
+            }
+            if poz_re.is_match(sonraki) {
+                break;
+            }
 
-            if let Some((satir_tanimi, satir_birimi, fiyat_str)) = fiyatli_satir_ayir(sonraki, &fiyat_sonda_re, &fiyat_re, &birim_sonda_re) {
-                if let Some(b) = satir_birimi.as_ref() { birim = b.clone(); }
-                if !satir_tanimi.is_empty() && satir_birimi.is_some() { tanim_parcalari.push(satir_tanimi); }
+            if let Some((satir_tanimi, satir_birimi, fiyat_str)) =
+                fiyatli_satir_ayir(sonraki, &fiyat_sonda_re, &fiyat_re, &birim_sonda_re)
+            {
+                if let Some(b) = satir_birimi.as_ref() {
+                    birim = b.clone();
+                }
+                if !satir_tanimi.is_empty() && satir_birimi.is_some() {
+                    tanim_parcalari.push(satir_tanimi);
+                }
                 fiyat = parse_fiyat(&fiyat_str);
                 i = j;
                 break;
@@ -206,18 +277,27 @@ pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str, yil: u32, a
 
             let mut baslik_mi = false;
             for (anahtar, _) in &profil.kategori_anahtarlari {
-                if sonraki.to_uppercase().contains(anahtar.as_str()) && !poz_re.is_match(sonraki) { baslik_mi = true; break; }
+                if sonraki.to_uppercase().contains(anahtar.as_str()) && !poz_re.is_match(sonraki) {
+                    baslik_mi = true;
+                    break;
+                }
             }
-            if baslik_mi { break; }
+            if baslik_mi {
+                break;
+            }
             tanim_parcalari.push(sonraki.to_string());
             j += 1;
         }
 
         if fiyat.is_none() {
             let bl = tanim_parcalari.join(" ");
-            if let Some((satir_tanimi, satir_birimi, fiyat_str)) = fiyatli_satir_ayir(&bl, &fiyat_sonda_re, &fiyat_re, &birim_sonda_re) {
+            if let Some((satir_tanimi, satir_birimi, fiyat_str)) =
+                fiyatli_satir_ayir(&bl, &fiyat_sonda_re, &fiyat_re, &birim_sonda_re)
+            {
                 fiyat = parse_fiyat(&fiyat_str);
-                if let Some(b) = satir_birimi { birim = b; }
+                if let Some(b) = satir_birimi {
+                    birim = b;
+                }
                 tanim_parcalari = vec![satir_tanimi];
             }
         }
@@ -230,31 +310,60 @@ pub fn pozlari_ayristir(metin: &str, kitap_id: i64, kitap_adi: &str, yil: u32, a
             } else {
                 // Son çare: yapışık yazılı birim (DSİ "…boru bedelimetre" → "metre").
                 let (t2, b2) = tanim_ve_birim_ayir(&bl, &birim_bitisik_re);
-                if let Some(b) = b2 { birim = b; tanim_parcalari = vec![t2]; }
+                if let Some(b) = b2 {
+                    birim = b;
+                    tanim_parcalari = vec![t2];
+                }
             }
         }
-        let mut tanim = tanim_parcalari.join(" ").replace("  ", " ").trim().to_string();
+        let mut tanim = tanim_parcalari
+            .join(" ")
+            .replace("  ", " ")
+            .trim()
+            .to_string();
         tanim = tanim.replace("  ", " ").trim().to_string();
         if !tanim.is_empty() || !poz_no.is_empty() {
-            let final_birim = if birim.is_empty() { "---".to_string() } else { birim_normalize(birim.trim()) };
+            let final_birim = if birim.is_empty() {
+                "---".to_string()
+            } else {
+                birim_normalize(birim.trim())
+            };
             pozlar.push(Poz {
-                poz_no, tanim: temiz_tanim(&tanim), birim: final_birim, fiyat,
-                kategori: mevcut_kategori.clone(), kitap_id,
-                kitap_adi: kitap_adi.to_string(), yil, ay,
+                poz_no,
+                tanim: temiz_tanim(&tanim),
+                birim: final_birim,
+                fiyat,
+                kategori: mevcut_kategori.clone(),
+                kitap_id,
+                kitap_adi: kitap_adi.to_string(),
+                yil,
+                ay,
             });
         }
         i += 1;
     }
-    log::info!("{} ({}) profiliyle {} poz ayrıştırıldı", kitap_adi, profil.ad, pozlar.len());
+    log::info!(
+        "{} ({}) profiliyle {} poz ayrıştırıldı",
+        kitap_adi,
+        profil.ad,
+        pozlar.len()
+    );
     pozlar
 }
 
 fn parse_fiyat(s: &str) -> Option<f64> {
-    s.chars().filter(|c| c.is_ascii_digit() || *c == ',').collect::<String>().replace(',', ".").parse::<f64>().ok()
+    s.chars()
+        .filter(|c| c.is_ascii_digit() || *c == ',')
+        .collect::<String>()
+        .replace(',', ".")
+        .parse::<f64>()
+        .ok()
 }
 
 fn temiz_tanim(s: &str) -> String {
-    s.trim().trim_matches(|c: char| c == '-' || c == '.' || c == ',' || c.is_whitespace()).to_string()
+    s.trim()
+        .trim_matches(|c: char| c == '-' || c == '.' || c == ',' || c.is_whitespace())
+        .to_string()
 }
 
 fn tanim_ve_birim_ayir(metin: &str, birim_sonda_re: &Regex) -> (String, Option<String>) {
@@ -316,7 +425,9 @@ mod testler {
     use super::*;
     use std::path::{Path, PathBuf};
 
-    fn csb() -> AyristirmaProfili { AyristirmaProfili::csb() }
+    fn csb() -> AyristirmaProfili {
+        AyristirmaProfili::csb()
+    }
 
     #[test]
     fn birim_normalize_ust_simgeleri_cift_m_yapmaz() {
@@ -332,12 +443,19 @@ mod testler {
     fn fiyat_oncesindeki_birim_sondan_ayrilir() {
         let pozlar = pozlari_ayristir(
             "15.180.1003\nPlywood ile düz yüzeyli betonarme kalıbı yapılması m² 1.123,51",
-            1, "Test", 2026, 5, &csb(),
+            1,
+            "Test",
+            2026,
+            5,
+            &csb(),
         );
 
         assert_eq!(pozlar.len(), 1);
         assert_eq!(pozlar[0].birim, "m²");
-        assert_eq!(pozlar[0].tanim, "Plywood ile düz yüzeyli betonarme kalıbı yapılması");
+        assert_eq!(
+            pozlar[0].tanim,
+            "Plywood ile düz yüzeyli betonarme kalıbı yapılması"
+        );
         assert_eq!(pozlar[0].fiyat, Some(1123.51));
     }
 
@@ -345,7 +463,11 @@ mod testler {
     fn uzun_birimler_kirpilmaz() {
         let pozlar = pozlari_ayristir(
             "15.999.0001\nÖrnek imalat 100 m² 12,34\n15.999.0002\nÖrnek sayım 1000 Ad 56,78",
-            1, "Test", 2026, 5, &csb(),
+            1,
+            "Test",
+            2026,
+            5,
+            &csb(),
         );
 
         assert_eq!(pozlar[0].birim, "100 m²");
@@ -362,7 +484,10 @@ mod testler {
         assert_eq!(pozlar.len(), 1);
         assert_eq!(pozlar[0].birim, "100 m²");
         assert_eq!(pozlar[0].fiyat, Some(811.55));
-        assert_eq!(pozlar[0].tanim, "Kazı ve dolgu alanında makine ile temizleme ve sökme işi yapılması");
+        assert_eq!(
+            pozlar[0].tanim,
+            "Kazı ve dolgu alanında makine ile temizleme ve sökme işi yapılması"
+        );
     }
 
     #[test]
@@ -393,7 +518,10 @@ mod testler {
     fn verilen_pdf_orneklerinde_mm2_kacagi_yok() {
         let ust_dizin = Path::new("..");
         let pdfler = [
-            pdf_bul(ust_dizin, "PTT_A.s._YAPI_DAiRE_BAsKANLIgI_oZEL_BiRiM_FiYATLARI.pdf"),
+            pdf_bul(
+                ust_dizin,
+                "PTT_A.s._YAPI_DAiRE_BAsKANLIgI_oZEL_BiRiM_FiYATLARI.pdf",
+            ),
             pdf_bul(ust_dizin, "2026-05-BF.pdf"),
         ];
 
@@ -402,7 +530,9 @@ mod testler {
             let pozlar = pozlari_ayristir(&metin, 1, "Test", 2026, 5, &csb());
             assert!(!pozlar.is_empty(), "{} içinden poz okunmalı", pdf.display());
             assert!(
-                !pozlar.iter().any(|p| p.birim.contains("mm²") || p.birim.contains("mm³")),
+                !pozlar
+                    .iter()
+                    .any(|p| p.birim.contains("mm²") || p.birim.contains("mm³")),
                 "{} içinde hatalı mm²/mm³ birimi olmamalı",
                 pdf.display()
             );
@@ -423,7 +553,11 @@ mod testler {
         // KGM Ar-Ge: "JH-1", "M.1.3" gibi harf kodları; ₺ önekli fiyat; km birimi.
         let pozlar = pozlari_ayristir(
             "JH-1  1/25000 Ölçekli Koridor Jeolojik Etüdü  km  ₺109.137,50",
-            1, "T", 2026, 1, &AyristirmaProfili::kgm(),
+            1,
+            "T",
+            2026,
+            1,
+            &AyristirmaProfili::kgm(),
         );
         assert_eq!(pozlar.len(), 1);
         assert_eq!(pozlar[0].poz_no, "JH-1");
@@ -436,7 +570,11 @@ mod testler {
         // Vakıflar/restorasyon: "V.0001" kodu (harf kodu → KGM/genel deseniyle okunur).
         let pozlar = pozlari_ayristir(
             "V.0001 İnce Kum Bedeli m³ 431,00",
-            1, "T", 2026, 1, &AyristirmaProfili::kgm(),
+            1,
+            "T",
+            2026,
+            1,
+            &AyristirmaProfili::kgm(),
         );
         assert_eq!(pozlar.len(), 1);
         assert_eq!(pozlar[0].poz_no, "V.0001");
@@ -447,7 +585,14 @@ mod testler {
     #[test]
     fn saat_birimi_sa_kisaltmasindan_okunur() {
         // "SA" (saat) kısaltması — Vakıflar/KGM işçilik pozlarında.
-        let pozlar = pozlari_ayristir("V.01 Kalemkar Usta SA 440,00", 1, "T", 2026, 1, &AyristirmaProfili::kgm());
+        let pozlar = pozlari_ayristir(
+            "V.01 Kalemkar Usta SA 440,00",
+            1,
+            "T",
+            2026,
+            1,
+            &AyristirmaProfili::kgm(),
+        );
         assert_eq!(pozlar.len(), 1);
         assert_eq!(pozlar[0].birim, "saat");
         assert_eq!(pozlar[0].fiyat, Some(440.0));
@@ -464,8 +609,16 @@ mod testler {
         assert_eq!(pozlar[0].poz_no, "50.205.1001");
         assert_eq!(pozlar[0].fiyat, Some(117.0));
         assert_eq!(pozlar[0].birim, "m"); // "metre" → normalize → "m"
-        assert!(pozlar[0].tanim.contains("boru bedeli"), "tanım: {}", pozlar[0].tanim);
-        assert!(!pozlar[0].tanim.contains("bedelimetre"), "birim ayrılmalı: {}", pozlar[0].tanim);
+        assert!(
+            pozlar[0].tanim.contains("boru bedeli"),
+            "tanım: {}",
+            pozlar[0].tanim
+        );
+        assert!(
+            !pozlar[0].tanim.contains("bedelimetre"),
+            "birim ayrılmalı: {}",
+            pozlar[0].tanim
+        );
     }
 
     /// Gerçek kurum PDF'leriyle uçtan uca doğrulama (örnekler `D:\metrajmatik\` altında).
@@ -484,15 +637,31 @@ mod testler {
         ];
         for (ad, beklenen_profil, en_az) in beklenen {
             let yol = dizin.join(ad);
-            if !yol.exists() { eprintln!("ATLANDI (yok): {}", ad); continue; }
+            if !yol.exists() {
+                eprintln!("ATLANDI (yok): {}", ad);
+                continue;
+            }
             let metin = pdf_metin_cikar(&yol).expect("PDF metni");
             let profil = profil_otomatik_sec(&metin);
             let pozlar = pozlari_ayristir(&metin, 1, "T", 2026, 1, &profil);
             let fiyatli = pozlar.iter().filter(|p| p.fiyat.is_some()).count();
             let birimli = pozlar.iter().filter(|p| p.birim != "---").count();
-            eprintln!("{}: profil={} poz={} fiyatli={} birimli={}", ad, profil.ad, pozlar.len(), fiyatli, birimli);
+            eprintln!(
+                "{}: profil={} poz={} fiyatli={} birimli={}",
+                ad,
+                profil.ad,
+                pozlar.len(),
+                fiyatli,
+                birimli
+            );
             assert_eq!(&profil.ad, beklenen_profil, "{} için yanlış profil", ad);
-            assert!(fiyatli >= *en_az, "{}: {} fiyatlı poz (en az {} beklendi)", ad, fiyatli, en_az);
+            assert!(
+                fiyatli >= *en_az,
+                "{}: {} fiyatlı poz (en az {} beklendi)",
+                ad,
+                fiyatli,
+                en_az
+            );
         }
     }
 
@@ -501,6 +670,11 @@ mod testler {
             .ok()?
             .filter_map(Result::ok)
             .map(|girdi| girdi.path())
-            .find(|yol| yol.file_name().and_then(|a| a.to_str()).map(|ad| ad.contains(ad_parcasi)).unwrap_or(false))
+            .find(|yol| {
+                yol.file_name()
+                    .and_then(|a| a.to_str())
+                    .map(|ad| ad.contains(ad_parcasi))
+                    .unwrap_or(false)
+            })
     }
 }

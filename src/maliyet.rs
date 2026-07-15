@@ -22,13 +22,32 @@ pub struct MaliyetOzeti {
 impl MaliyetOzeti {
     /// Ara toplam + (% genel gider & kâr) + (% KDV) zincirini hesaplar.
     /// Kamu türünde KDV **hariçtir** (oran verilse bile 0 sayılır).
-    pub fn hesapla(ara_toplam: f64, genel_gider_kar_orani: f64, kdv_orani: f64, hesap_turu: HesapTuru) -> Self {
-        let kar = kurus_yuvarla(ara_toplam * genel_gider_kar_orani / 100.0);
+    pub fn hesapla(
+        ara_toplam: f64,
+        genel_gider_kar_orani: f64,
+        kdv_orani: f64,
+        hesap_turu: HesapTuru,
+    ) -> Self {
+        // Kamu kurum fiyatları kâr/genel gideri zaten içerir; analizle bulunan
+        // özel pozların kârı da kendi birim fiyatına eklenmiştir. Global oran
+        // yalnızca özel sektör hesabında tüm ara toplama uygulanabilir.
+        let etkin_kar_orani = if hesap_turu.kamu_mu() {
+            0.0
+        } else {
+            genel_gider_kar_orani
+        };
+        let kar = kurus_yuvarla(ara_toplam * etkin_kar_orani / 100.0);
         let kdv_matrahi = kurus_yuvarla(ara_toplam + kar);
         let etkin_kdv_orani = if hesap_turu.kamu_mu() { 0.0 } else { kdv_orani };
         let kdv = kurus_yuvarla(kdv_matrahi * etkin_kdv_orani / 100.0);
         let genel_toplam = kurus_yuvarla(kdv_matrahi + kdv);
-        Self { ara_toplam, kar, kdv_matrahi, kdv, genel_toplam }
+        Self {
+            ara_toplam,
+            kar,
+            kdv_matrahi,
+            kdv,
+            genel_toplam,
+        }
     }
 }
 
@@ -55,11 +74,11 @@ mod testler {
     }
 
     #[test]
-    fn kamu_kip_analiz_karini_uygular_kdv_haric() {
-        // Kamu ama analiz pozları için kâr girilmiş: kâr uygulanır, KDV yine hariç.
+    fn kamu_kip_global_kari_yok_sayar() {
+        // Analiz kârı birim fiyatın içindedir; global oran kamu icmaline tekrar uygulanmaz.
         let o = MaliyetOzeti::hesapla(100.0, 25.0, 20.0, HesapTuru::Kamu);
-        assert_eq!(o.kar, 25.0);
+        assert_eq!(o.kar, 0.0);
         assert_eq!(o.kdv, 0.0);
-        assert_eq!(o.genel_toplam, 125.0);
+        assert_eq!(o.genel_toplam, 100.0);
     }
 }

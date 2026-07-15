@@ -75,17 +75,22 @@ pub fn sayi_oku(metin: &str) -> Option<f64> {
     if temiz.is_empty() {
         return None;
     }
-    temiz.parse::<f64>().ok()
+    temiz.parse::<f64>().ok().filter(|n| n.is_finite())
 }
 
 /// Fiyat araştırması: boşluk / `;` / satır ile ayrılmış tekliflerin ortalaması.
 /// Virgül ondalık ayırıcı olduğundan virgülle BÖLÜNMEZ ("1.200,50 1350,00").
 pub fn teklif_ortalamasi(metin: &str) -> Option<f64> {
-    let sayilar: Vec<f64> = metin.split([' ', ';', '\t', '\n', '\r']).filter_map(sayi_oku).collect();
+    let sayilar: Vec<f64> = metin
+        .split([' ', ';', '\t', '\n', '\r'])
+        .filter_map(sayi_oku)
+        .collect();
     if sayilar.is_empty() {
         return None;
     }
-    Some(kurus_yuvarla(sayilar.iter().sum::<f64>() / sayilar.len() as f64))
+    Some(kurus_yuvarla(
+        sayilar.iter().sum::<f64>() / sayilar.len() as f64,
+    ))
 }
 
 /// Bir tam sayıyı Türkçe okunuşuna çevirir ("bin iki yüz otuz dört"). 0 → "sıfır".
@@ -98,8 +103,12 @@ fn tam_sayi_yaziya(n: i64) -> String {
     if n < 0 {
         return format!("eksi {}", tam_sayi_yaziya(-n));
     }
-    const BIRLER: [&str; 10] = ["", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz"];
-    const ONLAR: [&str; 10] = ["", "on", "yirmi", "otuz", "kırk", "elli", "altmış", "yetmiş", "seksen", "doksan"];
+    const BIRLER: [&str; 10] = [
+        "", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz",
+    ];
+    const ONLAR: [&str; 10] = [
+        "", "on", "yirmi", "otuz", "kırk", "elli", "altmış", "yetmiş", "seksen", "doksan",
+    ];
     const BASAMAKLAR: [&str; 5] = ["", "bin", "milyon", "milyar", "trilyon"];
 
     // Sayıyı 3'lü gruplara böl (en düşük basamak önce).
@@ -184,6 +193,13 @@ mod testler {
     }
 
     #[test]
+    fn sayi_okuma_sonlu_olmayan_degerleri_reddeder() {
+        assert_eq!(sayi_oku("NaN"), None);
+        assert_eq!(sayi_oku("inf"), None);
+        assert_eq!(sayi_oku("-inf"), None);
+    }
+
+    #[test]
     fn kurus_yuvarlama_driftu_giderir() {
         assert_eq!(kurus_yuvarla(0.1 + 0.2), 0.3); // 0.30000000000000004 → 0.30
         assert_eq!(kurus_yuvarla(2.348), 2.35);
@@ -216,12 +232,18 @@ mod testler {
         assert_eq!(tam_sayi_yaziya(1234), "bin iki yüz otuz dört");
         assert_eq!(tam_sayi_yaziya(21000), "yirmi bir bin");
         assert_eq!(tam_sayi_yaziya(1_000_000), "bir milyon"); // "bir" ile
-        assert_eq!(tam_sayi_yaziya(1_234_567), "bir milyon iki yüz otuz dört bin beş yüz altmış yedi");
+        assert_eq!(
+            tam_sayi_yaziya(1_234_567),
+            "bir milyon iki yüz otuz dört bin beş yüz altmış yedi"
+        );
     }
 
     #[test]
     fn sayi_yaziya_para() {
-        assert_eq!(sayi_yaziya(1234.56), "bin iki yüz otuz dört TL elli altı Kr");
+        assert_eq!(
+            sayi_yaziya(1234.56),
+            "bin iki yüz otuz dört TL elli altı Kr"
+        );
         assert_eq!(sayi_yaziya(1000.0), "bin TL"); // kuruş 0 → yalnız TL
         assert_eq!(sayi_yaziya(0.0), "sıfır TL");
         assert_eq!(sayi_yaziya(0.5), "sıfır TL elli Kr");

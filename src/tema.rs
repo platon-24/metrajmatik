@@ -2,7 +2,9 @@
 //! Renkler, boşluklar, köşe yuvarlamaları ve yazı tipleri tek bir yerden yönetilir.
 
 use eframe::egui;
-use egui::{Color32, CornerRadius, FontId, Margin, Response, RichText, Stroke, TextStyle, Ui, Widget};
+use egui::{
+    Color32, CornerRadius, FontId, Margin, Response, RichText, Stroke, TextStyle, Ui, Widget,
+};
 
 // ==================== RENK PALETİ (Koyu, profesyonel) ====================
 pub const ARKA_PLAN: Color32 = Color32::from_rgb(0x12, 0x16, 0x1D); // uygulama zemini

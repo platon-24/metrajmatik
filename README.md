@@ -7,7 +7,7 @@
 ![Rust](https://img.shields.io/badge/Rust-2021-000000?logo=rust&logoColor=white)
 ![egui](https://img.shields.io/badge/egui-0.31-1f6feb)
 ![SQLite](https://img.shields.io/badge/SQLite-FTS5-003B57?logo=sqlite&logoColor=white)
-![Testler](https://img.shields.io/badge/testler-50%20passing-2ea043)
+![Testler](https://img.shields.io/badge/testler-57%20passing-2ea043)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)
 ![Lisans](https://img.shields.io/badge/lisans-AGPL--3.0-blue)
 ![Durum](https://img.shields.io/badge/durum-aktif%20geliştirme-f5a623)
@@ -134,7 +134,7 @@ src/
 cargo test
 ```
 
-**50 test** çekirdek mantığı doğrular: kâr/KDV hesabı, kurum/dönem fiyat çözümü, "o tarihte geçerli rayiç", v1→v2 göç, hakediş icmali, iş programı dağılımı, sayı→yazı, veri paketi round-trip, yedekleme, teklif cetveli ve Excel üretimi. *(1 test — gerçek kurum PDF'leriyle doğrulama — `#[ignore]`; yerel örnek dosyalar gerektirir.)*
+**57 test** çekirdek mantığı doğrular: kâr/KDV hesabı, kalem kimlikli hakediş, kurum/dönem fiyat çözümü, "o tarihte geçerli rayiç", v1→v2 göç, güvenli kayıt/geri yükleme, iş programı dağılımı, sayı→yazı, veri paketi round-trip, teklif cetveli ve Excel üretimi. *(1 ek test — gerçek kurum PDF'leriyle doğrulama — `#[ignore]`; yerel örnek dosyalar gerektirir.)*
 
 ---
 

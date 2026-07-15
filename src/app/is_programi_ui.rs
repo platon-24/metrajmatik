@@ -25,28 +25,80 @@ impl MetrajApp {
         let mut excel = false;
         tema::kart(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Başlangıç").color(tema::METIN_IKINCIL).size(12.5));
-                if ui.add(egui::DragValue::new(&mut self.is_programi.baslangic_ay).range(1..=12).custom_formatter(|n, _| ay_adi(n as u32).to_string())).changed() { self.degisiklik_var = true; }
-                if ui.add(egui::DragValue::new(&mut self.is_programi.baslangic_yil).range(2000..=2100)).changed() { self.degisiklik_var = true; }
+                ui.label(
+                    RichText::new("Başlangıç")
+                        .color(tema::METIN_IKINCIL)
+                        .size(12.5),
+                );
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut self.is_programi.baslangic_ay)
+                            .range(1..=12)
+                            .custom_formatter(|n, _| ay_adi(n as u32).to_string()),
+                    )
+                    .changed()
+                {
+                    self.degisiklik_var = true;
+                }
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut self.is_programi.baslangic_yil)
+                            .range(2000..=2100),
+                    )
+                    .changed()
+                {
+                    self.degisiklik_var = true;
+                }
 
                 ui.add_space(14.0);
-                ui.label(RichText::new("Süre (ay)").color(tema::METIN_IKINCIL).size(12.5));
-                if ui.add(egui::DragValue::new(&mut self.is_programi.sure_ay).range(1..=120)).changed() { self.degisiklik_var = true; }
+                ui.label(
+                    RichText::new("Süre (ay)")
+                        .color(tema::METIN_IKINCIL)
+                        .size(12.5),
+                );
+                if ui
+                    .add(egui::DragValue::new(&mut self.is_programi.sure_ay).range(1..=120))
+                    .changed()
+                {
+                    self.degisiklik_var = true;
+                }
 
                 ui.add_space(14.0);
-                if ui.button("⚖ Eşit Dağıt").on_hover_text("Tüm ayları eşit yüzdeye böler").clicked() { esit_dagit = true; }
-                if tema::basari_buton(ui, "⬇ Excel").clicked() { excel = true; }
+                if ui
+                    .button("⚖ Eşit Dağıt")
+                    .on_hover_text("Tüm ayları eşit yüzdeye böler")
+                    .clicked()
+                {
+                    esit_dagit = true;
+                }
+                if tema::basari_buton(ui, "⬇ Excel").clicked() {
+                    excel = true;
+                }
             });
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Sözleşme Bedeli:").color(tema::METIN_SOLUK).size(12.0));
-                ui.label(RichText::new(format!("{} TL", para_formatla(toplam_bedel))).color(tema::BASARI).strong().size(13.5));
+                ui.label(
+                    RichText::new("Sözleşme Bedeli:")
+                        .color(tema::METIN_SOLUK)
+                        .size(12.0),
+                );
+                ui.label(
+                    RichText::new(format!("{} TL", para_formatla(toplam_bedel)))
+                        .color(tema::BASARI)
+                        .strong()
+                        .size(13.5),
+                );
             });
         });
         // Süre değişmiş olabilir; tabloyu çizmeden önce yeniden hizala.
         self.is_programi.normalize();
-        if esit_dagit { self.is_programi.esit_dagit(); self.degisiklik_var = true; }
-        if excel { self.is_programi_excel_diyalog(); }
+        if esit_dagit {
+            self.is_programi.esit_dagit();
+            self.degisiklik_var = true;
+        }
+        if excel {
+            self.is_programi_excel_diyalog();
+        }
 
         ui.add_space(8.0);
 
@@ -73,28 +125,78 @@ impl MetrajApp {
         // ---- Aylık dağılım tablosu (düzenlenebilir) ----
         tema::kart(ui, |ui| {
             ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-                egui::Grid::new("is_prog_grid").num_columns(6).spacing(egui::vec2(14.0, 7.0)).striped(true).show(ui, |ui| {
-                    for b in ["Ay", "Dönem", "Pursantaj %", "Aylık Tutar", "Kümülatif %", "Kümülatif Tutar"] {
-                        ui.label(RichText::new(b).strong().size(12.0).color(tema::METIN_IKINCIL));
-                    }
-                    ui.end_row();
-
-                    let mut kum = 0.0;
-                    let mut degisti = false;
-                    for i in 0..self.is_programi.dagilim.len() {
-                        let (yil, ay) = self.is_programi.ay_etiketi(i);
-                        ui.label(RichText::new(format!("{}", i + 1)).color(tema::METIN_SOLUK));
-                        ui.label(RichText::new(format!("{} {}", ay_adi(ay), yil)).size(12.5).color(tema::METIN));
-                        if ui.add(egui::DragValue::new(&mut self.is_programi.dagilim[i]).speed(0.25).range(0.0..=100.0).suffix(" %")).changed() { degisti = true; }
-                        let yuzde = self.is_programi.dagilim[i];
-                        kum += yuzde;
-                        ui.label(RichText::new(format!("{} TL", para_formatla(toplam_bedel * yuzde / 100.0))).size(12.5).color(tema::METIN));
-                        ui.label(RichText::new(format!("% {:.2}", kum)).size(12.0).color(tema::VURGU_HOVER));
-                        ui.label(RichText::new(format!("{} TL", para_formatla(toplam_bedel * kum / 100.0))).size(12.5).color(tema::METIN_IKINCIL));
+                egui::Grid::new("is_prog_grid")
+                    .num_columns(6)
+                    .spacing(egui::vec2(14.0, 7.0))
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for b in [
+                            "Ay",
+                            "Dönem",
+                            "Pursantaj %",
+                            "Aylık Tutar",
+                            "Kümülatif %",
+                            "Kümülatif Tutar",
+                        ] {
+                            ui.label(
+                                RichText::new(b)
+                                    .strong()
+                                    .size(12.0)
+                                    .color(tema::METIN_IKINCIL),
+                            );
+                        }
                         ui.end_row();
-                    }
-                    if degisti { self.degisiklik_var = true; }
-                });
+
+                        let mut kum = 0.0;
+                        let mut degisti = false;
+                        for i in 0..self.is_programi.dagilim.len() {
+                            let (yil, ay) = self.is_programi.ay_etiketi(i);
+                            ui.label(RichText::new(format!("{}", i + 1)).color(tema::METIN_SOLUK));
+                            ui.label(
+                                RichText::new(format!("{} {}", ay_adi(ay), yil))
+                                    .size(12.5)
+                                    .color(tema::METIN),
+                            );
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut self.is_programi.dagilim[i])
+                                        .speed(0.25)
+                                        .range(0.0..=100.0)
+                                        .suffix(" %"),
+                                )
+                                .changed()
+                            {
+                                degisti = true;
+                            }
+                            let yuzde = self.is_programi.dagilim[i];
+                            kum += yuzde;
+                            ui.label(
+                                RichText::new(format!(
+                                    "{} TL",
+                                    para_formatla(toplam_bedel * yuzde / 100.0)
+                                ))
+                                .size(12.5)
+                                .color(tema::METIN),
+                            );
+                            ui.label(
+                                RichText::new(format!("% {:.2}", kum))
+                                    .size(12.0)
+                                    .color(tema::VURGU_HOVER),
+                            );
+                            ui.label(
+                                RichText::new(format!(
+                                    "{} TL",
+                                    para_formatla(toplam_bedel * kum / 100.0)
+                                ))
+                                .size(12.5)
+                                .color(tema::METIN_IKINCIL),
+                            );
+                            ui.end_row();
+                        }
+                        if degisti {
+                            self.degisiklik_var = true;
+                        }
+                    });
             });
         });
     }
@@ -102,7 +204,9 @@ impl MetrajApp {
     /// İlerleme grafiği: aylık pursantaj çubukları + kümülatif S-eğrisi. Tek % ekseni (0 alt, 100 üst).
     fn is_programi_grafik(&self, ui: &mut Ui, _toplam_bedel: f64) {
         let n = self.is_programi.dagilim.len();
-        if n == 0 { return; }
+        if n == 0 {
+            return;
+        }
 
         let genislik = ui.available_width().min(900.0);
         let yukseklik = 220.0;
@@ -111,7 +215,12 @@ impl MetrajApp {
 
         // Zemin
         painter.rect_filled(dis, CornerRadius::same(tema::KOSE), tema::YUZEY_2);
-        painter.rect_stroke(dis, CornerRadius::same(tema::KOSE), Stroke::new(1.0, tema::KENAR), StrokeKind::Inside);
+        painter.rect_stroke(
+            dis,
+            CornerRadius::same(tema::KOSE),
+            Stroke::new(1.0, tema::KENAR),
+            StrokeKind::Inside,
+        );
 
         // Çizim alanı (eksen boşlukları)
         let sol = dis.left() + 44.0;
@@ -124,8 +233,17 @@ impl MetrajApp {
         // Yatay ızgara + % etiketleri (0/25/50/75/100)
         for p in [0, 25, 50, 75, 100] {
             let y = alt - (p as f32 / 100.0) * h;
-            painter.line_segment([Pos2::new(sol, y), Pos2::new(sag, y)], Stroke::new(1.0, tema::KENAR_YUMUSAK));
-            painter.text(Pos2::new(sol - 6.0, y), egui::Align2::RIGHT_CENTER, format!("%{}", p), FontId::proportional(10.0), tema::METIN_SOLUK);
+            painter.line_segment(
+                [Pos2::new(sol, y), Pos2::new(sag, y)],
+                Stroke::new(1.0, tema::KENAR_YUMUSAK),
+            );
+            painter.text(
+                Pos2::new(sol - 6.0, y),
+                egui::Align2::RIGHT_CENTER,
+                format!("%{}", p),
+                FontId::proportional(10.0),
+                tema::METIN_SOLUK,
+            );
         }
 
         let adim = ciz.width() / n as f32;
@@ -144,7 +262,13 @@ impl MetrajApp {
             if n <= 12 {
                 let (_, ay) = self.is_programi.ay_etiketi(i);
                 let kisa: String = ay_adi(ay).chars().take(3).collect();
-                painter.text(Pos2::new(orta, alt + 4.0), egui::Align2::CENTER_TOP, kisa, FontId::proportional(9.5), tema::METIN_SOLUK);
+                painter.text(
+                    Pos2::new(orta, alt + 4.0),
+                    egui::Align2::CENTER_TOP,
+                    kisa,
+                    FontId::proportional(9.5),
+                    tema::METIN_SOLUK,
+                );
             }
         }
 
@@ -169,7 +293,11 @@ impl MetrajApp {
         let prog = self.is_programi.clone();
         let proje_adi = self.metraj_adi.clone();
         let pb = self.proje_bilgi.clone();
-        if let Some(d) = rfd::FileDialog::new().add_filter("Excel", &["xlsx"]).set_file_name(&format!("{} - Is Programi.xlsx", self.metraj_adi)).save_file() {
+        if let Some(d) = rfd::FileDialog::new()
+            .add_filter("Excel", &["xlsx"])
+            .set_file_name(format!("{} - Is Programi.xlsx", self.metraj_adi))
+            .save_file()
+        {
             match crate::export::is_programi_excel_aktar(&proje_adi, &pb, toplam_bedel, &prog, &d) {
                 Ok(()) => self.basarili_mesaj = format!("İş programı Excel: {}", d.display()),
                 Err(e) => self.hata_mesaji = e,

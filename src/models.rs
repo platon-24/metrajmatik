@@ -1,4 +1,20 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static KALEM_KIMLIK_SAYACI: AtomicU64 = AtomicU64::new(1);
+
+/// Proje içindeki bir metraj kalemini poz numarasından bağımsız olarak tanımlar.
+/// Aynı poz farklı iş gruplarında birden fazla kez kullanılabildiği için hakediş
+/// bağlantıları bu kalıcı kimlik üzerinden kurulur.
+pub fn yeni_kalem_id() -> String {
+    let zaman = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let sayac = KALEM_KIMLIK_SAYACI.fetch_add(1, Ordering::Relaxed);
+    format!("k_{zaman:x}_{sayac:x}")
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Poz {
@@ -53,7 +69,11 @@ impl MiktarDetay {
     /// Boyutlardan (işaretli) miktarı hesaplar. Hiç boyut girilmemişse elle girilen
     /// `miktar` korunur. `cikan` ise sonuç negatiftir (metrajdan düşülür).
     pub fn hesaplanan_miktar(&self) -> f64 {
-        let buyukluk = if self.adet.is_none() && self.en.is_none() && self.boy.is_none() && self.yukseklik.is_none() {
+        let buyukluk = if self.adet.is_none()
+            && self.en.is_none()
+            && self.boy.is_none()
+            && self.yukseklik.is_none()
+        {
             self.miktar
         } else {
             self.adet.unwrap_or(1.0)
@@ -61,7 +81,11 @@ impl MiktarDetay {
                 * self.boy.unwrap_or(1.0)
                 * self.yukseklik.unwrap_or(1.0)
         };
-        if self.cikan { -buyukluk.abs() } else { buyukluk }
+        if self.cikan {
+            -buyukluk.abs()
+        } else {
+            buyukluk
+        }
     }
 
     /// Boyut tabanlı mı yoksa elle girilmiş mi?
@@ -72,6 +96,8 @@ impl MiktarDetay {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetrajKalemi {
+    #[serde(default)]
+    pub id: String,
     pub poz_no: String,
     pub tanim: String,
     pub birim: String,
@@ -91,6 +117,7 @@ impl MetrajKalemi {
         let birim_fiyat = poz.fiyat.unwrap_or(0.0);
         let tutar = birim_fiyat * miktar;
         MetrajKalemi {
+            id: yeni_kalem_id(),
             poz_no: poz.poz_no.clone(),
             tanim: poz.tanim.clone(),
             birim: poz.birim.clone(),
@@ -121,16 +148,18 @@ impl MetrajKalemi {
 /// Bir birim fiyat analizinin tek girdisi (rayiç: işçilik / malzeme / makine kalemi).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalizGirdisi {
-    pub girdi_no: String,   // rayiç / girdi poz numarası
+    pub girdi_no: String, // rayiç / girdi poz numarası
     pub tanim: String,
     pub birim: String,
-    pub birim_fiyat: f64,   // girdinin birim fiyatı (rayiçten alınan değer)
-    pub miktar: f64,        // katsayı: 1 birim imalat için gereken girdi miktarı
-    pub tur: String,        // "İşçilik" | "Malzeme" | "Makine"
+    pub birim_fiyat: f64, // girdinin birim fiyatı (rayiçten alınan değer)
+    pub miktar: f64,      // katsayı: 1 birim imalat için gereken girdi miktarı
+    pub tur: String,      // "İşçilik" | "Malzeme" | "Makine"
 }
 
 impl AnalizGirdisi {
-    pub fn tutar(&self) -> f64 { self.miktar * self.birim_fiyat }
+    pub fn tutar(&self) -> f64 {
+        self.miktar * self.birim_fiyat
+    }
 }
 
 /// Analiz girdilerinin (kâr + genel gider hariç) ara toplamı.
@@ -155,7 +184,13 @@ pub struct IsGrubu {
 
 impl IsGrubu {
     pub fn yeni(ad: &str) -> Self {
-        let id = format!("g_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+        let id = format!(
+            "g_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
         IsGrubu {
             id,
             ad: ad.to_string(),
@@ -185,21 +220,25 @@ impl IsGrubu {
 ///   gider yalnızca analizle (rayiçten) bulunan özel pozlara uygulanır; kurum birim
 ///   fiyatları bunu zaten içerdiğinden varsayılan oran %0'dır.
 /// - **Ozel**: Özel sektör. KDV dahil; kâr + genel gider kullanıcı denetiminde.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum HesapTuru { Kamu, Ozel }
-
-impl Default for HesapTuru {
-    fn default() -> Self { HesapTuru::Kamu }
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HesapTuru {
+    #[default]
+    Kamu,
+    Ozel,
 }
 
 impl HesapTuru {
-    pub fn kamu_mu(self) -> bool { matches!(self, HesapTuru::Kamu) }
+    pub fn kamu_mu(self) -> bool {
+        matches!(self, HesapTuru::Kamu)
+    }
 }
 
 /// Bir hakedişte tek bir iş kaleminin yeşil defter (kümülatif yapılan) miktarı.
 /// `detaylar` doluysa kümülatif miktar onların toplamıdır (ataşman/ölçü kırılımı).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HakedisSatiri {
+    #[serde(default)]
+    pub kalem_id: String,
     pub poz_no: String,
     pub kumulatif_miktar: f64, // bu hakedişe kadar YAPILAN toplam (yeşil defter)
     #[serde(default)]
@@ -210,7 +249,9 @@ impl HakedisSatiri {
     /// Ölçü kırılımı (detaylar) varsa kümülatif miktarı onlardan tazeler.
     pub fn detaylardan_tazele(&mut self) {
         if !self.detaylar.is_empty() {
-            for d in self.detaylar.iter_mut() { d.miktar = d.hesaplanan_miktar(); }
+            for d in self.detaylar.iter_mut() {
+                d.miktar = d.hesaplanan_miktar();
+            }
             self.kumulatif_miktar = self.detaylar.iter().map(|d| d.miktar).sum();
         }
     }
@@ -254,20 +295,46 @@ pub struct Hakedis {
 impl Hakedis {
     pub fn yeni(no: u32, tur: &str, tarih: String) -> Self {
         Hakedis {
-            no, tarih, tur: tur.to_string(), satirlar: Vec::new(),
-            damga_orani: 9.48, teminat_orani: 0.0, sgk_orani: 0.0, avans_mahsup: 0.0,
-            fiyat_farki: 0.0, ff_uygula: false, ff_b: 0.90, ff_temel_endeks: 0.0, ff_guncel_endeks: 0.0,
-            kdv_orani: 20.0, tevkifat_orani: 0.0,
+            no,
+            tarih,
+            tur: tur.to_string(),
+            satirlar: Vec::new(),
+            damga_orani: 9.48,
+            teminat_orani: 0.0,
+            sgk_orani: 0.0,
+            avans_mahsup: 0.0,
+            fiyat_farki: 0.0,
+            ff_uygula: false,
+            ff_b: 0.90,
+            ff_temel_endeks: 0.0,
+            ff_guncel_endeks: 0.0,
+            kdv_orani: 20.0,
+            tevkifat_orani: 0.0,
         }
     }
-    /// Verilen pozun bu hakedişteki kümülatif yapılan miktarı (yoksa 0).
-    pub fn kumulatif(&self, poz_no: &str) -> f64 {
-        self.satirlar.iter().find(|s| s.poz_no == poz_no).map(|s| s.kumulatif_miktar).unwrap_or(0.0)
+    /// Verilen keşif kaleminin bu hakedişteki kümülatif miktarı. Eski proje
+    /// dosyalarında kimlik bulunmadığı için poz numarası yalnızca geriye dönük
+    /// uyumluluk amacıyla son çare olarak kullanılır.
+    pub fn kumulatif(&self, kalem_id: &str, poz_no: &str) -> f64 {
+        if !kalem_id.is_empty() {
+            if let Some(satir) = self.satirlar.iter().find(|s| s.kalem_id == kalem_id) {
+                return satir.kumulatif_miktar;
+            }
+        }
+        self.satirlar
+            .iter()
+            .find(|s| s.kalem_id.is_empty() && s.poz_no == poz_no)
+            .map(|s| s.kumulatif_miktar)
+            .unwrap_or(0.0)
     }
 }
 
-fn hakedis_damga_orani() -> f64 { 9.48 }
-fn hakedis_ff_b() -> f64 { 0.90 }
+fn hakedis_damga_orani() -> f64 {
+    9.48
+}
+fn hakedis_ff_b() -> f64 {
+    0.90
+}
 
 /// Taşınabilir veri paketi: bir kurumun tüm pozları + dönem fiyatları (.mvp dosyası).
 /// Kurum kitaplarını paylaşmak/dağıtmak için (veri paketi iş modeli).
@@ -292,7 +359,7 @@ pub struct KayitliMetraj {
     #[serde(default)]
     pub kalemler: Vec<MetrajKalemi>, // Eski flat projeler için
     #[serde(default)]
-    pub is_gruplari: Vec<IsGrubu>,   // Yeni hiyerarşik yapı için
+    pub is_gruplari: Vec<IsGrubu>, // Yeni hiyerarşik yapı için
     pub tarih: String,
     #[serde(default = "varsayilan_kar_orani")]
     pub genel_gider_kar_orani: f64, // % müteahhit kârı + genel gider
@@ -348,11 +415,75 @@ impl ProjeBilgi {
     }
 }
 
-fn varsayilan_kar_orani() -> f64 { 25.0 }
-fn varsayilan_kdv_orani() -> f64 { 20.0 }
-fn varsayilan_hesap_turu() -> HesapTuru { HesapTuru::Ozel }
+fn varsayilan_kar_orani() -> f64 {
+    25.0
+}
+fn varsayilan_kdv_orani() -> f64 {
+    20.0
+}
+fn varsayilan_hesap_turu() -> HesapTuru {
+    HesapTuru::Ozel
+}
 
 impl KayitliMetraj {
+    /// Eski `.mrj` dosyalarındaki kimliksiz kalemleri yükseltir ve hakediş
+    /// satırlarını aynı pozun sıra bazlı eşleşmesiyle keşif kalemlerine bağlar.
+    pub fn kimlikleri_tamamla(&mut self) {
+        fn grup_kimliklerini_tamamla(gruplar: &mut [IsGrubu], gorulen: &mut HashSet<String>) {
+            for grup in gruplar {
+                for kalem in &mut grup.kalemler {
+                    if kalem.id.is_empty() || !gorulen.insert(kalem.id.clone()) {
+                        kalem.id = yeni_kalem_id();
+                        gorulen.insert(kalem.id.clone());
+                    }
+                }
+                grup_kimliklerini_tamamla(&mut grup.alt_gruplar, gorulen);
+            }
+        }
+
+        let mut gorulen = HashSet::new();
+        if self.is_gruplari.is_empty() {
+            for kalem in &mut self.kalemler {
+                if kalem.id.is_empty() || !gorulen.insert(kalem.id.clone()) {
+                    kalem.id = yeni_kalem_id();
+                    gorulen.insert(kalem.id.clone());
+                }
+            }
+        } else {
+            grup_kimliklerini_tamamla(&mut self.is_gruplari, &mut gorulen);
+            self.kalemler = self
+                .is_gruplari
+                .iter()
+                .flat_map(IsGrubu::tum_kalemler_duz)
+                .collect();
+        }
+
+        let kesif: Vec<(String, String)> = self
+            .kalemler
+            .iter()
+            .map(|k| (k.id.clone(), k.poz_no.clone()))
+            .collect();
+        for hakedis in &mut self.hakedisler {
+            let mut kullanilan = HashSet::new();
+            for satir in &mut hakedis.satirlar {
+                if !satir.kalem_id.is_empty()
+                    && kesif.iter().any(|(id, _)| id == &satir.kalem_id)
+                    && kullanilan.insert(satir.kalem_id.clone())
+                {
+                    continue;
+                }
+                satir.kalem_id = kesif
+                    .iter()
+                    .find(|(id, poz)| poz == &satir.poz_no && !kullanilan.contains(id))
+                    .map(|(id, _)| id.clone())
+                    .unwrap_or_default();
+                if !satir.kalem_id.is_empty() {
+                    kullanilan.insert(satir.kalem_id.clone());
+                }
+            }
+        }
+    }
+
     pub fn toplam_tutar(&self) -> f64 {
         if !self.is_gruplari.is_empty() {
             self.is_gruplari.iter().map(|g| g.toplam_tutar()).sum()
@@ -378,7 +509,12 @@ pub struct IsProgrami {
 
 impl Default for IsProgrami {
     fn default() -> Self {
-        Self { baslangic_yil: 2026, baslangic_ay: 1, sure_ay: 6, dagilim: Vec::new() }
+        Self {
+            baslangic_yil: 2026,
+            baslangic_ay: 1,
+            sure_ay: 6,
+            dagilim: Vec::new(),
+        }
     }
 }
 
@@ -416,6 +552,7 @@ mod testler {
 
     fn kalem(poz: &str, tutar: f64) -> MetrajKalemi {
         MetrajKalemi {
+            id: yeni_kalem_id(),
             poz_no: poz.into(),
             tanim: "test".into(),
             birim: "m3".into(),
@@ -460,13 +597,29 @@ mod testler {
 
     #[test]
     fn gruplu_proje_toplami_gruplardan_hesaplanir() {
-        let m = KayitliMetraj { ad: "T".into(), kalemler: vec![], is_gruplari: ornek_agac(), tarih: "2026-01-01".into(), genel_gider_kar_orani: 25.0, kdv_orani: 20.0, hesap_turu: HesapTuru::Kamu, hakedisler: vec![], is_programi: IsProgrami::default(), proje_bilgi: ProjeBilgi::default() };
+        let m = KayitliMetraj {
+            ad: "T".into(),
+            kalemler: vec![],
+            is_gruplari: ornek_agac(),
+            tarih: "2026-01-01".into(),
+            genel_gider_kar_orani: 25.0,
+            kdv_orani: 20.0,
+            hesap_turu: HesapTuru::Kamu,
+            hakedisler: vec![],
+            is_programi: IsProgrami::default(),
+            proje_bilgi: ProjeBilgi::default(),
+        };
         assert_eq!(m.toplam_tutar(), 175.0);
     }
 
     #[test]
     fn is_programi_esit_dagitir_ve_takvim_hesaplar() {
-        let mut p = IsProgrami { baslangic_yil: 2026, baslangic_ay: 11, sure_ay: 4, dagilim: vec![] };
+        let mut p = IsProgrami {
+            baslangic_yil: 2026,
+            baslangic_ay: 11,
+            sure_ay: 4,
+            dagilim: vec![],
+        };
         p.normalize(); // boş dağılımı eşitler
         assert_eq!(p.dagilim.len(), 4);
         assert!((p.toplam_yuzde() - 100.0).abs() < 1e-9);
@@ -504,8 +657,63 @@ mod testler {
     }
 
     #[test]
+    fn eski_projede_ayni_pozlu_kalemler_ve_hakedisler_ayri_kimlik_alir() {
+        let mut a = kalem("P", 100.0);
+        let mut b = kalem("P", 200.0);
+        a.id.clear();
+        b.id.clear();
+        let mut h = Hakedis::yeni(1, "İlk", "2026-01-01".into());
+        h.satirlar = vec![
+            HakedisSatiri {
+                kalem_id: String::new(),
+                poz_no: "P".into(),
+                kumulatif_miktar: 1.0,
+                detaylar: vec![],
+            },
+            HakedisSatiri {
+                kalem_id: String::new(),
+                poz_no: "P".into(),
+                kumulatif_miktar: 2.0,
+                detaylar: vec![],
+            },
+        ];
+        let mut proje = KayitliMetraj {
+            ad: "Eski".into(),
+            kalemler: vec![a, b],
+            is_gruplari: vec![],
+            tarih: "2026-01-01".into(),
+            genel_gider_kar_orani: 0.0,
+            kdv_orani: 20.0,
+            hesap_turu: HesapTuru::Kamu,
+            hakedisler: vec![h],
+            is_programi: IsProgrami::default(),
+            proje_bilgi: ProjeBilgi::default(),
+        };
+
+        proje.kimlikleri_tamamla();
+        assert!(!proje.kalemler[0].id.is_empty());
+        assert_ne!(proje.kalemler[0].id, proje.kalemler[1].id);
+        assert_eq!(
+            proje.hakedisler[0].satirlar[0].kalem_id,
+            proje.kalemler[0].id
+        );
+        assert_eq!(
+            proje.hakedisler[0].satirlar[1].kalem_id,
+            proje.kalemler[1].id
+        );
+    }
+
+    #[test]
     fn boyutlardan_miktar_carpilir() {
-        let d = MiktarDetay { aciklama: "kiriş".into(), miktar: 0.0, adet: Some(4.0), en: Some(0.30), boy: Some(5.0), yukseklik: Some(0.40), cikan: false };
+        let d = MiktarDetay {
+            aciklama: "kiriş".into(),
+            miktar: 0.0,
+            adet: Some(4.0),
+            en: Some(0.30),
+            boy: Some(5.0),
+            yukseklik: Some(0.40),
+            cikan: false,
+        };
         assert!((d.hesaplanan_miktar() - 2.4).abs() < 1e-9); // 4 * 0.30 * 5 * 0.40
         assert!(d.boyutlu_mu());
     }
@@ -513,13 +721,29 @@ mod testler {
     #[test]
     fn eksik_boyutlar_bir_sayilir() {
         // sadece adet ve boy verilmiş; en/yükseklik 1 sayılır
-        let d = MiktarDetay { aciklama: "".into(), miktar: 0.0, adet: Some(3.0), en: None, boy: Some(2.5), yukseklik: None, cikan: false };
+        let d = MiktarDetay {
+            aciklama: "".into(),
+            miktar: 0.0,
+            adet: Some(3.0),
+            en: None,
+            boy: Some(2.5),
+            yukseklik: None,
+            cikan: false,
+        };
         assert!((d.hesaplanan_miktar() - 7.5).abs() < 1e-9);
     }
 
     #[test]
     fn boyutsuz_detay_elle_girilen_miktari_korur() {
-        let d = MiktarDetay { aciklama: "hazır".into(), miktar: 12.0, adet: None, en: None, boy: None, yukseklik: None, cikan: false };
+        let d = MiktarDetay {
+            aciklama: "hazır".into(),
+            miktar: 12.0,
+            adet: None,
+            en: None,
+            boy: None,
+            yukseklik: None,
+            cikan: false,
+        };
         assert_eq!(d.hesaplanan_miktar(), 12.0);
         assert!(!d.boyutlu_mu());
     }
@@ -527,13 +751,35 @@ mod testler {
     #[test]
     fn cikan_detay_metrajdan_dusulur() {
         let mut k = MetrajKalemi {
-            poz_no: "P".into(), tanim: "duvar".into(), birim: "m2".into(),
-            birim_fiyat: 10.0, miktar: 0.0, tutar: 0.0, kitap_adi: "K".into(),
+            id: yeni_kalem_id(),
+            poz_no: "P".into(),
+            tanim: "duvar".into(),
+            birim: "m2".into(),
+            birim_fiyat: 10.0,
+            miktar: 0.0,
+            tutar: 0.0,
+            kitap_adi: "K".into(),
             detaylar: vec![
                 // Brüt duvar: 10 x 3 = 30 m²
-                MiktarDetay { aciklama: "duvar".into(), miktar: 0.0, adet: Some(1.0), en: Some(10.0), boy: Some(3.0), yukseklik: None, cikan: false },
+                MiktarDetay {
+                    aciklama: "duvar".into(),
+                    miktar: 0.0,
+                    adet: Some(1.0),
+                    en: Some(10.0),
+                    boy: Some(3.0),
+                    yukseklik: None,
+                    cikan: false,
+                },
                 // 2 pencere boşluğu: 2 x 1.5 x 1.0 = 3 m² düşülür
-                MiktarDetay { aciklama: "pencere".into(), miktar: 0.0, adet: Some(2.0), en: Some(1.5), boy: Some(1.0), yukseklik: None, cikan: true },
+                MiktarDetay {
+                    aciklama: "pencere".into(),
+                    miktar: 0.0,
+                    adet: Some(2.0),
+                    en: Some(1.5),
+                    boy: Some(1.0),
+                    yukseklik: None,
+                    cikan: true,
+                },
             ],
             imalat_cinsi: String::new(),
             kitap_id: 0,
@@ -546,8 +792,22 @@ mod testler {
     #[test]
     fn analiz_birim_fiyati_kar_uygular() {
         let g = vec![
-            AnalizGirdisi { girdi_no: "10.100.1001".into(), tanim: "Düz işçi".into(), birim: "saat".into(), birim_fiyat: 100.0, miktar: 2.0, tur: "İşçilik".into() },
-            AnalizGirdisi { girdi_no: "10.130.1001".into(), tanim: "Çimento".into(), birim: "kg".into(), birim_fiyat: 5.0, miktar: 50.0, tur: "Malzeme".into() },
+            AnalizGirdisi {
+                girdi_no: "10.100.1001".into(),
+                tanim: "Düz işçi".into(),
+                birim: "saat".into(),
+                birim_fiyat: 100.0,
+                miktar: 2.0,
+                tur: "İşçilik".into(),
+            },
+            AnalizGirdisi {
+                girdi_no: "10.130.1001".into(),
+                tanim: "Çimento".into(),
+                birim: "kg".into(),
+                birim_fiyat: 5.0,
+                miktar: 50.0,
+                tur: "Malzeme".into(),
+            },
         ];
         assert_eq!(analiz_ara_toplam(&g), 450.0); // 200 + 250
         assert_eq!(analiz_birim_fiyat(&g, 25.0), 562.5); // 450 * 1.25
@@ -556,11 +816,33 @@ mod testler {
     #[test]
     fn kalem_detaylardan_toplam_miktar_ve_tutar() {
         let mut k = MetrajKalemi {
-            poz_no: "P".into(), tanim: "t".into(), birim: "m3".into(),
-            birim_fiyat: 100.0, miktar: 0.0, tutar: 0.0, kitap_adi: "K".into(),
+            id: yeni_kalem_id(),
+            poz_no: "P".into(),
+            tanim: "t".into(),
+            birim: "m3".into(),
+            birim_fiyat: 100.0,
+            miktar: 0.0,
+            tutar: 0.0,
+            kitap_adi: "K".into(),
             detaylar: vec![
-                MiktarDetay { aciklama: "a".into(), miktar: 0.0, adet: Some(2.0), en: None, boy: None, yukseklik: None, cikan: false },
-                MiktarDetay { aciklama: "b".into(), miktar: 0.0, adet: Some(1.0), en: Some(3.0), boy: Some(0.5), yukseklik: None, cikan: false },
+                MiktarDetay {
+                    aciklama: "a".into(),
+                    miktar: 0.0,
+                    adet: Some(2.0),
+                    en: None,
+                    boy: None,
+                    yukseklik: None,
+                    cikan: false,
+                },
+                MiktarDetay {
+                    aciklama: "b".into(),
+                    miktar: 0.0,
+                    adet: Some(1.0),
+                    en: Some(3.0),
+                    boy: Some(0.5),
+                    yukseklik: None,
+                    cikan: false,
+                },
             ],
             imalat_cinsi: String::new(),
             kitap_id: 0,
@@ -569,4 +851,4 @@ mod testler {
         assert_eq!(k.miktar, 3.5); // 2 + 1.5
         assert_eq!(k.tutar, 350.0);
     }
-}
+}
