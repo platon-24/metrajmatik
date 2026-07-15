@@ -752,9 +752,9 @@ impl MetrajApp {
         let mut detay_ac: Option<usize> = None;
         let tenzilat_orani = self.sozlesme_ayarlari.tenzilat_orani();
         let sozlesme_fiyat_carpani = 1.0 - tenzilat_orani / 100.0;
-        ScrollArea::both()
-            .max_height((ui.available_height() - 230.0).max(140.0))
-            .auto_shrink([false, false])
+        ScrollArea::horizontal()
+            .id_salt("hakedis_table_scroll")
+            .auto_shrink([false, true])
             .show(ui, |ui| {
                 let bsl = |ui: &mut egui::Ui, t: &str| {
                     ui.label(
@@ -996,6 +996,7 @@ impl MetrajApp {
                     false,
                 );
             });
+        ui.add_space(12.0);
     }
 
     /// Seçili hakedişi Excel'e aktarır.

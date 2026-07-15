@@ -1106,7 +1106,15 @@ impl eframe::App for MetrajApp {
                             .auto_shrink([false, false])
                             .show(ui, |ui| self.render_proje(ui));
                     }
-                    Sekme::Hakedis => self.render_hakedis(ui),
+                    Sekme::Hakedis => {
+                        egui::ScrollArea::vertical()
+                            .id_salt("hakedis_page_scroll")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.set_min_width(ui.available_width());
+                                self.render_hakedis(ui);
+                            });
+                    }
                     Sekme::IsProgrami => self.render_is_programi(ui),
                     Sekme::Pozlar => self.render_pozlar_tablosu(ui),
                     Sekme::KitapYoneticisi => self.render_kitap_yoneticisi(ui),
