@@ -17,6 +17,7 @@ mod maliyet;
 mod models;
 mod pdf_parser;
 mod tema;
+mod tuik;
 
 use eframe::egui;
 

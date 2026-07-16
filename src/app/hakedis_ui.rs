@@ -12,6 +12,7 @@ use crate::models::{
     TenzilatYontemi,
 };
 use crate::tema;
+use crate::tuik;
 
 use super::gorunum_metraj::{detay_to_satir, satir_miktar, satir_to_detay};
 use super::{MetrajApp, PopupDetaySatiri};
@@ -51,6 +52,10 @@ impl MetrajApp {
             "Ara"
         };
         let mut h = Hakedis::yeni(no, tur, krono_tarih());
+        if let Some(onceki) = self.hakedisler.last() {
+            h.fiyat_farki_ayari = onceki.fiyat_farki_ayari.clone();
+        }
+        h.fiyat_farki_ayari.uygulama_ayi = h.tarih.get(0..7).unwrap_or_default().to_string();
         h.satirlar = satirlar;
         self.hakedisler.push(h);
         self.secili_hakedis = Some(self.hakedisler.len() - 1);
@@ -487,6 +492,7 @@ impl MetrajApp {
         ui.add_space(8.0);
         // Tür / tarih / kesinti oranları
         let mut ayar_degisti = false;
+        let mut yi_ufe_istegi = false;
         tema::kart(ui, |ui| {
             let h = &mut self.hakedisler[idx];
             ui.horizontal_wrapped(|ui| {
@@ -616,6 +622,16 @@ impl MetrajApp {
                                 .fixed_decimals(4),
                         )
                         .changed();
+                    if h.fiyat_farki_ayari.yontem == FiyatFarkiYontemi::TekEndeks {
+                        ui.label("Temel ay");
+                        ayar_degisti |= ui
+                            .add(
+                                TextEdit::singleline(&mut h.fiyat_farki_ayari.temel_ayi)
+                                    .hint_text(tema::alan_ipucu("2025-12"))
+                                    .desired_width(80.0),
+                            )
+                            .changed();
+                    }
                     ui.label("Uygulama ayı");
                     ayar_degisti |= ui
                         .add(
@@ -648,6 +664,25 @@ impl MetrajApp {
                                 .fixed_decimals(4),
                         )
                         .changed();
+                    if self.yi_ufe_alici.is_some() {
+                        ui.spinner();
+                        ui.label(
+                            RichText::new("TÜİK'ten Yİ-ÜFE indiriliyor…")
+                                .color(tema::METIN_SOLUK)
+                                .size(11.0),
+                        );
+                    } else if tema::ikincil_ikonlu_buton(
+                        ui,
+                        tema::ikon::YENILE,
+                        "TÜİK'ten getir",
+                    )
+                    .on_hover_text(
+                        "Seçilen temel ve uygulama aylarının Yİ-ÜFE Genel endekslerini resmî TÜİK Veri Portalı'ndan doldurur",
+                    )
+                    .clicked()
+                    {
+                        yi_ufe_istegi = true;
+                    }
                 });
             }
             if h.fiyat_farki_ayari.yontem == FiyatFarkiYontemi::YapimAgirlikli {
@@ -742,6 +777,9 @@ impl MetrajApp {
                     .changed();
             });
         });
+        if yi_ufe_istegi {
+            self.yi_ufe_indirmeyi_baslat(idx);
+        }
         if ayar_degisti {
             self.degisiklik_var = true;
         }
@@ -997,6 +1035,102 @@ impl MetrajApp {
                 );
             });
         ui.add_space(12.0);
+    }
+
+    fn yi_ufe_indirmeyi_baslat(&mut self, idx: usize) {
+        let Some(h) = self.hakedisler.get(idx) else {
+            return;
+        };
+        let temel_ay = h.fiyat_farki_ayari.temel_ayi.trim().to_string();
+        let uygulama_ayi = h.fiyat_farki_ayari.uygulama_ayi.trim().to_string();
+        if !tuik::ay_gecerli(&temel_ay) || !tuik::ay_gecerli(&uygulama_ayi) {
+            self.hata_mesaji =
+                "Temel ay ve uygulama ayını YYYY-AA biçiminde girin (ör. 2026-06).".into();
+            return;
+        }
+
+        if self
+            .yi_ufe_serisi
+            .as_ref()
+            .is_some_and(|s| s.endeks(&temel_ay).is_some() && s.endeks(&uygulama_ayi).is_some())
+        {
+            self.yi_ufe_hedef_hakedis = Some(idx);
+            self.yi_ufe_degerlerini_uygula();
+            return;
+        }
+        if self.yi_ufe_alici.is_some() {
+            return;
+        }
+
+        let (gonderici, alici) = std::sync::mpsc::channel();
+        let onbellek_yolu = self.yi_ufe_onbellek_yolu.clone();
+        self.yi_ufe_alici = Some(alici);
+        self.yi_ufe_hedef_hakedis = Some(idx);
+        std::thread::spawn(move || {
+            let sonuc = tuik::internetten_getir().map(|seri| {
+                if let Err(hata) = tuik::onbellegi_yaz(&onbellek_yolu, &seri) {
+                    log::warn!("{hata}");
+                }
+                seri
+            });
+            let _ = gonderici.send(sonuc);
+        });
+    }
+
+    pub(crate) fn yi_ufe_sonucunu_kontrol(&mut self) {
+        let sonuc = self
+            .yi_ufe_alici
+            .as_ref()
+            .and_then(|alici| match alici.try_recv() {
+                Ok(sonuc) => Some(sonuc),
+                Err(std::sync::mpsc::TryRecvError::Empty) => None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => Some(Err(
+                    "TÜİK indirme işlemi beklenmedik biçimde sonlandı.".into(),
+                )),
+            });
+        let Some(sonuc) = sonuc else {
+            return;
+        };
+        self.yi_ufe_alici = None;
+        match sonuc {
+            Ok(seri) => {
+                self.yi_ufe_serisi = Some(seri);
+                self.yi_ufe_degerlerini_uygula();
+            }
+            Err(hata) => {
+                self.yi_ufe_hedef_hakedis = None;
+                self.hata_mesaji = hata;
+            }
+        }
+    }
+
+    fn yi_ufe_degerlerini_uygula(&mut self) {
+        let Some(idx) = self.yi_ufe_hedef_hakedis.take() else {
+            return;
+        };
+        let Some(h) = self.hakedisler.get_mut(idx) else {
+            return;
+        };
+        let temel_ay = h.fiyat_farki_ayari.temel_ayi.trim().to_string();
+        let uygulama_ayi = h.fiyat_farki_ayari.uygulama_ayi.trim().to_string();
+        let Some(seri) = self.yi_ufe_serisi.as_ref() else {
+            return;
+        };
+        let (Some(temel), Some(guncel)) = (seri.endeks(&temel_ay), seri.endeks(&uygulama_ayi))
+        else {
+            let son_ay = seri.son_ay().unwrap_or("bilinmiyor");
+            self.hata_mesaji = format!(
+                "Seçilen aylardan biri TÜİK Yİ-ÜFE serisinde yok. Yayımlanmış son dönem: {son_ay}."
+            );
+            return;
+        };
+        h.fiyat_farki_ayari.normalize();
+        h.fiyat_farki_ayari.bilesenler[0].temel_endeks = temel;
+        h.fiyat_farki_ayari.bilesenler[0].guncel_endeks = guncel;
+        self.degisiklik_var = true;
+        self.basarili_mesaj = format!(
+            "TÜİK Yİ-ÜFE Genel endeksleri dolduruldu: {temel_ay} = {temel:.4}, {uygulama_ayi} = {guncel:.4}."
+        );
     }
 
     /// Seçili hakedişi Excel'e aktarır.

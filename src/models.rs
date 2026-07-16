@@ -360,6 +360,9 @@ pub struct FiyatFarkiAyari {
     pub yontem: FiyatFarkiYontemi,
     #[serde(default = "hakedis_ff_b")]
     pub b: f64,
+    /// Tek endeks hesabında Po'nun ait olduğu ay (`YYYY-AA`).
+    #[serde(default)]
+    pub temel_ayi: String,
     #[serde(default)]
     pub uygulama_ayi: String,
     #[serde(default = "varsayilan_fiyat_farki_bilesenleri")]
@@ -371,6 +374,7 @@ impl Default for FiyatFarkiAyari {
         Self {
             yontem: FiyatFarkiYontemi::Yok,
             b: 0.90,
+            temel_ayi: String::new(),
             uygulama_ayi: String::new(),
             bilesenler: varsayilan_fiyat_farki_bilesenleri(),
         }

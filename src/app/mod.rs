@@ -10,6 +10,7 @@ use eframe::egui;
 use egui::{Color32, RichText, TextEdit};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::Receiver;
 
 use crate::bicim::{metni_kisalt, para_formatla};
 use crate::database::Veritabani;
@@ -19,6 +20,7 @@ use crate::models::{
     ProjeBilgi, SozlesmeAyarlari,
 };
 use crate::tema;
+use crate::tuik::{self, YiUfeSerisi};
 
 mod analiz_ui;
 mod gorunum_diger;
@@ -176,6 +178,10 @@ pub struct MetrajApp {
     secili_hakedis: Option<usize>,
     hakedis_detay_acik: bool,           // yeşil defter ölçü kırılımı popup'ı
     hakedis_detay_satir: Option<usize>, // seçili hakedişte hangi satır
+    yi_ufe_serisi: Option<YiUfeSerisi>,
+    yi_ufe_alici: Option<Receiver<Result<YiUfeSerisi, String>>>,
+    yi_ufe_hedef_hakedis: Option<usize>,
+    yi_ufe_onbellek_yolu: PathBuf,
 
     // İş programı (pursantajlı zaman planı)
     is_programi: IsProgrami,
@@ -291,6 +297,8 @@ impl Default for MetrajApp {
         let baslangic_secili = ilk_yaprak_grup_id(&baslangic_gruplari);
         let autosave_yolu = autosave_veri_yolu();
         let kurtarma_mevcut = autosave_yolu.exists();
+        let yi_ufe_onbellek_yolu = veri_yolu("tuik_yi_ufe.json");
+        let yi_ufe_serisi = tuik::onbellegi_oku(&yi_ufe_onbellek_yolu).ok();
         Self {
             db,
             poz_sayisi,
@@ -393,6 +401,10 @@ impl Default for MetrajApp {
             secili_hakedis: None,
             hakedis_detay_acik: false,
             hakedis_detay_satir: None,
+            yi_ufe_serisi,
+            yi_ufe_alici: None,
+            yi_ufe_hedef_hakedis: None,
+            yi_ufe_onbellek_yolu,
 
             // İş programı
             is_programi: IsProgrami::default(),
@@ -646,6 +658,10 @@ fn mobil_gezinti_butonu(ui: &mut egui::Ui, aktif: bool, ikon: &str, baslik: &str
 
 impl eframe::App for MetrajApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.yi_ufe_sonucunu_kontrol();
+        if self.yi_ufe_alici.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(200));
+        }
         self.bildirimleri_guncelle(ctx);
         if !self.kapanisa_izin_ver
             && self.degisiklik_var

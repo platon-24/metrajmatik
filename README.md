@@ -67,7 +67,7 @@
 
 **Hakediş hesabı** — Çoklu ara/kesin hakediş, önceki kümülatifi devralma, **yeşil defter** ölçü kırılımı, tenzilat sonrası sözleşme fiyatları, kesintiler (damga ‰9,48 · teminat · SGK · avans mahsubu), **KDV tevkifatı**, **kesin hesap** (sözleşme vs gerçekleşen) ve Excel raporu.
 
-**Fiyat farkı** — Her hakediş için dört yöntem bulunur: **Yok**, **Manuel Tutar**, **Tek Endeks** ve **Yapım İşleri Ağırlıklı Formül**. Ağırlıklı yöntemde `a, b1, b2, b3, b4, b5, c` katsayıları ile temel/güncel aylık endeksler girilir; katsayı toplamı `1,000000` değilse hesap uygulanmaz. Endekslerin güvenilir kaynaktan alınabilmesi için [TÜİK Veri Portalı](https://veriportali.tuik.gov.tr/tr/) bağlantısı arayüzde yer alır. Otomatik internet aktarımı henüz etkin değildir.
+**Fiyat farkı** — Her hakediş için dört yöntem bulunur: **Yok**, **Manuel Tutar**, **Tek Endeks** ve **Yapım İşleri Ağırlıklı Formül**. Tek endeks yönteminde temel ve uygulama ayı seçilerek **Yİ-ÜFE Genel (2003=100)** değerleri resmî [TÜİK Veri Portalı](https://veriportali.tuik.gov.tr/tr/) toplu veri servisinden otomatik doldurulur; indirilen aylık seri yerel olarak önbelleğe alınır. Ağırlıklı yöntemde `a, b1, b2, b3, b4, b5, c` katsayıları ile sözleşmeye uygun temel/güncel endeksler girilir; katsayı toplamı `1,000000` değilse hesap uygulanmaz.
 
 **İş Programı** — Metraj aşamasında kilitlidir; proje hakedişe dönüştürüldüğünde etkinleşir. Tenzilat sonrası sözleşme bedelini süre boyunca aylara pursantaj olarak dağıtır; aylık + kümülatif tablo, **ilerleme (S) eğrisi grafiği** ve Excel pursantaj cetveli üretir.
 
@@ -147,7 +147,7 @@ src/
 cargo test
 ```
 
-**61 test** çekirdek mantığı doğrular: kâr/KDV hesabı, kalem kimlikli hakediş, 6 haneli tenzilat, sözleşme bedelinden oran türetme, ağırlıklı `Pn` fiyat farkı, kurum/dönem fiyat çözümü, "o tarihte geçerli rayiç", v1→v2 göç, güvenli kayıt/geri yükleme, iş programı dağılımı, sayı→yazı, veri paketi round-trip, teklif cetveli ve Excel üretimi. *(1 ek test — gerçek kurum PDF'leriyle doğrulama — `#[ignore]`; yerel örnek dosyalar gerektirir.)*
+**65 test** çekirdek mantığı doğrular: kâr/KDV hesabı, kalem kimlikli hakediş, 6 haneli tenzilat, sözleşme bedelinden oran türetme, ağırlıklı `Pn` fiyat farkı, TÜİK Yİ-ÜFE çözümleme, kurum/dönem fiyat çözümü, "o tarihte geçerli rayiç", v1→v2 göç, güvenli kayıt/geri yükleme, iş programı dağılımı, sayı→yazı, veri paketi round-trip, teklif cetveli ve Excel üretimi. *(2 test `#[ignore]`: gerçek kurum PDF'leri ve canlı TÜİK portalı doğrulaması.)*
 
 ---
 
@@ -162,7 +162,7 @@ cargo test
 - [x] **Hakediş yaşam döngüsü** — açık dönüşüm, dönüşüm öncesi kopya, metraj kilidi
 - [x] **Tenzilat** — manuel 6 haneli oran veya sözleşme bedelinden otomatik hesap
 - [x] **Fiyat farkı** — manuel, tek endeks ve yapım işleri ağırlıklı formülü
-- [ ] **TÜİK SDMX entegrasyonu** — seçilen ay/endeks verisini resmî servisten otomatik getirme
+- [x] **TÜİK Yİ-ÜFE entegrasyonu** — tek endeks yönteminde seçilen ayların resmî genel endeksini otomatik getirme ve önbellekleme
 
 > **Uçtan uca temel proje ve hakediş akışı tamamlandı.** 🎯
 
